@@ -5,15 +5,28 @@ from lxml import etree
 
 from typing import Optional
 
+DRUG_TAG_PREFIX: str = "{http://www.drugbank.ca}"
+
 def main():
     db, g1, g2 = get_data()
     if(db is None or g1 is None or g2 is None):
         return
     # The root tag is '{http://www.drugbank.ca}drugbank', while each subitem has the '{http://www.drugbank.ca}drug' tag
     root = db.getroot()
-    print(root.tag)
-    for x in [root[0]]:
-        print(x.tag)
+
+    runique = pd.Series(r.tag for r in root).unique()
+    print(f"Unique items in root:\n{runique}")
+    seunique = pd.Series(se.tag for se in root[0]).unique()
+    print(f"Unique tags in the root tree:\n{seunique}")
+
+    for element in root[0].iter(DRUG_TAG_PREFIX+"pharmacodynamics"):
+        print(etree.tostring(element))
+        eunique = pd.Series(e.tag for e in element).unique()
+        print(f"Unique items in top element:\n{eunique}")
+        for i in element.iterchildren():
+            print("Unique items in first child of top element:")
+            print(pd.Series([ie.tag for ie in i]).unique())
+            break
     return
 
 def get_data() -> tuple[Optional[etree.ElementTree], Optional[pd.DataFrame], Optional[pd.DataFrame]]:
