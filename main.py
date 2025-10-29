@@ -19,6 +19,11 @@ def main():
     seunique = pd.Series(se.tag for se in root[0]).unique()
     print(f"Unique tags in the root tree:\n{seunique}")
 
+    towrite = etree.tostring(root[0], pretty_print=True)
+
+    with open(os.path.join("Data", "single.xml"), "w") as f:
+        f.write(str(etree.tostring(root[0], pretty_print=True))[2:-1])
+
     for element in root[0].iter(DRUG_TAG_PREFIX+"pharmacodynamics"):
         print(etree.tostring(element))
         eunique = pd.Series(e.tag for e in element).unique()
