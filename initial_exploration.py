@@ -8,51 +8,57 @@ from typing import Optional
 DRUG_TAG_PREFIX: str = "{http://www.drugbank.ca}"
 
 def main():
-    # Load in the data with the get_data function; this loads GDSC1 and GDSC2 as pandas dataframes, and DrugBank as an lxml ElementTree object
     db, g1, g2 = get_data()
-    # If there are any load-in failures, stop the program
     if(db is None or g1 is None or g2 is None):
         return
+    
+    #print(g1["DRUG_NAME"][:10])
+    #print(g1.columns)
 
-    # Select drug - currently this is just the first value from GDSC1 but in theory it could be any drug name from GDSC1/2
     drug_selected = g1["DRUG_NAME"].values[0]
     
-    # Get the DrugBank tree as a root; some information about this tree:
-    #   The root tag is '{http://www.drugbank.ca}drugbank', while each subitem has the '{http://www.drugbank.ca}drug' tag
+    # The root tag is '{http://www.drugbank.ca}drugbank', while each subitem has the '{http://www.drugbank.ca}drug' tag
     root = db.getroot()
-    
-    # Find the gene names and loci targeted by the drug according to DrugBank
-    print(find_targets(drug_selected, root))
-    return
 
-def find_targets(drugTarget: str, drugBank: etree.ElementTree) -> dict:
+    #runique = pd.Series(r.tag for r in root).unique()
+    #print(f"Unique items in root:\n{runique}")
+    #seunique = pd.Series(se.tag for se in root[0]).unique()
+    #print(f"Unique tags in the root tree:\n{seunique}")
 
-    # Set up dictionary which will be populated by gene targets
+    #towrite = etree.tostring(root[0], pretty_print=True)
+
+    #with open(os.path.join("Data", "single.xml"), "w") as f:
+    #    f.write(str(etree.tostring(root[0], pretty_print=True))[2:-1])
+
     gene_targets = {}
-
-    # Iterate through individual drugs from drugbank
-    for drugelement in drugBank:
-        # Get the drug name and check if it is the desired drug ('drugTarget')
+    for drugelement in root:
         namecheck = drugelement.find(DRUG_TAG_PREFIX+"name")
-        if(drugTarget.lower().strip()==namecheck.text.lower().strip()):
-            # Get the gene targets of this drug
+        if(drug_selected.lower().strip()==namecheck.text.lower().strip()):
             targets = drugelement.find(DRUG_TAG_PREFIX+"targets")
-            # Iterate through the gene targets, find each one's name and locus, and add this to the initial dictionary
             for target in targets.findall(DRUG_TAG_PREFIX+"target"):
                 polypeptide = target.find(DRUG_TAG_PREFIX+"polypeptide")
                 genename, locus, cl = polypeptide.find(DRUG_TAG_PREFIX+"gene-name"), polypeptide.find(DRUG_TAG_PREFIX+"locus"), polypeptide.find(DRUG_TAG_PREFIX+"chromosome-location")
                 gene_targets.update({genename.text: locus.text})
     
-    return gene_targets
+    print(gene_targets)
+
+    return
+
+    for element in root[0].iter(DRUG_TAG_PREFIX+"pharmacodynamics"):
+        print(etree.tostring(element))
+        eunique = pd.Series(e.tag for e in element).unique()
+        print(f"Unique items in top element:\n{eunique}")
+        for i in element.iterchildren():
+            print("Unique items in first child of top element:")
+            print(pd.Series([ie.tag for ie in i]).unique())
+            break
+    return
 
 def get_data() -> tuple[Optional[etree.ElementTree], Optional[pd.DataFrame], Optional[pd.DataFrame]]:
-    # Set up initial variables (important in case any files aren't found)
     db, g1, g2 = None, None, None
-    # Make the relevant directories if they do not exist
     if(os.path.exists("Data")==False):
         os.mkdir("Data")
         os.mkdir(os.path.join("Data","Raw Data"))
-    # Iterate through raw data files. Import GDSC1 and GDSC2 as pandas Dataframes, import DrugBank as an lxml.etree ElementTree
     for filename in os.listdir(os.path.join("Data", "Raw Data")):
         if("gdsc1" in filename.lower()):
             g1 = pd.read_excel(os.path.join("Data", "Raw Data", filename))
@@ -64,7 +70,6 @@ def get_data() -> tuple[Optional[etree.ElementTree], Optional[pd.DataFrame], Opt
             with open(os.path.join("Data", "Raw Data", filename), "r") as f:
                 db = etree.parse(f)
             print(f"Imported DrugBank from {filename}")
-    # If one or more of the data files weren't found, report this as an error
     if(db is None or g1 is None or g2 is None):
         errors = ""
         if(db is None):
@@ -75,6 +80,7 @@ def get_data() -> tuple[Optional[etree.ElementTree], Optional[pd.DataFrame], Opt
             errors += "GDSC2, "
         errors = errors[:-2]
         print(f"Error: cannot find file for {errors}")
+        return None, None, None
     return db, g1, g2
 
 
