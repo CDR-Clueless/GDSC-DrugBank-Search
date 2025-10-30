@@ -11,18 +11,38 @@ def main():
     db, g1, g2 = get_data()
     if(db is None or g1 is None or g2 is None):
         return
+    
+    #print(g1["DRUG_NAME"][:10])
+    #print(g1.columns)
+
+    drug_selected = g1["DRUG_NAME"].values[0]
+    
     # The root tag is '{http://www.drugbank.ca}drugbank', while each subitem has the '{http://www.drugbank.ca}drug' tag
     root = db.getroot()
 
-    runique = pd.Series(r.tag for r in root).unique()
-    print(f"Unique items in root:\n{runique}")
-    seunique = pd.Series(se.tag for se in root[0]).unique()
-    print(f"Unique tags in the root tree:\n{seunique}")
+    #runique = pd.Series(r.tag for r in root).unique()
+    #print(f"Unique items in root:\n{runique}")
+    #seunique = pd.Series(se.tag for se in root[0]).unique()
+    #print(f"Unique tags in the root tree:\n{seunique}")
 
-    towrite = etree.tostring(root[0], pretty_print=True)
+    #towrite = etree.tostring(root[0], pretty_print=True)
 
-    with open(os.path.join("Data", "single.xml"), "w") as f:
-        f.write(str(etree.tostring(root[0], pretty_print=True))[2:-1])
+    #with open(os.path.join("Data", "single.xml"), "w") as f:
+    #    f.write(str(etree.tostring(root[0], pretty_print=True))[2:-1])
+
+    gene_targets = {}
+    for drugelement in root:
+        namecheck = drugelement.find(DRUG_TAG_PREFIX+"name")
+        if(drug_selected.lower().strip()==namecheck.text.lower().strip()):
+            targets = drugelement.find(DRUG_TAG_PREFIX+"targets")
+            for target in targets.findall(DRUG_TAG_PREFIX+"target"):
+                polypeptide = target.find(DRUG_TAG_PREFIX+"polypeptide")
+                genename, locus, cl = polypeptide.find(DRUG_TAG_PREFIX+"gene-name"), polypeptide.find(DRUG_TAG_PREFIX+"locus"), polypeptide.find(DRUG_TAG_PREFIX+"chromosome-location")
+                gene_targets.update({genename.text: locus.text})
+    
+    print(gene_targets)
+
+    return
 
     for element in root[0].iter(DRUG_TAG_PREFIX+"pharmacodynamics"):
         print(etree.tostring(element))
