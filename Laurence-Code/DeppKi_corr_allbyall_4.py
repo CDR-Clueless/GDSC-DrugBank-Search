@@ -20,6 +20,13 @@ import smtplib, ssl
 from email.mime.text import MIMEText
 import email.utils
 
+import os
+CLEANED_DATA_DIR: str = os.path.join("Data", "Laurence-Data")
+DEFAULT_DEP_DAT_FILE: str = os.path.join(CLEANED_DATA_DIR,"CRISPRGeneDependency.csv")
+DEFAULT_HUGO_FILE: str = os.path.join(CLEANED_DATA_DIR, "hgnc_complete_set.tsv")
+DEFAULT_CELL_INFO_FILE: str = os.path.join(CLEANED_DATA_DIR, "Model.csv")
+DEFAULT_DRUG1_FILE: str = os.path.join(CLEANED_DATA_DIR, 'GDSC1_drug_results_target_cleaned7.tsv')
+DEFAULT_DRUG2_FILE: str = os.path.join(CLEANED_DATA_DIR, 'GDSC2_drug_results_target_cleaned7.tsv')
 
 def SendMail(destination, message):
     mymail = "pearlaicode24@gmail.com"
@@ -140,7 +147,7 @@ def UpdateGeneName(g):
 if __name__ == '__main__':
     print("Number of processors: ", mp.cpu_count())
 
-    f = default_dep_dat_file = 'CRISPRGeneDependency.csv'
+    f = DEFAULT_DEP_DAT_FILE
     # f = default_dep_dat_file = 'CRISPRGeneEffect.csv'
     
     # if spec:
@@ -168,7 +175,7 @@ if __name__ == '__main__':
     # print(deps)
     
     # load HUGO chromosomal location data
-    f = default_HUGO_file = 'hgnc_complete_set.tsv'
+    f = DEFAULT_HUGO_FILE
     # if spec:
     #     f = input(f'HUGO Gene file [{default_HUGO_file}] : ')
     #     if f.strip() == '':
@@ -195,7 +202,7 @@ if __name__ == '__main__':
     
     
     
-    f = default_cell_info_file = 'Model.csv'
+    f = DEFAULT_CELL_INFO_FILE
     # if spec:
     #     f = input(
     #         f'Cell sample information file [{default_cell_info_file}] : ')
@@ -212,7 +219,7 @@ if __name__ == '__main__':
     
     # load drug data
     
-    f = default_drug1_file = 'GDSC1_drug_results_target_cleaned7.tsv'
+    f = DEFAULT_DRUG1_FILE
     # if spec:
     #     f = input(f'GDSC1 Gene file [{default_drug1_file}] : ')
     #     if f.strip() == '':
@@ -222,7 +229,7 @@ if __name__ == '__main__':
     drug1.DRUG_NAME = drug1.DRUG_NAME.apply(lambda x:x.upper())
     
     
-    f = default_drug2_file = 'GDSC2_drug_results_target_cleaned7.tsv'
+    f = DEFAULT_DRUG2_FILE
     # if spec:
     #     f = input(f'GDSC2 Gene file [{default_drug2_file}] : ')
     #     if f.strip() == '':
@@ -256,7 +263,10 @@ if __name__ == '__main__':
     
     mess = f'Starting {len(dlist)} Drugs x {len(deps.columns[1:])} Genes correlation calculation'
     
-    SendMail('laurencepearl@btinternet.com',mess)
+    try:
+        SendMail('jds40@sussex.ac.uk',mess)
+    except:
+        print(f"Failed to send e-mail 1:\n{mess}")
     
     nested_dfs = pool.starmap_async(ChunkDrugGene,
             [(i,batch_dlist[i],deps,drug1,drug2) 
@@ -275,7 +285,10 @@ if __name__ == '__main__':
     
     mess = f'{len(dlist)} Drugs x {len(deps.columns[1:])} Genes correlation calculation complete'
     
-    SendMail('laurencepearl@btinternet.com',mess)
+    try:
+        SendMail('jds40@sussex.ac.uk',mess)
+    except:
+        print(f"Failedd to send e-mail 2:\n{mess}")
             
 
             
