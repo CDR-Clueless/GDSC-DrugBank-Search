@@ -1,0 +1,46 @@
+import numpy as np
+import pandas as pd
+from typing import Optional, Union
+import os
+
+CLEANED_DATA: str = "Laurence-Data"
+
+def main() -> None:
+    g1, g2 = import_data_cleaned()
+    if(g1 is None or g2 is None):
+        return
+    print(g1.columns)
+    print(g2.columns)
+    return
+
+def import_data_cleaned():
+    # Ensure data paths are properly set up
+    if(os.path.exists("Data")==False):
+        print("No data folder found. Please run drug_search.py to set up directories")
+        return
+    if(os.path.exists(os.path.join("Data",CLEANED_DATA))==False):
+        os.mkdir(os.path.join("Data",CLEANED_DATA))
+    # Set up initial variables as empty
+    g1, g2 = None, None
+    for filename in os.listdir(os.path.join("Data",CLEANED_DATA)):
+        filepath = os.path.join("Data",CLEANED_DATA,filename)
+        if("gdsc1" in filename.lower() and filename.lower()[-4:]==".tsv"):
+            g1 = pd.read_csv(filepath, sep = "\t")
+            continue
+        if("gdsc2" in filename.lower() and filename.lower()[-4:]==".tsv"):
+            g2 = pd.read_csv(filepath, sep = "\t")
+            continue
+    
+    # Print appropriate error if no data is found
+    if(g1 is None or g2 is None):
+        output_error = []
+        if(g1 is None):
+            output_error.append("GDSC1")
+        if(g2 is None):
+            output_error.append("GDSC2")
+        output_error = " and ".join(output_error)
+        print(f"Error: No data found for {output_error}.\nPlease bear in mind this is data manually cleaned and must be placed within '{CLEANED_DATA}' (CLEANED_DATA global variable)")
+    return g1, g2
+
+if(__name__=="__main__"):
+    main()
