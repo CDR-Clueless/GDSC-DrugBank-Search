@@ -4,6 +4,7 @@
 Created on Thu Oct 24 08:55:06 2024
 
 @author: lp217
+@coauthor: jds40
 """
 
 import pandas as pd
@@ -20,6 +21,7 @@ import smtplib, ssl
 from email.mime.text import MIMEText
 import email.utils
 
+from copy import deepcopy
 import os
 CLEANED_DATA_DIR: str = os.path.join("Data", "Laurence-Data")
 DEFAULT_DEP_DAT_FILE: str = os.path.join(CLEANED_DATA_DIR,"CRISPRGeneDependency.csv")
@@ -67,6 +69,14 @@ def ChunkDrugGene(it,dl,deps,drug1,drug2):
 
 
     for d in dl:
+        # Load the calculation for this data if it exists
+        starfiledir = os.path.join(CLEANED_DATA_DIR, "temp_starmap_store", f"starmapcorrelations-{d}")
+        if(os.path.exists(starfiledir)):
+           dresult = pd.read_csv(os.path.join(CLEANED_DATA_DIR, "temp_starmap_store", f""), sep = "\t", index = False, lineterminator="\n")
+           result[:, d] = deepcopy(dresult)
+           print(f"Thread {it} found and loaded correlations for {d}", flush = True)
+           continue
+
         print(f'Thread {it} Calculating correlations for {d}',flush=True)
 
         c1 = drug1[drug1.DRUG_NAME == d]['ModelID']
@@ -122,6 +132,9 @@ def ChunkDrugGene(it,dl,deps,drug1,drug2):
             result.at[gn,d] = max(pr1,pr2,key=abs)
             if (i % 1000) == 0:
                 print(f'Thread {it} done {i} genes',flush=True)
+
+        # Save result for this valud of 'd', in case the program is interrupted
+        result[d].to_csv(starfiledir, sep = "\t", index = False, lineterminator="\n")
             
     return(result)
             
@@ -268,6 +281,10 @@ if __name__ == '__main__':
     except:
         print(f"Failed to send e-mail 1:\n{mess}")
     
+    # Set up directory to store temporary calculations from parallel functions
+    if(os.path.exists(os.path.join(CLEANED_DATA_DIR, "temp_starmap_store"))==False):
+        os.mkdir(os.path.join(CLEANED_DATA_DIR, "temp_starmap_store"))
+
     nested_dfs = pool.starmap_async(ChunkDrugGene,
             [(i,batch_dlist[i],deps,drug1,drug2) 
              for i in range(usable_CPUs)]).get()
@@ -281,7 +298,10 @@ if __name__ == '__main__':
     print('Writing Genes x Drugs file)')
     allbyall.rename({'symbol': 'drug'}, axis='columns').set_index('drug').T.to_csv('AllGenesByAllDrugs.tsv', sep='\t', index=True, header=True)
     
-    
+    # Delete the temporary data store
+    for filename in os.listdir(os.path.join(CLEANED_DATA_DIR, "temp_starmap_store")):
+        os.remove(os.path.join(CLEANED_DATA_DIR, "temp_starmap_store", filename))
+    os.rmdir(os.path.join(CLEANED_DATA_DIR, "temp_starmap_store"))
     
     mess = f'{len(dlist)} Drugs x {len(deps.columns[1:])} Genes correlation calculation complete'
     
