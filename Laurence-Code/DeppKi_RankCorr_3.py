@@ -8,7 +8,7 @@ Created on Thu Oct 24 08:55:06 2024
 
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+from matplotlib import pyplot as plt
 import igraph as ig
 from math import ceil,log10
 from collections import OrderedDict, Counter
@@ -22,10 +22,27 @@ import smtplib, ssl
 from email.mime.text import MIMEText
 import email.utils
 
+import os
+import sys
+import json
+
+CLEANED_DATA_DIR: str = os.path.join("Data", "Laurence-Data")
+DEFAULT_DEP_DAT_FILE: str = os.path.join(CLEANED_DATA_DIR,"CRISPRGeneDependency.csv")
+DEFAULT_HUGO_FILE: str = os.path.join(CLEANED_DATA_DIR, "hgnc_complete_set.tsv")
+DEFAULT_CELL_INFO_FILE: str = os.path.join(CLEANED_DATA_DIR, "Model.csv")
+DEFAULT_DRUG1_FILE: str = os.path.join(CLEANED_DATA_DIR, 'GDSC1_drug_results_target_cleaned7.tsv')
+DEFAULT_DRUG2_FILE: str = os.path.join(CLEANED_DATA_DIR, 'GDSC2_drug_results_target_cleaned7.tsv')
+DEFAULT_ALL_BY_ALL_FILE: str = os.path.join(CLEANED_DATA_DIR, "AllDrugsByAllGenes.tsv")
+DEFAULT_STRING_INFO_FILE: str = os.path.join(CLEANED_DATA_DIR, "9606.protein.info.v12.0.txt")
+DEFAULT_STRING_LINK_FILE: str = os.path.join(CLEANED_DATA_DIR, "9606.protein.links.v12.0.txt")
+with open(os.path.join("Local", "passwords.json"), "r") as f:
+    DESTINATION_EMAIL = json.load(f)["destination-email"]
 
 def SendMail(destination, message):
-    mymail = "pearlaicode24@gmail.com"
-    password = "iujr uusm zqdv yryu"
+    with open(os.path.join("Local", "passwords.json"), "r") as f:
+        login = json.load(f)
+    mymail = login["pearlaiemail"]["email"]
+    password = login["pearlaiemail"]["password"]
     receiver = destination
     message = MIMEText(message, "plain")
     message["Subject"] = "Message from PearlAI"
@@ -56,7 +73,7 @@ def sort_corrs(d):
     return corrs[['symbol',d]].sort_values(
         by=d,ascending =False).reset_index().drop('index',axis=1)
 
-f = default_dep_dat_file = 'CRISPRGeneDependency.csv'
+f = DEFAULT_DEP_DAT_FILE
 # f = default_dep_dat_file = 'CRISPRGeneEffect.csv'
 
 # if spec:
@@ -84,7 +101,7 @@ deps.rename(columns=gg, inplace=True)
 # print(deps)
 
 # load HUGO chromosomal location data
-f = default_HUGO_file = 'hgnc_complete_set.tsv'
+f = DEFAULT_HUGO_FILE
 # if spec:
 #     f = input(f'HUGO Gene file [{default_HUGO_file}] : ')
 #     if f.strip() == '':
@@ -111,7 +128,7 @@ for g in bad_names:
 
 
 
-f = default_cell_info_file = 'Model.csv'
+f = DEFAULT_CELL_INFO_FILE
 # if spec:
 #     f = input(
 #         f'Cell sample information file [{default_cell_info_file}] : ')
@@ -128,7 +145,7 @@ cancer_types = set(info['OncotreeLineage'])
 
 # load drug data
 
-f = default_drug1_file = 'GDSC1_drug_results_target_cleaned7.tsv'
+f = DEFAULT_DRUG1_FILE
 # if spec:
 #     f = input(f'GDSC1 Gene file [{default_drug1_file}] : ')
 #     if f.strip() == '':
@@ -138,7 +155,7 @@ drug1 = pd.read_table(f, low_memory=False).fillna('')
 drug1.DRUG_NAME = drug1.DRUG_NAME.apply(lambda x:x.upper())
 
 
-f = default_drug2_file = 'GDSC2_drug_results_target_cleaned7.tsv'
+f = DEFAULT_DRUG2_FILE
 # if spec:
 #     f = input(f'GDSC2 Gene file [{default_drug2_file}] : ')
 #     if f.strip() == '':
@@ -151,7 +168,7 @@ drug_names = set(drug1.DRUG_NAME) | set(drug2.DRUG_NAME)
 
 # load AllByAll data
 
-corrs = pd.read_table('AllDrugsByAllGenes.tsv').fillna(0.0)
+corrs = pd.read_table(DEFAULT_ALL_BY_ALL_FILE).fillna(0.0)
 
 
 # regval = {}
@@ -167,11 +184,11 @@ print(f'{len(dlist)} drugs to analyse')
 
 for d in dlist:
     
-# get correlations for this drug as sorted list
+    # get correlations for this drug as sorted list
 
     dc = sort_corrs(d)
     
-# get target gene name(s)
+    # get target gene name(s)
     
     t1 = drug1[drug1.DRUG_NAME == d]['PUTATIVE_TARGET'].unique()
     t2 = drug2[drug2.DRUG_NAME == d]['PUTATIVE_TARGET'].unique()
@@ -189,7 +206,7 @@ for d in dlist:
             print(f"Can't match {g} to a gene name for drug {d} - skipping")
             continue
     
-# get index of match to target
+        # get index of match to target
         
 
         i = dc.index[dc.symbol == gn].tolist()
@@ -197,12 +214,12 @@ for d in dlist:
             print(f'No correlation data for Gene {gn} with Drug {d} - skipping ..')
             continue
         i = i[0]
-        print(f'Drug {d} - target {gn} - rank {i}')
+        #print(f'Drug {d} - target {gn} - rank {i}')
     
         top10 = dc[dc[d] > 0.0]['symbol'].to_list()[:10]
         results.loc[len(results)] = [d,gn,i,top10]
         
-results.to_csv('TargetRanking.tsv', sep='\t', index=False, header=True)
+results.to_csv(os.path.join(CLEANED_DATA_DIR, 'TargetRanking.tsv'), sep='\t', index=False, header=True)
 
 # plot histogram of target ranking. For multiple targets take highest ranking of group
 
@@ -218,14 +235,17 @@ plt.hist(rc,bins=np.arange(7)-0.5,align='mid',rwidth=0.5)
 plt.xlabel('Target rank position',fontsize=15)
 plt.ylabel('N',rotation='horizontal',fontsize=15)
 plt.title('Target Dependency/Drug Efficacy Correlation',fontsize=15)
-plt.show()
+plt.savefig(os.path.join(CLEANED_DATA_DIR, "Target Dependency-Efficacy correlation.png"))
+plt.clf()
+plt.close()
+#plt.show()
 
-SendMail('laurencepearl@btinternet.com','Drug/Gene Ranking complete')
+SendMail(DESTINATION_EMAIL,'Drug/Gene Ranking complete')
 
 
 # read in human genome interactions from STRING
 
-stinfo = pd.read_table('9606.protein.info.v12.0.txt',usecols=['#string_protein_id','preferred_name']).fillna('')
+stinfo = pd.read_table(DEFAULT_STRING_INFO_FILE,usecols=['#string_protein_id','preferred_name']).fillna('')
 
 stinfo.rename(columns = {'#string_protein_id':'ID','preferred_name':'symbol'},inplace=True)
 
@@ -245,7 +265,7 @@ for g in bad_names:
 
 stdict = dict(zip(stinfo.ID,stinfo.symbol))
 
-stlink = pd.read_csv('9606.protein.links.v12.0.txt',sep=' ')
+stlink = pd.read_csv(DEFAULT_STRING_LINK_FILE,sep=' ')
 
 # filter links to combined_score > 0.8
 
@@ -270,33 +290,51 @@ print('Done !!')
 
 results = results.sort_values('RANK')
 
-for i in range(len(results)):
-    targ = results.iloc[i].TARGET
-    top10 = results.iloc[i].TOP10
-    d = results.iloc[i].DRUG
+fig_out = os.path.join(CLEANED_DATA_DIR, "RankCorr_graphs")
+error_output = os.path.join(CLEANED_DATA_DIR, "errors.txt")
+with open(error_output, "w") as f:
+    f.write("")
+if(os.path.exists(fig_out)==False):
+    os.mkdir(fig_out)
 
-# loop through drugs analysing network link from target to top10 corr hits
-    print(f'Drug : {d} Target : {targ}')
+for ri in range(len(results)):
+    targ = results.iloc[ri].TARGET
+    top10 = results.iloc[ri].TOP10
+    d = results.iloc[ri].DRUG
+
+    # loop through drugs analysing network link from target to top10 corr hits
+    #print(f'Drug: {d} Target: {targ}')
 
     
-# find shortest path from target to each of the top10 and accumulate vertices
+    # find shortest path from target to each of the top10 and accumulate vertices
 
     cliq = []
+
+    error = False
     
     for t in top10:
-        sp = g.get_shortest_paths(targ, to=t, weights=g.es["combined_score"], output="vpath")[0]
-        cliq += sp
+        try:
+            sp = g.get_shortest_paths(targ, to=t, weights=g.es["combined_score"], output="vpath")[0]
+            cliq += sp
+        except Exception as e:
+            print(f"Issue with result {ri} drug {d} target {targ} path to {t}: {e}")
+            with open(error_output, "a") as f:
+                f.write(f"Issue with result {ri} drug {d} target {targ} path to {t}: {e}\n")
+            error = True
+    
+    if(error):
+        continue
     cliq = list(set(cliq))
 
-# find encompassing subgraph
+    # find encompassing subgraph
 
     subg = g.subgraph(cliq)
     
-# make unidirectional
+    # make unidirectional
 
     ssg = subg.as_undirected().simplify()
     
-# find communities
+    # find communities
 
     com = ssg.community_edge_betweenness().as_clustering()
     num_com = len(com)
@@ -307,7 +345,7 @@ for i in range(len(results)):
         community_edges = ssg.es.select(_within=community)
         community_edges["color"] = i
     
-# transfer edge weights from bidirectional graph
+    # transfer edge weights from bidirectional graph
 
     for i,e in enumerate(ssg.es):
         ss = e.source
@@ -317,7 +355,7 @@ for i in range(len(results)):
                 ssg.es[i]['combined_score'] = f['combined_score']
         
         
-# get edge values
+    # get edge values
 
     pvals = [p for p in ssg.es['combined_score']]
     pmax = max(pvals)
@@ -342,9 +380,20 @@ for i in range(len(results)):
     style['edge_width'] = [10*(p-pmin)/prange+2.0 for p in pvals]
     # style['edge_arrow_size'] = [max(0.5,2.2*(p-pmin)/prange+0.1) for p in ssg.es['combined_score']]
 
-    ig.plot(com,palette=palette,target=ax,**style)
-    # print(targ+'_net2.pdf created' )
-    plt.show()
+    try:
+        ig.plot(com,palette=palette,target=ax,**style)
+        # print(targ+'_net2.pdf created')
+        plt.savefig(os.path.join(fig_out, f"Output-{ri}-{d}.png"))
+        #plt.show()
+        plt.clf()
+        plt.close()
+    except Exception as e:
+        print(f"Failed to plot for graph {ri}-{d} due to error {e}")
+        with open(error_output, "a") as f:
+            f.write(f"Failed to plot for graph {ri}-{d} due to error {e}")
+        error = True
+    if(error):
+        continue
 
 
 

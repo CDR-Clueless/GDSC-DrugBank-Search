@@ -16,6 +16,7 @@ from scipy.stats import pearsonr
 from timeit import default_timer as timer
 import multiprocessing as mp
 # from igraph import Graph,plot
+import json
 
 import smtplib, ssl
 from email.mime.text import MIMEText
@@ -23,16 +24,21 @@ import email.utils
 
 from copy import deepcopy
 import os
+
 CLEANED_DATA_DIR: str = os.path.join("Data", "Laurence-Data")
 DEFAULT_DEP_DAT_FILE: str = os.path.join(CLEANED_DATA_DIR,"CRISPRGeneDependency.csv")
 DEFAULT_HUGO_FILE: str = os.path.join(CLEANED_DATA_DIR, "hgnc_complete_set.tsv")
 DEFAULT_CELL_INFO_FILE: str = os.path.join(CLEANED_DATA_DIR, "Model.csv")
 DEFAULT_DRUG1_FILE: str = os.path.join(CLEANED_DATA_DIR, 'GDSC1_drug_results_target_cleaned7.tsv')
 DEFAULT_DRUG2_FILE: str = os.path.join(CLEANED_DATA_DIR, 'GDSC2_drug_results_target_cleaned7.tsv')
+with open(os.path.join("Local", "passwords.json"), "r") as f:
+    DESTINATION_EMAIL = json.load(f)["destination-email"]
 
 def SendMail(destination, message):
-    mymail = "pearlaicode24@gmail.com"
-    password = "iujr uusm zqdv yryu"
+    with open(os.path.join("Local", "passwords.json"), "r") as f:
+        login = json.load(f)
+    mymail = login["pearlaiemail"]["email"]
+    password = login["pearlaiemail"]["password"]
     receiver = destination
     message = MIMEText(message, "plain")
     message["Subject"] = "Message from PearlAI"
@@ -277,7 +283,7 @@ if __name__ == '__main__':
     mess = f'Starting {len(dlist)} Drugs x {len(deps.columns[1:])} Genes correlation calculation'
     
     try:
-        SendMail('jds40@sussex.ac.uk',mess)
+        SendMail(DESTINATION_EMAIL,mess)
     except:
         print(f"Failed to send e-mail 1:\n{mess}")
     
@@ -294,9 +300,9 @@ if __name__ == '__main__':
     allbyall = pd.concat(nested_dfs,axis=1)   
     
     print('Writing Drugs x Genes file)')
-    allbyall.to_csv('AllDrugsByAllGenes.tsv', sep='\t', index=True, header=True)
+    allbyall.to_csv(os.path.join(CLEANED_DATA_DIR, 'AllDrugsByAllGenes.tsv'), sep='\t', index=True, header=True)
     print('Writing Genes x Drugs file)')
-    allbyall.rename({'symbol': 'drug'}, axis='columns').set_index('drug').T.to_csv('AllGenesByAllDrugs.tsv', sep='\t', index=True, header=True)
+    allbyall.rename({'symbol': 'drug'}, axis='columns').set_index('drug').T.to_csv(os.path.join(CLEANED_DATA_DIR, 'AllGenesByAllDrugs.tsv'), sep='\t', index=True, header=True)
     
     # Delete the temporary data store
     for filename in os.listdir(os.path.join(CLEANED_DATA_DIR, "temp_starmap_store")):
@@ -306,7 +312,7 @@ if __name__ == '__main__':
     mess = f'{len(dlist)} Drugs x {len(deps.columns[1:])} Genes correlation calculation complete'
     
     try:
-        SendMail('jds40@sussex.ac.uk',mess)
+        SendMail(DESTINATION_EMAIL,mess)
     except:
         print(f"Failedd to send e-mail 2:\n{mess}")
             
