@@ -11,27 +11,40 @@ import numpy as np
 import pandas as pd
 from lxml import etree
 
-from typing import Optional
+from typing import Optional, Union
 
 DRUG_TAG_PREFIX: str = "{http://www.drugbank.ca}"
 
-def main():
+class Searcher:
+    def __init__(self):
+        # Load data so it doesn't later need re-loading
+        self.db, self.g1, self.g2 = get_data()
+        print("Searcher successfully initialised")
+        return
+    
+    def get_targets(self, drug: str):
+        # Pass DB/G1/G2 databases so they don't need reloading
+        return get_targets(drug, (self.db, self.g1, self.g2))
+
+def get_targets(drug_selected: str, data: Optional[Union[list, tuple]] = None):
     # Load in the data with the get_data function; this loads GDSC1 and GDSC2 as pandas dataframes, and DrugBank as an lxml ElementTree object
-    db, g1, g2 = get_data()
+    if(data is None):
+        db, g1, g2 = get_data()
+    else:
+        db, g1, g2 = data
     # If there are any load-in failures, stop the program
     if(db is None or g1 is None or g2 is None):
         return
 
     # Select drug - currently this is just the first value from GDSC1 but in theory it could be any drug name from GDSC1/2
-    drug_selected = g1["DRUG_NAME"].values[0]
+    #drug_selected = g1["DRUG_NAME"].values[0]
     
     # Get the DrugBank tree as a root; some information about this tree:
     #   The root tag is '{http://www.drugbank.ca}drugbank', while each subitem has the '{http://www.drugbank.ca}drug' tag
     root = db.getroot()
     
     # Find the gene names and loci targeted by the drug according to DrugBank
-    print(find_targets(drug_selected, root))
-    return
+    return find_targets(drug_selected, root)
 
 def find_targets(drugTarget: str, drugBank: etree.ElementTree) -> dict:
 
