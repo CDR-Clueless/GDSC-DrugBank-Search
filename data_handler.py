@@ -13,9 +13,11 @@ from lxml import etree
 from typing import Union
 
 class DataHandler:
-    def __init__(self, datasets: Union[tuple, list]):
+    def __init__(self, datasets: Union[tuple, list, None] = None):
         # Setup internal datasets list
         self.datasets = {}
+        if(datasets is None):
+            return
         # Check if the datasets provided is a matrix or an array (tuple of tuples i.e. multiple datasets or just an array i.e. 1 dataset) and load as appropriate
         if(len(datasets)==2):
             if(type(datasets[0]) not in [tuple, list]):
@@ -63,7 +65,7 @@ class DataHandler:
             return
         return self.datasets[dataset_id]
     
-    def insert_data(self, dataset_id: str, data: Union[pd.DataFrame, etree.ElementTree], overwrite: bool = False) -> None:
+    def insert_data(self, dataset_id: str, data: Union[pd.DataFrame, etree.ElementTree], overwrite: bool = False, copy: bool = False) -> None:
         # Check whether the dataset_id provided is already loaded into the DataHandler and whether to overwrite if so
         if(dataset_id in self.datasets and overwrite==False):
             print(f"Data ID {dataset_id} already exists. Please erase this dataset first or set overwrite to True")
@@ -71,5 +73,9 @@ class DataHandler:
         elif(dataset_id in self.datasets and overwrite):
             print(f"Data ID {dataset_id} already exists. Overwriting...")
         # Insert data into DataHandler
-        self.datasets[dataset_id] = deepcopy(data)
+        if(copy):
+            self.datasets[dataset_id] = deepcopy(data)
+        else:
+            self.datasets[dataset_id] = data
+        print(f"Inserted data with ID {dataset_id}")
         return

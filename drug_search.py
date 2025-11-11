@@ -50,6 +50,10 @@ def find_targets(drugTarget: str, drugBank: etree.ElementTree) -> dict:
             # Iterate through the gene targets, find each one's name and locus, and add this to the initial dictionary
             for target in targets.findall(DRUG_TAG_PREFIX+"target"):
                 polypeptide = target.find(DRUG_TAG_PREFIX+"polypeptide")
+                # If there is no polypeptide found, add this target as an exception
+                if(polypeptide is None):
+                    gene_targets.update({f"{target} (Irregualr target)": None})
+                    continue
                 genename, locus, cl = polypeptide.find(DRUG_TAG_PREFIX+"gene-name"), polypeptide.find(DRUG_TAG_PREFIX+"locus"), polypeptide.find(DRUG_TAG_PREFIX+"chromosome-location")
                 gene_targets.update({genename.text: locus.text})
     
