@@ -15,17 +15,6 @@ from typing import Optional, Union
 
 DRUG_TAG_PREFIX: str = "{http://www.drugbank.ca}"
 
-class Searcher:
-    def __init__(self):
-        # Load data so it doesn't later need re-loading
-        self.db, self.g1, self.g2 = get_data()
-        print("Searcher successfully initialised")
-        return
-    
-    def get_targets(self, drug: str):
-        # Pass DB/G1/G2 databases so they don't need reloading
-        return get_targets(drug, (self.db, self.g1, self.g2))
-
 def get_targets(drug_selected: str, data: Optional[Union[list, tuple]] = None):
     # Load in the data with the get_data function; this loads GDSC1 and GDSC2 as pandas dataframes, and DrugBank as an lxml ElementTree object
     if(data is None):
@@ -97,7 +86,3 @@ def get_data() -> tuple[Optional[etree.ElementTree], Optional[pd.DataFrame], Opt
         errors = errors[:-2]
         print(f"Error: cannot find file for {errors}")
     return db, g1, g2
-
-
-if __name__ == "__main__":
-    main()
