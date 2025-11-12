@@ -66,6 +66,15 @@ class DataHandler:
         return self.datasets[dataset_id]
     
     def insert_data(self, dataset_id: str, data: Union[pd.DataFrame, etree.ElementTree], overwrite: bool = False, copy: bool = False) -> None:
+        """
+        Insert a variable into the object's datasets dictionary
+
+        Args:
+            dataset_id (str): _description_
+            data (Union[pd.DataFrame, etree.ElementTree]): _description_
+            overwrite (bool, optional): _description_. Defaults to False.
+            copy (bool, optional): _description_. Defaults to False.
+        """
         # Check whether the dataset_id provided is already loaded into the DataHandler and whether to overwrite if so
         if(dataset_id in self.datasets and overwrite==False):
             print(f"Data ID {dataset_id} already exists. Please erase this dataset first or set overwrite to True")
