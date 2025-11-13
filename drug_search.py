@@ -90,3 +90,11 @@ def get_data() -> tuple[Optional[etree.ElementTree], Optional[pd.DataFrame], Opt
         errors = errors[:-2]
         print(f"Error: cannot find file for {errors}")
     return db, g1, g2
+
+def make_dir(directory_to_make: str) -> None:
+    path = ""
+    for part in directory_to_make.split(os.sep):
+        path = os.path.join(path, part)
+        if(os.path.exists(path)==False):
+            os.mkdir(path)
+    return
