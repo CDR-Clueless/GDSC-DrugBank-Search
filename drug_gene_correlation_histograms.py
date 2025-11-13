@@ -20,9 +20,16 @@ from data_handler import DataHandler
 from drug_search import make_dir
 
 class CorrelationPlotter(DataHandler):
-    def __init__():
+    def __init__(self):
+        # Call super init function and insert the relevant AllGenesByAllDrugs data into the instance
         super().__init__((("AllByAll", os.path.join(CLEAN_DATA_DIR, "AllGenesByAllDrugs.tsv"))))
+        self.datasets["AllByAll"] = self.datasets["AllByAll"].rename(columns = {"Unnamed: 0": "Drug"})
     
+    def plot_all(self) -> None:
+        self.plot_drug_correlations()
+        self.plot_gene_correlations()
+        return
+
     def plot_drug_correlations(self) -> None:
         gxd = self.datasets["AllByAll"]
         sns.set_theme()
@@ -33,6 +40,7 @@ class CorrelationPlotter(DataHandler):
         for index, row in tqdm(gxd.iterrows(), total = gxd.shape[0]):
             drug, scores = row["Drug"], row.values[1:]
             self.save_histogram(scores, f"{drug}-gene LOG correlations", results_dir)
+        return
     
     def plot_gene_correlations(self) -> None:
         gxd = self.datasets["AllByAll"]
