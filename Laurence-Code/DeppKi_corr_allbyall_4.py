@@ -65,17 +65,27 @@ def split_list(l: list, parts: int) -> list:
     return [l[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n)]
 
 
-def ChunkDrugGene(it,dl,deps,drug1,drug2):
+def ChunkDrugGene(it: int, dl: set, deps: pd.DataFrame, drug1: pd.DataFrame, drug2: pd.DataFrame):
+    """
+    
+    Function for calculating Drug-gene correlations for a chunk of drugs (necessary for parallel processing)
+
+    Args:
+        it (int): (Simplified) ID for the thread working on this chunk
+        dl (set): Set of drugs in this chunk to be tested
+        deps (pd.DataFrame): DataFrame of CRISPR gene dependency data (DepMap)
+        drug1 (pd.DataFrame): DataFrame of GDSC1 data
+        drug2 (pd.DataFrame): DataFrame of GDSC2 data
+    """
+
     result = pd.DataFrame(columns=['symbol']+dl)
     result.symbol = list(deps.columns[1:])
     result = result.fillna(0.0)
     result.set_index('symbol', inplace=True)
 
     # loop through all drugs, calculating r for all genes
-
-
     for d in dl:
-        # Load the calculation for this data if it exists
+        # Load the calculation for this data if it has already been calculated
         starfiledir = os.path.join(CLEANED_DATA_DIR, "temp_starmap_store", f"starmapcorrelations-{d}")
         if(os.path.exists(starfiledir)):
            dresult = pd.read_csv(os.path.join(CLEANED_DATA_DIR, "temp_starmap_store", f""), sep = "\t", index = False, lineterminator="\n")
@@ -83,6 +93,7 @@ def ChunkDrugGene(it,dl,deps,drug1,drug2):
            print(f"Thread {it} found and loaded correlations for {d}", flush = True)
            continue
 
+        # If there is no file, calculate the correlations for this drug
         print(f'Thread {it} Calculating correlations for {d}',flush=True)
 
         c1 = drug1[drug1.DRUG_NAME == d]['ModelID']
@@ -90,35 +101,34 @@ def ChunkDrugGene(it,dl,deps,drug1,drug2):
                 
         for i,gn in enumerate(deps.columns[1:]):
             
-    # get deps
-
+            # get deps
             dep1 = deps[deps.index.isin(c1)][gn].reset_index()
             dep1_names = list(dep1.ModelID)
             dep2 = deps[deps.index.isin(c2)][gn].reset_index()
             dep2_names = list(dep2.ModelID)
             
-    # get pKis
-
+            # get pKis
             if len(dep1) > 0:
+                # Get first available pKi value for relevant drug with acceptable ModelID values
                 pKi1 = drug1[(drug1.DRUG_NAME == d) & 
                              (drug1.ModelID.isin(dep1_names))].drop_duplicates \
                             (subset=["ModelID"], keep='first')[['pKi','ModelID']]
-    # merge data on common ModelID
+                # merge data on common ModelID
                 dpdat1 = dep1.merge(pKi1)
                 
             if len(dep2) > 0:
                 pKi2 = drug2[(drug2.DRUG_NAME == d) & 
                              (drug2.ModelID.isin(dep2_names))].drop_duplicates \
                             (subset=["ModelID"], keep='first')[['pKi','ModelID']]
-    # merge data on common ModelID
+                # merge data on common ModelID
                 dpdat2 = dep2.merge(pKi2)
                 
             pr1,pp1,pr2,pp2 = 0,1,0,1
 
             if len(dep1) > 0:
                 
+                # Correlation coefficient between current gene expression (0 or 1 as it's binary k/o) and pKi value
                 x = np.array(dpdat1[gn])
-                # X = x[:,np.newaxis]
                 y = dpdat1['pKi']
                                 
                 pr1,pp1 = pearsonr(x,y)
@@ -133,7 +143,7 @@ def ChunkDrugGene(it,dl,deps,drug1,drug2):
                 pr2,pp2 = pearsonr(x,y)
                 # print(f'{d} - {gn} : r = {pr2:.3f}, p = {pp2:.3g}')
                 
-    # select which value to use
+            # select which value to use; pr1 or pr2
 
             result.at[gn,d] = max(pr1,pr2,key=abs)
             if (i % 1000) == 0:
