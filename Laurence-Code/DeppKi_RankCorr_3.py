@@ -251,28 +251,41 @@ stinfo = pd.read_table(DEFAULT_STRING_INFO_FILE,usecols=['#string_protein_id','p
 stinfo.rename(columns = {'#string_protein_id':'ID','preferred_name':'symbol'},inplace=True)
 
 # normalise any archaic names
+def update_hgnc(df: pd.DataFrame, hgncdata: pd.DataFrame) -> pd.DataFrame:
+    """
+    
+    Normalise archaic names using HGNC standard
 
-bad_names = set(stinfo.symbol) & (set(stinfo.symbol) ^ set(hgnc.index))
+    Args:
+        df (pd.DataFrame): DataFrame with names to replace using HGNC
+        hgncdata (pd.DataFrame): HGNC data
 
-for g in bad_names:
-    g2 = hgnc[hgnc['prev_symbol'].str.contains(g)].reset_index()['symbol']
-    if len(g2) == 0 or (g2[0] not in hgnc.index):
-        print(f'STRING Gene name {g} not found in HUGO - ignoring it')
-        continue
-    else:
-        print(f'DepMap old gene name {g} replaced by new name {g2[0]}')
-        stinfo.replace(g,g2[0], inplace=True)
+    Returns:
+        pd.DataFrame: Version of 'df' with updated gene names
+    """
+    bad_names = set(df.symbol) & (set(df.symbol) ^ set(hgncdata.index))
 
+    for g in bad_names:
+        g2 = hgncdata[hgncdata['prev_symbol'].str.contains(g)].reset_index()['symbol']
+        if len(g2) == 0 or (g2[0] not in hgncdata.index):
+            print(f'STRING Gene name {g} not found in HUGO - ignoring it')
+            continue
+        else:
+            print(f'STRING old gene name {g} replaced by new name {g2[0]}')
+            df.replace(g,g2[0], inplace=True)
+    return df
+
+stinfo = update_hgnc(stinfo, hgnc)
 
 stdict = dict(zip(stinfo.ID,stinfo.symbol))
 
 stlink = pd.read_csv(DEFAULT_STRING_LINK_FILE,sep=' ')
 
 # filter links to combined_score > 0.8
-
 stlink.combined_score = stlink.combined_score.astype(int)
 stlink[stlink.combined_score.gt(800)]
 
+# Change proteins in stlink from ID's to HGNC-checked names
 stlink.protein1 = stlink.protein1.apply(lambda x: stdict[x])
 stlink.protein2 = stlink.protein2.apply(lambda x: stdict[x])
 
