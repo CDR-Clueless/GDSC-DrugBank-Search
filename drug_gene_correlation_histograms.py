@@ -64,16 +64,18 @@ class CorrelationPlotter(DataHandler):
         # Loop through relevant variables to produce regular and logged histograms
         for y, ylabel, title in zip((counts, logcounts), ("Frequency", "Log frequency"), \
                                             (titlebase.replace("LOG ",""), titlebase.replace("LOG", "log"))):
+            # Main histogram
             plt.stairs(y, bins, fill = True)
+            # Black bars separating bins
             plt.plot([(bins[i]+bins[i+1])/2 for i in range(len(bins)-1)], y, color = "black")
             plt.xlabel("Survivability correlation")
             plt.ylabel(ylabel)
             plt.title(title)
             # Add quantile markings if appropriate
             if(len(quantiles)>0):
-                vals = np.quantile(y, quantiles)
-                for quantile, val in zip(quantiles, vals):
-                    plt.plot([quantile, quantile], [0, max(y)*1.01], linestyle = "--", color = "r")
-                    plt.text(quantile, max(y)*1.05, f"{quantile} = {round(val, 3)}")
+                vals = np.quantile(scores, quantiles)
+                for quantile, val, x in zip(quantiles, vals, np.linspace(-1, 1, len(quantiles), endpoint=False)):
+                    plt.plot([val, val], [0, max(y)*1.01], linestyle = "--", color = "r")
+                    plt.text(x, max(y)*1.05, f"Quantile {quantile} = {round(val, 3)}", size = "xx-small")
             plt.savefig(os.path.join(results_dir, title+" histogram.png"))
             plt.clf()
