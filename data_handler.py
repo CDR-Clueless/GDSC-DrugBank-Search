@@ -41,6 +41,8 @@ class DataHandler:
             data = pd.read_csv(dataset_fileloc)
         elif(fileend=="tsv"):
             data = pd.read_csv(dataset_fileloc, sep = "\t")
+        elif(fileend=="ssv"):
+            data = pd.read_csv(dataset_fileloc, sep = " ")
         elif(fileend in ["xls", "xlsx"]):
             data = pd.read_excel(dataset_fileloc)
         elif(fileend == ".xml"):
