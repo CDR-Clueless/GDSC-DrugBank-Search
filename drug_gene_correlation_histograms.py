@@ -54,10 +54,14 @@ class CorrelationPlotter(DataHandler):
             self.save_histogram(scores, f"{gene}-drug LOG correlations", results_dir)
         return
     
-    def save_histogram(self, scores: Union[np.ndarray, list, tuple], titlebase: str, results_dir: str) -> None:
+    def save_histogram(self, scores: Union[np.ndarray, list, tuple], titlebase: str, results_dir: str,
+                       quantiles: list = [0.05, 0.25, 0.5, 0.75, 0.95]) -> None:
+        # Get counts and bins for histograms
         counts, bins = np.histogram(scores, bins = np.arange(-1, 1, 0.05))
+        # Get the (corrected) log of these counts for the log graph
         logcounts = np.log(counts)
         logcounts[logcounts == -np.inf] = 0
+        # Loop through relevant variables to produce regular and logged histograms
         for y, ylabel, title in zip((counts, logcounts), ("Frequency", "Log frequency"), \
                                             (titlebase.replace("LOG ",""), titlebase.replace("LOG", "log"))):
             plt.stairs(y, bins, fill = True)
@@ -65,5 +69,11 @@ class CorrelationPlotter(DataHandler):
             plt.xlabel("Survivability correlation")
             plt.ylabel(ylabel)
             plt.title(title)
+            # Add quantile markings if appropriate
+            if(len(quantiles)>0):
+                vals = np.quantile(y, quantiles)
+                for quantile, val in zip(quantiles, vals):
+                    plt.plot([quantile, quantile], [0, max(y)*1.01], linestyle = "--", color = "r")
+                    plt.text(quantile, max(y)*1.05, f"{quantile} = {round(val, 3)}")
             plt.savefig(os.path.join(results_dir, title+" histogram.png"))
             plt.clf()
