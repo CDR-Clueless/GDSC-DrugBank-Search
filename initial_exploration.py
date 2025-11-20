@@ -15,6 +15,7 @@ from copy import deepcopy
 import json
 from tqdm import tqdm
 import ast
+import igraph as ig
 
 from typing import Optional
 
@@ -29,7 +30,10 @@ DEFAULT_ALL_BY_ALL_FILE: str = os.path.join(CLEANED_DATA_DIR, "AllDrugsByAllGene
 DEFAULT_STRING_INFO_FILE: str = os.path.join(CLEANED_DATA_DIR, "9606.protein.info.v12.0.txt")
 DEFAULT_STRING_LINK_FILE: str = os.path.join(CLEANED_DATA_DIR, "9606.protein.links.v12.0.ssv")
 
+TARGET_DRUG = "5-AZACYTIDINE"
+
 def main():
+    """
     ## Import relevant datasets and amend them
     # HGNC
     hgnc = pd.read_table(DEFAULT_HUGO_FILE, low_memory=False).fillna('')
@@ -54,15 +58,23 @@ def main():
 
     # DrugxGene survivability scores
     allbyall = pd.read_csv(DEFAULT_ALL_BY_ALL_FILE, sep = "\t")
+    allbyall = update_hgnc(allbyall, hgnc)
+    allbyall = allbyall.set_index("symbol")
 
     # Refine STRING links to those with a combined score >0.8
     stlink[stlink.combined_score.gt(800)]
     
-    #plotter = CorrelationPlotter()
-    #plotter.plot_all()
+    print('Building human link graph ...')
+    g = ig.Graph.TupleList(stlink.itertuples(index=False), directed=True, weights=False, edge_attrs="combined_score")
+    print('Done !!')
+    g.vs["survivability"] = [allbyall[TARGET_DRUG].loc[gn] if gn in allbyall[TARGET_DRUG].index else float("NaN") for gn in g.vs["name"]]
+    print(ig.summary(g))
+    """
+    plotter = CorrelationPlotter()
+    plotter.plot_all()
     return
 
-def update_hgnc(df: pd.DataFrame, hgncdata: pd.DataFrame) -> pd.DataFrame:
+def update_hgnc(df: pd.DataFrame, hgncdata: pd.DataFrame, column: str = "symbol") -> pd.DataFrame:
     """
     
     Normalise archaic names using HGNC standard
@@ -74,15 +86,15 @@ def update_hgnc(df: pd.DataFrame, hgncdata: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: Version of 'df' with updated gene names
     """
-    bad_names = set(df.symbol) & (set(df.symbol) ^ set(hgncdata.index))
+    bad_names = set(df[column]) & (set(df[column]) ^ set(hgncdata.index))
 
-    for g in bad_names:
+    for g in tqdm(bad_names, desc = "Replacing gene names using HUGO standardisation"):
         g2 = hgncdata[hgncdata['prev_symbol'].str.contains(g)].reset_index()['symbol']
         if len(g2) == 0 or (g2[0] not in hgncdata.index):
-            print(f'STRING Gene name {g} not found in HUGO - ignoring it')
-            continue
+            pass
+            #print(f'STRING Gene name {g} not found in HUGO - ignoring it')
         else:
-            print(f'STRING old gene name {g} replaced by new name {g2[0]}')
+            #print(f'STRING old gene name {g} replaced by new name {g2[0]}')
             df.replace(g,g2[0], inplace=True)
     return df
 

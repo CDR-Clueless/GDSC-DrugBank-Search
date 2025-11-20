@@ -11,6 +11,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 import seaborn as sns
 from tqdm import tqdm
+import json
 
 from typing import Union
 
@@ -35,11 +36,15 @@ class CorrelationPlotter(DataHandler):
         sns.set_theme()
         results_dir = os.path.join("Data", "Results", "Drug-gene correlation frequency histograms")
         make_dir(results_dir)
+        # Set up dictionary output for quantiles json
+        qres = {}
         # Go through rows (i.e. drugs) for drug score distribution analysis
-        print("Analysing drug correlation score distributions...")
-        for index, row in tqdm(gxd.iterrows(), total = gxd.shape[0]):
+        for index, row in tqdm(gxd.iterrows(), total = gxd.shape[0], desc = "Analysing drug correlation score distributions"):
             drug, scores = row["Drug"], row.values[1:]
             self.save_histogram(scores, f"{drug}-gene LOG correlations", results_dir)
+            qres[drug] = {q: np.quantile(scores, q) for q in (0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99)}
+        with open(os.path.join(results_dir, "quantiles.json"), "w") as f:
+            json.dump(qres, f, indent = 4)
         return
     
     def plot_gene_correlations(self) -> None:
@@ -48,10 +53,14 @@ class CorrelationPlotter(DataHandler):
         # Go through columns - gene score distribution analysis
         results_dir = os.path.join("Data", "Results", "Gene-drug correlation frequency histograms")
         make_dir(results_dir)
-        print("Analysing gene correlation score distributions...")
-        for gene in tqdm(gxd.columns[1:]):
+        # Set up dictionary output for quantiles json
+        qres = {}
+        for gene in tqdm(gxd.columns[1:], desc = "Analysing gene correlation score distributions"):
             scores = gxd[gene].values
             self.save_histogram(scores, f"{gene}-drug LOG correlations", results_dir)
+            qres[gene] = {q: np.quantile(scores, q) for q in (0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99)}
+        with open(os.path.join(results_dir, "quantiles.json"), "w") as f:
+            json.dump(qres, f, indent = 4)
         return
     
     def save_histogram(self, scores: Union[np.ndarray, list, tuple], titlebase: str, results_dir: str,
