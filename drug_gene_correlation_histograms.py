@@ -42,7 +42,7 @@ class CorrelationPlotter(DataHandler):
         for index, row in tqdm(gxd.iterrows(), total = gxd.shape[0], desc = "Analysing drug correlation score distributions"):
             drug, scores = row["Drug"], row.values[1:]
             self.save_histogram(scores, f"{drug}-gene LOG correlations", results_dir)
-            qres[drug] = {q: np.quantile(scores, q) for q in (0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99)}
+            qres[drug] = {q: np.quantile(scores, q) for q in (0.001, 0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99, 0.999)}
         with open(os.path.join(results_dir, "quantiles.json"), "w") as f:
             json.dump(qres, f, indent = 4)
         return
@@ -58,7 +58,7 @@ class CorrelationPlotter(DataHandler):
         for gene in tqdm(gxd.columns[1:], desc = "Analysing gene correlation score distributions"):
             scores = gxd[gene].values
             self.save_histogram(scores, f"{gene}-drug LOG correlations", results_dir)
-            qres[gene] = {q: np.quantile(scores, q) for q in (0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99)}
+            qres[gene] = {q: np.quantile(scores, q) for q in (0.001, 0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99, 0.999)}
         with open(os.path.join(results_dir, "quantiles.json"), "w") as f:
             json.dump(qres, f, indent = 4)
         return

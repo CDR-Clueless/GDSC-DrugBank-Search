@@ -30,10 +30,10 @@ DEFAULT_ALL_BY_ALL_FILE: str = os.path.join(CLEANED_DATA_DIR, "AllDrugsByAllGene
 DEFAULT_STRING_INFO_FILE: str = os.path.join(CLEANED_DATA_DIR, "9606.protein.info.v12.0.txt")
 DEFAULT_STRING_LINK_FILE: str = os.path.join(CLEANED_DATA_DIR, "9606.protein.links.v12.0.ssv")
 
-TARGET_DRUG = "5-AZACYTIDINE"
+TARGET_DRUG: str = "965-D2"
+START_POINT_CUTOFF: float = 0.197
 
 def main():
-    """
     ## Import relevant datasets and amend them
     # HGNC
     hgnc = pd.read_table(DEFAULT_HUGO_FILE, low_memory=False).fillna('')
@@ -69,9 +69,16 @@ def main():
     print('Done !!')
     g.vs["survivability"] = [allbyall[TARGET_DRUG].loc[gn] if gn in allbyall[TARGET_DRUG].index else float("NaN") for gn in g.vs["name"]]
     print(ig.summary(g))
-    """
-    plotter = CorrelationPlotter()
-    plotter.plot_all()
+    startPoints = [n for s,n in zip(g.vs["survivability"], g.vs["name"]) if s > START_POINT_CUTOFF]
+    print(startPoints)
+    shortest = np.inf
+    for sp in startPoints:
+        shortpath = g.get_shortest_paths(sp, to="MKNK1", weights=g.es["combined_score"], output="vpath")[0]
+        shortest = min(shortest, len(shortpath)-1)
+    
+      USE HGNC ON DRUGBANK COMPARISON OUTPUT AND EXTEND SHORTEST PATHFINDING TO ALL TARGETS
+    #plotter = CorrelationPlotter()
+    #plotter.plot_all()
     return
 
 def update_hgnc(df: pd.DataFrame, hgncdata: pd.DataFrame, column: str = "symbol") -> pd.DataFrame:
