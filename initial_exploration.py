@@ -22,6 +22,7 @@ from typing import Optional
 from data_handler import DataHandler
 from searcher import Searcher
 from drug_gene_correlation_histograms import CorrelationPlotter
+from drug_search import update_hgnc
 
 CLEANED_DATA_DIR: str = os.path.join("Data", "Laurence-Data")
 
@@ -76,34 +77,10 @@ def main():
         shortpath = g.get_shortest_paths(sp, to="MKNK1", weights=g.es["combined_score"], output="vpath")[0]
         shortest = min(shortest, len(shortpath)-1)
     
-      USE HGNC ON DRUGBANK COMPARISON OUTPUT AND EXTEND SHORTEST PATHFINDING TO ALL TARGETS
+    #USE HGNC ON DRUGBANK COMPARISON OUTPUT AND EXTEND SHORTEST PATHFINDING TO ALL TARGETS
     #plotter = CorrelationPlotter()
     #plotter.plot_all()
     return
-
-def update_hgnc(df: pd.DataFrame, hgncdata: pd.DataFrame, column: str = "symbol") -> pd.DataFrame:
-    """
-    
-    Normalise archaic names using HGNC standard
-
-    Args:
-        df (pd.DataFrame): DataFrame with names to replace using HGNC
-        hgncdata (pd.DataFrame): HGNC data
-
-    Returns:
-        pd.DataFrame: Version of 'df' with updated gene names
-    """
-    bad_names = set(df[column]) & (set(df[column]) ^ set(hgncdata.index))
-
-    for g in tqdm(bad_names, desc = "Replacing gene names using HUGO standardisation"):
-        g2 = hgncdata[hgncdata['prev_symbol'].str.contains(g)].reset_index()['symbol']
-        if len(g2) == 0 or (g2[0] not in hgncdata.index):
-            pass
-            #print(f'STRING Gene name {g} not found in HUGO - ignoring it')
-        else:
-            #print(f'STRING old gene name {g} replaced by new name {g2[0]}')
-            df.replace(g,g2[0], inplace=True)
-    return df
 
 if __name__ == "__main__":
     main()

@@ -15,13 +15,16 @@ import ast
 
 from data_handler import DataHandler
 
-from drug_search import get_data, get_targets
+from drug_search import get_data, get_targets, update_hgnc
 
 class Searcher(DataHandler):
     def __init__(self, include_tr: bool = False, clean_datadir: str = os.path.join("Data", "Laurence-Data")):
         super().__init__()
         # Load data so it doesn't later need re-loading
+        self.insert_data("HUGO", pd.read_table(os.path.join(clean_datadir, "hgnc_complete_set.tsv"), low_memory=False).fillna(''))
         db, g1, g2 = get_data()
+        # Update GDSC1/2 data using HUGO database
+        g1, g2 = update_hgnc(g1, self.datasets["HUGO"], column = "DRUG_NAME"), update_hgnc(g2, self.datasets["HUGO"], column = "DRUG_NAME")
         self.insert_data("DrugBank", db)
         self.insert_data("GDSC1", g1)
         self.insert_data("GDSC2", g2)
@@ -33,12 +36,12 @@ class Searcher(DataHandler):
     
     def get_targets(self, drug: str) -> Optional[dict]:
         # Pass DB/G1/G2 databases so they don't need reloading
-        return get_targets(drug, (self.datasets["DrugBank"], self.datasets["GDSC1"], self.datasets["GDSC2"]))
+        return get_targets(drug, (self.datasets["DrugBank"], self.datasets["GDSC1"], self.datasets["GDSC2"]), self.datasets["HUGO"])
     
     def __insert_TR(self, clean_datadir: str = os.path.join("Data", "Laurence-Data")) -> None:
         self.load_data("TargetRanking", os.path.join(clean_datadir, "TargetRanking.tsv"))
         self.load_data("GenesByDrugs", os.path.join(clean_datadir, "AllGenesByAllDrugs.tsv"))
-        self.datasets["GenesByDrugs"] = self.datasets["GenesbyDrugs"].rename(columns = {"Unnamed: 0": "drug"})
+        self.datasets["GenesByDrugs"] = self.datasets["GenesByDrugs"].rename(columns = {"Unnamed: 0": "drug"})
         return
     
     def gen_rankings(self, return_variable: bool = True, save_json: bool = True,
@@ -62,7 +65,7 @@ class Searcher(DataHandler):
         df: pd.DataFrame = self.datasets["TargetRanking"]
         trScores: pd.DataFrame = self.datasets["GenesByDrugs"]
         # Go through each drug in the target rankings dataframe
-        for drug in tqdm(df["DRUG"].unique()):
+        for drug in tqdm(df["DRUG"].unique(), desc = "Generating target rankings for known GDSC drugs"):
             # Get scores for each target gene of this drug
             scores_local = trScores.loc[trScores["drug"]==drug]
             targets_lp_local = list(df.loc[df["DRUG"]==drug]["TARGET"].values)
