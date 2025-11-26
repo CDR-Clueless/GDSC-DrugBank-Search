@@ -59,6 +59,20 @@ class CorrelationPlotter(DataHandler):
         # Add the total number of samples to the dictionary
         res["Total"] = len(vals)
         return res
+    
+    def __find_histogram_peaks(self, scores: Union[list, tuple, np.ndarray], binBounds: np.ndarray = np.arange(-1, 1, 0.05)) -> dict:
+        # Get counts and bins for histograms, as done in histogram code
+        counts, bins = np.histogram(scores, bins = binBounds)
+        output = {}
+        # Get all available peaks
+        if(counts[0]>counts[1]):
+            output["Peak 1"] = {"bin": bins[0], "count": counts[0]}
+        for i in range(1,len(bins)-1):
+            if(counts[i] > max(counts[i-1], counts[i+1])):
+                output[f"Peak {len(output)+1}"] = {"bin": bins[i], "count": counts[i]}
+        if(counts[-1]>counts[-2]):
+            output[f"Peak {len(output)+1}"] = {"bin": bins[-1], "count": counts[-1]}
+        return output
 
     def plot_drug_correlations(self, stds: list = [], quantiles: list = []) -> None:
         gxd = self.datasets["AllByAll"]
@@ -73,7 +87,9 @@ class CorrelationPlotter(DataHandler):
             # Remove NaN values
             scores = scores[~np.isnan(scores)]
             self.save_histogram(scores, f"{drug}-gene LOG correlations", results_dir, stds, quantiles)
-            sres[drug] = {"standard deviations": \
+            sres[drug] = {"peaks": \
+                            {self.__find_histogram_peaks(scores)},
+                          "standard deviations": \
                             {d: np.mean(scores)+(np.std(scores)*d) for d in resVals["devs"]},
                           "quantiles": \
                             {q: np.quantile(scores, q) for q in resVals["quantiles"]},
@@ -96,7 +112,9 @@ class CorrelationPlotter(DataHandler):
             # Remove NaN values
             scores = scores[~np.isnan(scores)]
             self.save_histogram(scores, f"{gene}-drug LOG correlations", results_dir, stds, quantiles)
-            sres[gene] = {"standard deviations": \
+            sres[gene] = {"peaks": \
+                            {self.__find_histogram_peaks(scores)},
+                          "standard deviations": \
                             {d: np.mean(scores)+(np.std(scores)*d) for d in (resVals["devs"] + [-1*sdm for sdm in resVals["devs"]])},
                           "quantiles": \
                             {q: np.quantile(scores, q) for q in resVals["quantiles"]},
