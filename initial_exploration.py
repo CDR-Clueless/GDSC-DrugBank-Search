@@ -35,6 +35,7 @@ TARGET_DRUG: str = "965-D2"
 START_POINT_CUTOFF: float = 0.197
 
 def main():
+    """
     ## Import relevant datasets and amend them
     # HGNC
     hgnc = pd.read_table(DEFAULT_HUGO_FILE, low_memory=False).fillna('')
@@ -78,8 +79,10 @@ def main():
         shortest = min(shortest, len(shortpath)-1)
     
     #USE HGNC ON DRUGBANK COMPARISON OUTPUT AND EXTEND SHORTEST PATHFINDING TO ALL TARGETS
-    #plotter = CorrelationPlotter()
-    #plotter.plot_all()
+    """
+
+    CorrelationPlotter().plot_drug_correlations()
+    CorrelationPlotter().plot_sd_cumulative()
     return
 
 if __name__ == "__main__":
