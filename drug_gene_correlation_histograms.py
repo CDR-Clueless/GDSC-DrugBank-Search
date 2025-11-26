@@ -145,7 +145,8 @@ class CorrelationPlotter(DataHandler):
         # If the mode is 'both', call this function with the 2 sub-options
         if(mode.lower()=="both"):
             for m in ["drug", "gene"]:
-                self.plot_sd_cumulative(mode = m)
+                self.plot_sd_cumulative(mode = m, stds = stds)
+            return
         # Set seaborn theme for better graphs
         sns.set_theme()
         # Get the relevant directory
@@ -200,5 +201,7 @@ class CorrelationPlotter(DataHandler):
         plt.ylabel("Cumulative frequency")
         plt.title("Cumulative frequency of Standard deviation boundaries")
         plt.legend()
-        plt.savefig(os.path.join(ddir, f"All {mode.upper()}s survivability correlation standard deviation CDF.png"))
+        plt.savefig(os.path.join(ddir, f"All {mode.capitalize()}s survivability correlation standard deviation CDF.png"))
+        plt.clf()
+        plt.close()
         return

@@ -81,8 +81,8 @@ def main():
     #USE HGNC ON DRUGBANK COMPARISON OUTPUT AND EXTEND SHORTEST PATHFINDING TO ALL TARGETS
     """
 
-    CorrelationPlotter().plot_drug_correlations()
-    CorrelationPlotter().plot_sd_cumulative()
+    #CorrelationPlotter().plot_all()
+    CorrelationPlotter().plot_sd_cumulative(mode = "both")
     return
 
 if __name__ == "__main__":
