@@ -61,6 +61,7 @@ class CorrelationPlotter(DataHandler):
         res["Total"] = len(vals)
         return res
     
+    # NOTE: This is extremely basic code and needs improvement using e.g. gaussian fitting if unimodal, mixture model fitting if non-unimodal etc.
     def __find_histogram_peaks(self, scores: Union[list, tuple, np.ndarray], binBounds: np.ndarray = np.arange(-1, 1, 0.05)) -> dict:
         # Get counts and bins for histograms, as done in histogram code
         counts, bins = np.histogram(scores, bins = binBounds)
@@ -74,6 +75,16 @@ class CorrelationPlotter(DataHandler):
         if(counts[-1]>counts[-2]):
             output[f"Peak {len(output)+1}"] = {"bin": bins[-1], "count": counts[-1]}
         return output
+    
+    def __get_modality_entry(self, dist: Union[list, tuple, np.ndarray]) -> dict:
+        res = diptest.diptest(dist)
+        if(res[1]<0.15):
+            modality = "bimodal"
+        elif(res[1]>0.4):
+            modality = "unimodal"
+        else:
+            modality = "unclear"
+        return {"modality": modality, "HDS": res[0], "HDS p-value": res[1], "mean": np.mean(dist)}
 
     def plot_diptest_histogram(self, mode: str = "drug", outdir: str = os.path.join("Data", "Results")):
         data = self.datasets["AllByAll"]
@@ -116,14 +127,16 @@ class CorrelationPlotter(DataHandler):
             # Remove NaN values
             scores = scores[~np.isnan(scores)]
             self.save_histogram(scores, f"{drug}-gene LOG correlations", results_dir, stds, quantiles)
-            sres[drug] = {"peaks": \
+            sres[drug] = {"peaks (UNRELIABLE)": \
                             {self.__find_histogram_peaks(scores)},
                           "standard deviations": \
                             {d: np.mean(scores)+(np.std(scores)*d) for d in resVals["devs"]},
                           "quantiles": \
                             {q: np.quantile(scores, q) for q in resVals["quantiles"]},
                           "standard deviation counts": \
-                            self.__get_within_sds(scores, resVals["devs"])}
+                            self.__get_within_sds(scores, resVals["devs"]),
+                          "modality details": \
+                            self.__get_modality_entry(scores)}
         with open(os.path.join(results_dir, "stats.json"), "w") as f:
             json.dump(sres, f, indent = 4)
         return
@@ -141,14 +154,16 @@ class CorrelationPlotter(DataHandler):
             # Remove NaN values
             scores = scores[~np.isnan(scores)]
             self.save_histogram(scores, f"{gene}-drug LOG correlations", results_dir, stds, quantiles)
-            sres[gene] = {"peaks": \
+            sres[gene] = {"peaks (UNRELIABLE)": \
                             {self.__find_histogram_peaks(scores)},
                           "standard deviations": \
                             {d: np.mean(scores)+(np.std(scores)*d) for d in (resVals["devs"] + [-1*sdm for sdm in resVals["devs"]])},
                           "quantiles": \
                             {q: np.quantile(scores, q) for q in resVals["quantiles"]},
                           "standard deviation counts": \
-                            self.__get_within_sds(scores, resVals["devs"])}
+                            self.__get_within_sds(scores, resVals["devs"]),
+                          "modality details": \
+                            self.__get_modality_entry(scores)}
         with open(os.path.join(results_dir, "stats.json"), "w") as f:
             json.dump(sres, f, indent = 4)
         return
