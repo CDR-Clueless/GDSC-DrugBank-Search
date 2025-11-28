@@ -10,6 +10,7 @@ import os
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
+from scipy.optimize import curve_fit
 import seaborn as sns
 from copy import deepcopy
 import json
@@ -35,8 +36,48 @@ DEFAULT_STRING_LINK_FILE: str = os.path.join(CLEANED_DATA_DIR, "9606.protein.lin
 TARGET_DRUG: str = "965-D2"
 START_POINT_CUTOFF: float = 0.197
 
+def gaussian(x, mu, sigma, A):
+    return A*np.exp(-np.divide(np.power(x-mu, 2),(2*np.power(sigma, 2))))
+
+def bimodal(x, mu1, sigma1, A1, mu2, sigma2, A2):
+    return gaussian(x, mu1, sigma1, A1) + gaussian(x, mu2, sigma2, A2)
+
 def main():
+
+    data = CorrelationPlotter().datasets
+    data = data["AllByAll"]
+    data = data.set_index("Drug")
+    # Fitting a gaussian
+    for i in range(len(data)):
+        dist = data.iloc[i].values
+        dt = diptest.diptest(dist)
+        if(dt[1]>0.4):
+            print(f"Result for number {i}, drug {data.iloc[i].name}: {dt[1]}")
+            ind, drug, dist = i, data.iloc[i].name, dist
+            break
     
+    counts, bins = np.histogram(dist, bins = np.arange(-1, 1.025, 0.025))
+    xs = [(bins[i]+bins[i+1])/2 for i in range(len(bins)-1)]
+    plt.stairs(counts, bins)
+    #plt.plot(xs, counts)
+    #plt.show()
+    params, cov = curve_fit(gaussian, xs, counts) #(np.mean(dist), max(counts), 0.5))
+    print(params)
+    plt.plot(xs, gaussian(xs, *params), color = "r")
+    print(gaussian(xs, *params))
+    plt.show()
+    return
+
+    # Fitting a bimodal
+    for i in range(len(data)):
+        dist = data.iloc[i].values
+        dt = diptest.diptest(dist)
+        if(dt[1]<0.05):
+            print(f"Result for number {i}, drug {data.iloc[i].name}: {dt[1]}")
+            ind, drug, dist = i, data.iloc[i].name, dist
+            break
+    
+
     """
     ## Import relevant datasets and amend them
     # HGNC
