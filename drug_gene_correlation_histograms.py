@@ -12,6 +12,7 @@ from matplotlib import pyplot as plt
 import seaborn as sns
 from tqdm import tqdm
 import json
+import diptest
 
 from typing import Union
 from typing import Optional
@@ -73,6 +74,34 @@ class CorrelationPlotter(DataHandler):
         if(counts[-1]>counts[-2]):
             output[f"Peak {len(output)+1}"] = {"bin": bins[-1], "count": counts[-1]}
         return output
+
+    def plot_diptest_histogram(self, mode: str = "drug", outdir: str = os.path.join("Data", "Results")):
+        data = self.datasets["AllByAll"]
+        if(mode.lower()=="both"):
+            for m in ["drug", "gene"]:
+                self.plot_diptest_histogram(m, outdir)
+            return
+        if(mode.lower()=="drug"):
+            results = [diptest.diptest(data.iloc[i][1:].values) for i in range(len(data))]
+        elif(mode.lower()=="gene"):
+            results = [diptest.diptest(data[col].values) for col in data.columns[1:]]
+        else:
+            print(f"Mode '{mode}' not recognised. Please use 'drug', 'gene' or 'both' as the mode")
+            return
+        pvals = [t[1] for t in results]
+        counts, bins = np.histogram(pvals, bins = np.arange(0.0, 1.05, 0.05))
+        plt.stairs(counts, bins)
+        plt.xlabel("p-value")
+        plt.ylabel("Distribution frequency")
+        if(mode=="drug"):
+            plt.title("Results of Hartigan's dip statistic test for drug-gene survivability correlations")
+            plt.savefig(os.path.join(outdir, "HDS drug-gene histogram.png"))
+        else:
+            plt.title("Results of Hartigan's dip statistic test for gene-drug survivability correlations")
+            plt.savefig(os.path.join(outdir, "HDS gene-drug histogram.png"))
+        plt.clf()
+        plt.close()
+        return
 
     def plot_drug_correlations(self, stds: list = [], quantiles: list = []) -> None:
         gxd = self.datasets["AllByAll"]

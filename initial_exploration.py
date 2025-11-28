@@ -16,13 +16,14 @@ import json
 from tqdm import tqdm
 import ast
 import igraph as ig
+import diptest
 
 from typing import Optional
 
 from data_handler import DataHandler
 from searcher import Searcher
 from drug_gene_correlation_histograms import CorrelationPlotter
-from drug_search import update_hgnc
+from drug_search import update_hgnc, get_data
 
 CLEANED_DATA_DIR: str = os.path.join("Data", "Laurence-Data")
 
@@ -35,6 +36,7 @@ TARGET_DRUG: str = "965-D2"
 START_POINT_CUTOFF: float = 0.197
 
 def main():
+    
     """
     ## Import relevant datasets and amend them
     # HGNC
@@ -80,9 +82,6 @@ def main():
     
     #USE HGNC ON DRUGBANK COMPARISON OUTPUT AND EXTEND SHORTEST PATHFINDING TO ALL TARGETS
     """
-
-    #CorrelationPlotter().plot_all()
-    CorrelationPlotter().plot_sd_cumulative(mode = "both")
     return
 
 if __name__ == "__main__":
