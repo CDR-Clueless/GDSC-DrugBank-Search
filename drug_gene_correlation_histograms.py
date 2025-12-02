@@ -13,6 +13,8 @@ import seaborn as sns
 from tqdm import tqdm
 import json
 import diptest
+from copy import deepcopy
+from scipy.optimize import curve_fit
 
 from typing import Union
 from typing import Optional
@@ -60,21 +62,6 @@ class CorrelationPlotter(DataHandler):
         # Add the total number of samples to the dictionary
         res["Total"] = len(vals)
         return res
-    
-    # NOTE: This is extremely basic code and needs improvement using e.g. gaussian fitting if unimodal, mixture model fitting if non-unimodal etc.
-    def __find_histogram_peaks(self, scores: Union[list, tuple, np.ndarray], binBounds: np.ndarray = np.arange(-1, 1, 0.05)) -> dict:
-        # Get counts and bins for histograms, as done in histogram code
-        counts, bins = np.histogram(scores, bins = binBounds)
-        output = {}
-        # Get all available peaks
-        if(counts[0]>counts[1]):
-            output["Peak 1"] = {"bin": bins[0], "count": counts[0]}
-        for i in range(1,len(bins)-1):
-            if(counts[i] > max(counts[i-1], counts[i+1])):
-                output[f"Peak {len(output)+1}"] = {"bin": bins[i], "count": counts[i]}
-        if(counts[-1]>counts[-2]):
-            output[f"Peak {len(output)+1}"] = {"bin": bins[-1], "count": counts[-1]}
-        return output
     
     def __get_modality_entry(self, dist: Union[list, tuple, np.ndarray]) -> dict:
         res = diptest.diptest(dist)
@@ -126,17 +113,14 @@ class CorrelationPlotter(DataHandler):
             drug, scores = row["Drug"], np.array(row.values[1:], dtype = float)
             # Remove NaN values
             scores = scores[~np.isnan(scores)]
-            self.save_histogram(scores, f"{drug}-gene LOG correlations", results_dir, stds, quantiles)
-            sres[drug] = {"peaks (UNRELIABLE)": \
-                            {self.__find_histogram_peaks(scores)},
-                          "standard deviations": \
+            extra_data = self.save_histogram(scores, f"{drug}-gene LOG correlations", results_dir, stds, quantiles)
+            sres[drug] = {"standard deviations": \
                             {d: np.mean(scores)+(np.std(scores)*d) for d in resVals["devs"]},
                           "quantiles": \
                             {q: np.quantile(scores, q) for q in resVals["quantiles"]},
                           "standard deviation counts": \
-                            self.__get_within_sds(scores, resVals["devs"]),
-                          "modality details": \
-                            self.__get_modality_entry(scores)}
+                            self.__get_within_sds(scores, resVals["devs"])}
+            sres.update(extra_data)
         with open(os.path.join(results_dir, "stats.json"), "w") as f:
             json.dump(sres, f, indent = 4)
         return
@@ -153,23 +137,23 @@ class CorrelationPlotter(DataHandler):
             scores = np.array(gxd[gene].values, dtype = float)
             # Remove NaN values
             scores = scores[~np.isnan(scores)]
-            self.save_histogram(scores, f"{gene}-drug LOG correlations", results_dir, stds, quantiles)
-            sres[gene] = {"peaks (UNRELIABLE)": \
-                            {self.__find_histogram_peaks(scores)},
-                          "standard deviations": \
+            extra_data = self.save_histogram(scores, f"{gene}-drug LOG correlations", results_dir, stds, quantiles)
+            sres[gene] = {"standard deviations": \
                             {d: np.mean(scores)+(np.std(scores)*d) for d in (resVals["devs"] + [-1*sdm for sdm in resVals["devs"]])},
                           "quantiles": \
                             {q: np.quantile(scores, q) for q in resVals["quantiles"]},
                           "standard deviation counts": \
-                            self.__get_within_sds(scores, resVals["devs"]),
-                          "modality details": \
-                            self.__get_modality_entry(scores)}
+                            self.__get_within_sds(scores, resVals["devs"])}
+            sres.update(extra_data)
         with open(os.path.join(results_dir, "stats.json"), "w") as f:
             json.dump(sres, f, indent = 4)
         return
     
     def save_histogram(self, scores: Union[np.ndarray, list, tuple], titlebase: str, results_dir: str,
-                       stds: list = [], quantiles: list = []) -> None:
+                       stds: list = [], quantiles: list = [], plot_curve: bool = True,
+                       test_modality: bool = True) -> Optional[dict]:
+        # Set up output dictionary if necessary
+        output = {}
         # Get counts and bins for histograms
         counts, bins = np.histogram(scores, bins = np.arange(-1, 1, 0.05))
         # Get the (corrected) log of these counts for the log graph
@@ -181,13 +165,14 @@ class CorrelationPlotter(DataHandler):
             # Main histogram
             plt.stairs(y, bins, fill = True)
             # Black bars separating bins
-            plt.plot([(bins[i]+bins[i+1])/2 for i in range(len(bins)-1)], y, color = "black")
+            xs = [(bins[i]+bins[i+1])/2 for i in range(len(bins)-1)]
+            plt.plot(xs, y, color = "black")
             plt.xlabel("Survivability correlation")
             plt.ylabel(ylabel)
             plt.title(title)
             # Add standard deviation bars if appropriate
             if(len(stds)>0):
-                avg, dev = np.mean(scores), np.std(scores)
+                avg, dev = np.mean(y), np.std(y)
                 for std in stds:
                     plt.plot([avg-(dev*std)]*2, [0, max(y)*1.01], linestyle = "--", color = "g")
                     plt.plot([avg+(dev*std)]*2, [0, max(y)*1.01], linestyle = "--", color = "g")
@@ -195,12 +180,31 @@ class CorrelationPlotter(DataHandler):
                     plt.text(avg+(dev*std), max(y)*1.05, f"+{std} SDs", size = "xx-small")
             # Add quantile markings if appropriate
             if(len(quantiles)>0):
-                vals = np.quantile(scores, quantiles)
+                vals = np.quantile(y, quantiles)
                 for quantile, val, x in zip(quantiles, vals, np.linspace(-1, 1, len(quantiles), endpoint=False)):
                     plt.plot([val]*2, [0, max(y)*1.01], linestyle = "--", color = "r")
                     plt.text(x, max(y)*1.05, f"Quantile {quantile} = {round(val, 3)}", size = "xx-small")
+            # Get modality details if appropriate
+            if((test_modality or plot_curve) and "log" not in title.lower()):
+                output["modality details"] = self.__get_modality_entry(y)
+                curve_type = output["modality details"]["modality"]
+            # Add curve fit if appropriate
+            if(plot_curve):
+                func = {"gaussian": gaussian, "bimodal": bimodal, "unimodal": gaussian, "unclear": gaussian}[curve_type]
+                params, cov = curve_fit(func,
+                                        xdata = xs, 
+                                        ydata = counts,
+                                        p0 = curve_guess(xs, counts, curve_type))
+                curve_xs = np.linspace(xs[0], xs[-1], len(xs)*100)
+                plt.plot(curve_xs, func(curve_xs, *params), color = "g", label = "fitted curve")
+                if("log" not in title.lower()):
+                    output["curve parameters"] = params
+                    output["curve errors standard deviation"] =  np.sqrt(np.diag(cov))
+            plt.legend()
             plt.savefig(os.path.join(results_dir, title+" histogram.png"))
             plt.clf()
+        if(len(output)>1):
+            return output
         return
     
     def plot_sd_cumulative(self, mode: str = "drug", stds: list = [1.0, 2.0, 3.0]):
@@ -267,3 +271,40 @@ class CorrelationPlotter(DataHandler):
         plt.clf()
         plt.close()
         return
+
+def curve_guess(xs: Union[np.ndarray, list, tuple], ys: Union[np.ndarray, list, tuple], mode: str = "gaussian", sigma = 0.05) -> tuple:
+    if(mode=="gaussian"):
+        peak = get_peaks(xs, ys, limit = 1)[0]
+        return np.array([peak[1], peak[0], sigma], dtype = float)
+    elif(mode=="bimodal"):
+        peaks = get_peaks(xs, ys, limit = 2)
+        return np.array([peaks[0][1], peaks[0][0], sigma, peaks[1][1], peaks[1][0], sigma], dtype = float)
+
+def get_peaks(xs: Union[np.ndarray, list, tuple], ys: Union[np.ndarray, list, tuple], limit: int = 1):
+    # Get a list of tuples (x(i), y(i)) where y(i) is greater than both y(i-1) and y(i+1)
+    peaks = [(xs[i], ys[i]) for i in range(1, len(xs)-1) if (ys[i-1]<ys[i] and ys[i+1]<ys[i])]
+    # Remove extra peaks
+    if(len(peaks)>limit):
+        refined = [(0, -np.inf) for _ in range(limit)]
+        print(refined)
+        for tup in peaks:
+            i: int = 0
+            while(i<len(refined)):
+                if(tup[1]>refined[i][1]):
+                    # First, shift everything down 1 in the refined list
+                    for j in range(i, len(refined))[::-1]:
+                        refined[j] = deepcopy(refined[j-1])
+                    # Next, insert the new peak into the refined list
+                    refined[i] = deepcopy(tup)
+                    break
+                i += 1
+            print(refined)
+        peaks = refined
+    # Return peaks found
+    return peaks
+
+def gaussian(x, A, mu, sigma):
+    return A*np.exp(-np.divide(np.power(x-mu, 2),(2*np.power(sigma, 2))))
+
+def bimodal(x, A1, mu1, sigma1, A2, mu2, sigma2):
+    return gaussian(x, A1, mu1, sigma1) + gaussian(x, A2, mu2, sigma2)

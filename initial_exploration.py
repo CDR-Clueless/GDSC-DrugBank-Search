@@ -23,7 +23,7 @@ from typing import Optional
 
 from data_handler import DataHandler
 from searcher import Searcher
-from drug_gene_correlation_histograms import CorrelationPlotter
+from drug_gene_correlation_histograms import CorrelationPlotter, curve_guess
 from drug_search import update_hgnc, get_data
 
 CLEANED_DATA_DIR: str = os.path.join("Data", "Laurence-Data")
@@ -36,11 +36,11 @@ DEFAULT_STRING_LINK_FILE: str = os.path.join(CLEANED_DATA_DIR, "9606.protein.lin
 TARGET_DRUG: str = "965-D2"
 START_POINT_CUTOFF: float = 0.197
 
-def gaussian(x, mu, sigma, A):
+def gaussian(x, A, mu, sigma):
     return A*np.exp(-np.divide(np.power(x-mu, 2),(2*np.power(sigma, 2))))
 
-def bimodal(x, mu1, sigma1, A1, mu2, sigma2, A2):
-    return gaussian(x, mu1, sigma1, A1) + gaussian(x, mu2, sigma2, A2)
+def bimodal(x, A1, mu1, sigma1, A2, mu2, sigma2):
+    return gaussian(x, A1, mu1, sigma1) + gaussian(x, A2, mu2, sigma2)
 
 def main():
 
@@ -63,8 +63,9 @@ def main():
     iga = np.max(counts)
     igmu = xs[np.where(counts==iga)[0][0]]
     ## Fit curve
-    params, cov = curve_fit(gaussian, xs, counts, p0 = np.array([igmu, 0.1, iga])) #(np.mean(dist), max(counts), 0.5))
-    print(params)
+    #params, cov = curve_fit(gaussian, xs, counts, p0 = np.array([iga, igmu, 0.1])) #(np.mean(dist), max(counts), 0.5))
+    params, cov = curve_fit(gaussian, xs, counts, p0 = curve_guess(xs, counts, "gaussian"))
+    #print(params)
     fitted_xs = np.linspace(xs[0], xs[-1], len(xs)*100)
     plt.plot(fitted_xs, gaussian(fitted_xs, *params), color = "r")
     plt.title("Gaussian-fitted distribution")
@@ -94,9 +95,10 @@ def main():
                 st = deepcopy(tup)
         peaks = [t, st]
     ## Curve fitting
-    print(f"Bimodal guess = {peaks}")
-    params, cov = curve_fit(bimodal, xs, counts, p0 = np.array([peaks[0][0], 0.05, peaks[0][1], peaks[1][0], 0.025, peaks[1][1]], dtype = float)) #(np.mean(dist), max(counts), 0.5))
-    print(params)
+    #params, cov = curve_fit(bimodal, xs, counts, p0 = np.array([peaks[0][1], peaks[0][0], 0.05, peaks[1][1], peaks[1][0], 0.05], dtype = float)) #(np.mean(dist), max(counts), 0.5))
+    print(f"Bimodal guess = {curve_guess(xs, counts, "bimodal")}")
+    params, cov = curve_fit(bimodal, xs, counts, p0 = curve_guess(xs, counts, "bimodal"))
+    #print(params)
     fitted_xs = np.linspace(xs[0], xs[-1], len(xs)*100)
     plt.plot(fitted_xs, bimodal(fitted_xs, *params), color = "r", label = "fitted")
     #plt.plot(fitted_xs, bimodal(fitted_xs, peaks[0][0], 0.02, peaks[0][1], peaks[1][0], 0.02, peaks[1][1]), label = "guess")
