@@ -92,13 +92,14 @@ def main():
     print('Done !!')
     # Make path for temporary data storage if none exists
     tdpfp: str = os.path.join("Data", "Results", "drug_path_temp")
-    if(os.path.exists(tdpfp)==False):
+    if(os.path.exists(tdpfp)==False): 
         os.mkdir(tdpfp)
     for drug in tqdm(allbyall.columns, desc = "Calculating shortest drug paths"):
         # Check if data for this drug already exists
         if(os.path.exists(os.path.join(tdpfp, f"{drug}.json"))):
             print(f"Found drug path data already calculated for {drug}; skipping...")
             continue
+        drugResults = {}
         # Get the appropriate threshold for 'starting point' genes
         survivability_cutoff = get_drug_threshold(drug, drugGeneSurv, np.array(allbyall[drug].values, dtype = float))
         # Get drug targets and save results output
@@ -115,13 +116,13 @@ def main():
                     shortest = len(shortpath)
             # Get the nodes in this shortest path
             pathnodes = [g.vs[v] for v in shortestpath]
-            with open(os.path.join(tdpfp, f"{drug}.json"), "w") as f:
-                json.dump({"path length": len(pathnodes)-1,
-                           "path": \
-                            {f"Path node {i}": {"name": pathnodes[i].attributes()["name"],
-                                    "survivability": pathnodes[i].attributes()["survivability"]} \
-                                            for i in range(len(pathnodes))}},
-                          f)
+            drugResults[target] = { "path length": len(pathnodes)-1,
+                                    "path": \
+                                        {f"Path node {i}": {"name": pathnodes[i].attributes()["name"],
+                                                "survivability": pathnodes[i].attributes()["survivability"]} \
+                                                        for i in range(len(pathnodes))}}
+        with open(os.path.join(tdpfp, f"{drug}.json"), "w") as f:
+            json.dump(drugResults, f)
     
     ## Combine the per-drug jsons into a single, human-readable json and delete the originals
     # Combine per-drug jsons
