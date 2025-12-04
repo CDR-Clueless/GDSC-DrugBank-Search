@@ -120,7 +120,7 @@ class CorrelationPlotter(DataHandler):
                             {q: np.quantile(scores, q) for q in resVals["quantiles"]},
                           "standard deviation counts": \
                             self.__get_within_sds(scores, resVals["devs"])}
-            sres.update(extra_data)
+            sres[drug].update(extra_data)
         with open(os.path.join(results_dir, "stats.json"), "w") as f:
             json.dump(sres, f, indent = 4)
         return
@@ -144,14 +144,14 @@ class CorrelationPlotter(DataHandler):
                             {q: np.quantile(scores, q) for q in resVals["quantiles"]},
                           "standard deviation counts": \
                             self.__get_within_sds(scores, resVals["devs"])}
-            sres.update(extra_data)
+            sres[gene].update(extra_data)
         with open(os.path.join(results_dir, "stats.json"), "w") as f:
             json.dump(sres, f, indent = 4)
         return
     
     def save_histogram(self, scores: Union[np.ndarray, list, tuple], titlebase: str, results_dir: str,
                        stds: list = [], quantiles: list = [], plot_curve: bool = True,
-                       test_modality: bool = True) -> Optional[dict]:
+                       test_modality: bool = True) -> dict:
         # Set up output dictionary if necessary
         output = {}
         # Get counts and bins for histograms
@@ -164,7 +164,7 @@ class CorrelationPlotter(DataHandler):
                                             (titlebase.replace("LOG ",""), titlebase.replace("LOG", "log"))):
             # Main histogram
             plt.stairs(y, bins, fill = True)
-            # Black bars separating bins
+            # Black line showing trend
             xs = [(bins[i]+bins[i+1])/2 for i in range(len(bins)-1)]
             plt.plot(xs, y, color = "black")
             plt.xlabel("Survivability correlation")
@@ -172,7 +172,9 @@ class CorrelationPlotter(DataHandler):
             plt.title(title)
             # Add standard deviation bars if appropriate
             if(len(stds)>0):
-                avg, dev = np.mean(y), np.std(y)
+                avg, dev = np.mean(scores), np.std(scores)
+                if("log" in title.lower()):
+                    avg, dev = np.log(avg), np.log(dev)
                 for std in stds:
                     plt.plot([avg-(dev*std)]*2, [0, max(y)*1.01], linestyle = "--", color = "g")
                     plt.plot([avg+(dev*std)]*2, [0, max(y)*1.01], linestyle = "--", color = "g")
@@ -180,32 +182,51 @@ class CorrelationPlotter(DataHandler):
                     plt.text(avg+(dev*std), max(y)*1.05, f"+{std} SDs", size = "xx-small")
             # Add quantile markings if appropriate
             if(len(quantiles)>0):
-                vals = np.quantile(y, quantiles)
+                vals = np.quantile(scores, quantiles)
+                if("log" in title.lower()):
+                    vals = [np.log(val) for val in vals]
                 for quantile, val, x in zip(quantiles, vals, np.linspace(-1, 1, len(quantiles), endpoint=False)):
                     plt.plot([val]*2, [0, max(y)*1.01], linestyle = "--", color = "r")
                     plt.text(x, max(y)*1.05, f"Quantile {quantile} = {round(val, 3)}", size = "xx-small")
             # Get modality details if appropriate
             if((test_modality or plot_curve) and "log" not in title.lower()):
-                output["modality details"] = self.__get_modality_entry(y)
+                output["modality details"] = self.__get_modality_entry(scores)
                 curve_type = output["modality details"]["modality"]
             # Add curve fit if appropriate
-            if(plot_curve):
+            if(plot_curve and "log" not in title.lower()):
+                #try:
                 func = {"gaussian": gaussian, "bimodal": bimodal, "unimodal": gaussian, "unclear": gaussian}[curve_type]
-                params, cov = curve_fit(func,
-                                        xdata = xs, 
-                                        ydata = counts,
-                                        p0 = curve_guess(xs, counts, curve_type))
-                curve_xs = np.linspace(xs[0], xs[-1], len(xs)*100)
-                plt.plot(curve_xs, func(curve_xs, *params), color = "g", label = "fitted curve")
-                if("log" not in title.lower()):
-                    output["curve parameters"] = params
-                    output["curve errors standard deviation"] =  np.sqrt(np.diag(cov))
+                ig = curve_guess(xs, y, curve_type)
+                try:
+                    params, cov = curve_fit(func,
+                                            xdata = xs, 
+                                            ydata = y,
+                                            p0 = ig, maxfev = 25000)
+                    curve_xs = np.linspace(xs[0], xs[-1], len(xs)*100)
+                    plt.plot(curve_xs, func(curve_xs, *params), color = "g", label = "fitted curve")
+                    # Save parameters if this isn't the log graph
+                    if("log" not in title.lower()):
+                        paramdict, covdict = {}, {}
+                        covarr = np.sqrt(np.diag(cov))
+                        for i in range(int(len(params)/3)):
+                            for param, j in zip(("A", "mu", "sigma"), (0, 1, 2)):
+                                paramdict[f"{param}{i}"] = params[j+(3*i)]
+                                covdict[f"{param}{i}"] = covarr[j+(3*i)]
+                        output["curve parameters"] = deepcopy(paramdict)
+                        output["curve errors standard deviation"] =  deepcopy(covdict)
+                except Exception as e:
+                    print(f"Error with {title}: {e}")
+                    paramdict, covdict = {}, {}
+                    for i in range({"gaussian": 1, "unimodal": 1, "unclear": 1, "bimodal": 2}[curve_type]):
+                        for param, j in zip(("A", "mu", "sigma"), (0, 1, 2)):
+                            paramdict[f"{param}{i}"] = "NaN"
+                            covdict[f"{param}{i}"] = "NaN"
+                    output["curve parameters"] = deepcopy(paramdict)
+                    output["curve errors standard deviation"] =  deepcopy(covdict)
             plt.legend()
             plt.savefig(os.path.join(results_dir, title+" histogram.png"))
             plt.clf()
-        if(len(output)>1):
-            return output
-        return
+        return output
     
     def plot_sd_cumulative(self, mode: str = "drug", stds: list = [1.0, 2.0, 3.0]):
         # If the mode is 'both', call this function with the 2 sub-options
@@ -273,33 +294,59 @@ class CorrelationPlotter(DataHandler):
         return
 
 def curve_guess(xs: Union[np.ndarray, list, tuple], ys: Union[np.ndarray, list, tuple], mode: str = "gaussian", sigma = 0.05) -> tuple:
-    if(mode=="gaussian"):
+    """
+    
+    Find initial guess for gaussian/bimodal gaussian parameters as the input for a curve optimisation
+
+    Args:
+        xs (Union[np.ndarray, list, tuple]): List of x values
+        ys (Union[np.ndarray, list, tuple]): List of y values
+        mode (str, optional): Type of curve being guessed at. Defaults to "gaussian"; accepted values are "gaussian", "unimodal", and "bimodal".
+        sigma (float, optional): Sigma value to be used, as this is not guessed at. Defaults to 0.05.
+
+    Returns:
+        tuple: Tuple of parameters (A, mu, sigma); can extend to length of 6, 9... if the mode uses 2 gaussians (bimodal), 3 etc.
+    """
+    if(mode=="gaussian" or mode == "unimodal"):
         peak = get_peaks(xs, ys, limit = 1)[0]
         return np.array([peak[1], peak[0], sigma], dtype = float)
     elif(mode=="bimodal"):
         peaks = get_peaks(xs, ys, limit = 2)
+        # If only a single peak was found, guesstimate the other entry
+        if(len(peaks)<2):
+            peaks.append((max(ys)/4, max(xs)*0.7))
         return np.array([peaks[0][1], peaks[0][0], sigma, peaks[1][1], peaks[1][0], sigma], dtype = float)
 
-def get_peaks(xs: Union[np.ndarray, list, tuple], ys: Union[np.ndarray, list, tuple], limit: int = 1):
+def get_peaks(xs: Union[np.ndarray, list, tuple], ys: Union[np.ndarray, list, tuple], limit: int = 1) -> list:
+    """
+    
+    Estimate the peaks in a data series with x and y values
+
+    Args:
+        xs (Union[np.ndarray, list, tuple]): Array of x values
+        ys (Union[np.ndarray, list, tuple]): Array of y values
+        limit (int, optional): Limit on the number of peaks found and returned by the function. Defaults to 1.
+
+    Returns:
+        list: A list of peaks in the format [(x(peak1), y(peak1)), (x(peak2), y(peak2)), ...]
+    """
     # Get a list of tuples (x(i), y(i)) where y(i) is greater than both y(i-1) and y(i+1)
-    peaks = [(xs[i], ys[i]) for i in range(1, len(xs)-1) if (ys[i-1]<ys[i] and ys[i+1]<ys[i])]
+    peaks = [(xs[i], ys[i]) for i in range(1, len(xs)-1) if (ys[i-1]<=ys[i] and ys[i+1]<=ys[i])]
     # Remove extra peaks
     if(len(peaks)>limit):
         refined = [(0, -np.inf) for _ in range(limit)]
-        print(refined)
         for tup in peaks:
             i: int = 0
             while(i<len(refined)):
                 if(tup[1]>refined[i][1]):
                     # First, shift everything down 1 in the refined list
-                    for j in range(i, len(refined))[::-1]:
+                    for j in range(i+1, len(refined))[::-1]:
                         refined[j] = deepcopy(refined[j-1])
-                    # Next, insert the new peak into the refined list
+                    # Next, insert the new peak into the refined list and stop searching where the refined list entries can be replaced
                     refined[i] = deepcopy(tup)
                     break
                 i += 1
-            print(refined)
-        peaks = refined
+        return refined
     # Return peaks found
     return peaks
 
