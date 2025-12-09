@@ -64,9 +64,58 @@ def gaussian(x, A, mu, sigma):
 def bimodal(x, A1, mu1, sigma1, A2, mu2, sigma2):
     return gaussian(x, A1, mu1, sigma1) + gaussian(x, A2, mu2, sigma2)
 
+def calculate_target_path(g: ig.Graph, target: str, startPoints: list) -> dict:
+    shortest, shortestpath = np.inf, []
+    for sp in startPoints:
+        shortpath = g.get_shortest_paths(sp, to=target, weights=g.es["combined_score"], output="vpath")[0]
+        if(shortest>len(shortpath)):
+            shortestpath = deepcopy(shortpath)
+            shortest = len(shortpath)
+    # Get the nodes in this shortest path
+    pathnodes = [g.vs[v] for v in shortestpath]
+    return {"path length": len(pathnodes)-1,
+            "path": \
+                {f"Path node {i}": {"name": pathnodes[i].attributes()["name"],
+                        "survivability": pathnodes[i].attributes()["survivability"]} \
+                                for i in range(len(pathnodes))}}
+
+def calculate_drug_paths(drug: str, g: ig.Graph, tdpfp: str, drugGeneSurv: dict, allbyallcol: pd.Series, drugTargetsRefined: pd.DataFrame,
+                         coresPerProcess: int):
+    print(f"Calculating {drug}...")
+    # Make sure there's at least 1 core available
+    coresPerProcess = max(coresPerProcess, 1)
+    # Check if data for this drug already exists
+    if(os.path.exists(os.path.join(tdpfp, f"{drug}.json"))):
+        print(f"Found drug path data already calculated for {drug}; skipping...")
+        return "Complete"
+    drugResults = {}
+    # Get the appropriate threshold for 'starting point' genes
+    survivability_cutoff = get_drug_threshold(drug, drugGeneSurv, np.array(allbyallcol.values, dtype = float))
+    # Get drug targets and save results output
+    targets = drugTargetsRefined["TARGET"].values
+    g.vs["survivability"] = [allbyallcol.loc[gn] if gn in allbyallcol.index else float("NaN") for gn in g.vs["name"]]
+    startPoints = [n for s,n in zip(g.vs["survivability"], g.vs["name"]) if s > survivability_cutoff]
+    # Get the shortest path for each target using parallel processing
+    with mp.Pool(coresPerProcess) as p:
+        results = p.starmap(calculate_target_path, [(deepcopy(g), target, startPoints) for target in targets], chunksize = int(len(targets)/coresPerProcess))
+    for target, result in zip(targets, results):
+        drugResults[target] = result
+    with open(os.path.join(tdpfp, f"{drug}.json"), "w") as f:
+        json.dump(drugResults, f)
+    print(f"Saved graph path data for {drug}")
+
 def main():
     # Perform initial setup
     initial_setup()
+    # Load credentials and get available core count
+    with open(os.path.join("Local", "passwords.json"), "r") as f:
+        creds = json.load(f)
+    coreCount = creds["core-count"]
+    if(str(coreCount).strip().lower()=="auto"):
+        coreCount = max(mp.cpu_count()-2, 1)
+    else:
+        coreCount = max(int(coreCount), 1)
+    print(f"Using {coreCount} cores")
 
     #CorrelationPlotter().plot_all()
     #return
@@ -105,7 +154,7 @@ def main():
 
     # Dictionary of results for drug-gene survivability distributions
     with open(os.path.join("Data", "Results", "Drug-gene correlation frequency histograms", "stats.json"), "r") as f:
-        drugGeneSurv = json.load(f)
+        drugGeneSurv: dict = json.load(f)
 
     ## Prepare graphs
     # Refine STRING links to those with a combined score >0.8
@@ -116,37 +165,13 @@ def main():
     print('Done !!')
     # Make path for temporary data storage if none exists
     tdpfp: str = os.path.join("Data", "Results", "drug_path_temp")
-    if(os.path.exists(tdpfp)==False): 
+    if(os.path.exists(tdpfp)==False):
         os.mkdir(tdpfp)
-    for drug in tqdm(allbyall.columns, desc = "Calculating shortest drug paths"):
-        # Check if data for this drug already exists
-        if(os.path.exists(os.path.join(tdpfp, f"{drug}.json"))):
-            print(f"Found drug path data already calculated for {drug}; skipping...")
-            continue
-        drugResults = {}
-        # Get the appropriate threshold for 'starting point' genes
-        survivability_cutoff = get_drug_threshold(drug, drugGeneSurv, np.array(allbyall[drug].values, dtype = float))
-        # Get drug targets and save results output
-        targets = drugTargets.loc[drugTargets["DRUG"]==drug]["TARGET"].values
-        for target in targets:
-            g = deepcopy(g_global)
-            g.vs["survivability"] = [allbyall[drug].loc[gn] if gn in allbyall[drug].index else float("NaN") for gn in g.vs["name"]]
-            startPoints = [n for s,n in zip(g.vs["survivability"], g.vs["name"]) if s > survivability_cutoff]
-            shortest, shortestpath = np.inf, []
-            for sp in startPoints:
-                shortpath = g.get_shortest_paths(sp, to=target, weights=g.es["combined_score"], output="vpath")[0]
-                if(shortest>len(shortpath)):
-                    shortestpath = deepcopy(shortpath)
-                    shortest = len(shortpath)
-            # Get the nodes in this shortest path
-            pathnodes = [g.vs[v] for v in shortestpath]
-            drugResults[target] = { "path length": len(pathnodes)-1,
-                                    "path": \
-                                        {f"Path node {i}": {"name": pathnodes[i].attributes()["name"],
-                                                "survivability": pathnodes[i].attributes()["survivability"]} \
-                                                        for i in range(len(pathnodes))}}
-        with open(os.path.join(tdpfp, f"{drug}.json"), "w") as f:
-            json.dump(drugResults, f)
+    with mp.Pool(max(int(coreCount/2), 1)) as p:
+        p.starmap(calculate_drug_paths, [(drug, deepcopy(g_global), tdpfp, drugGeneSurv, allbyall[drug], \
+                                         drugTargets.loc[drugTargets["DRUG"]==drug], int(coreCount/2)) \
+                                            for drug in allbyall.columns],
+                                         chunksize=int(len(allbyall.columns)/int(coreCount/2)))
     
     ## Combine the per-drug jsons into a single, human-readable json and delete the originals
     # Combine per-drug jsons
