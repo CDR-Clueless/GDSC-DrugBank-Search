@@ -15,6 +15,7 @@ import json
 import diptest
 from copy import deepcopy
 from scipy.optimize import curve_fit
+import multiprocessing as mp
 
 from typing import Union
 from typing import Optional
@@ -25,10 +26,18 @@ from data_handler import DataHandler
 from drug_search import make_dir
 
 class CorrelationPlotter(DataHandler):
-    def __init__(self):
+    def __init__(self, coreCount: Optional[int]):
         # Call super init function and insert the relevant AllGenesByAllDrugs data into the instance
         super().__init__((("AllByAll", os.path.join(CLEAN_DATA_DIR, "AllGenesByAllDrugs.tsv"))))
         self.datasets["AllByAll"] = self.datasets["AllByAll"].rename(columns = {"Unnamed: 0": "Drug"})
+        # Define number of available cores to utilise in multiprocessing
+        if(coreCount is int):
+            if(coreCount>0):
+                self.coreCount = coreCount
+            else:
+                self.coreCount = 1
+        else:
+            self.coreCount = max(mp.cpu_count()-2, 1)
     
     def plot_all(self, stds:list = [1, 2, 3], quantiles: list = []) -> None:
         self.plot_drug_correlations(stds, quantiles)
@@ -108,22 +117,30 @@ class CorrelationPlotter(DataHandler):
         make_dir(results_dir)
         # Set up dictionary output for quantiles and SDs json
         sres, resVals = {}, self.__get_stats_markers(stds, quantiles)
-        # Go through rows (i.e. drugs) for drug score distribution analysis
-        for index, row in tqdm(gxd.iterrows(), total = gxd.shape[0], desc = "Analysing drug correlation score distributions"):
-            drug, scores = row["Drug"], np.array(row.values[1:], dtype = float)
-            # Remove NaN values
-            scores = scores[~np.isnan(scores)]
-            extra_data = self.save_histogram(scores, f"{drug}-gene LOG correlations", results_dir, stds, quantiles)
-            sres[drug] = {"standard deviations": \
-                            {d: np.mean(scores)+(np.std(scores)*d) for d in resVals["devs"]},
-                          "quantiles": \
-                            {q: np.quantile(scores, q) for q in resVals["quantiles"]},
-                          "standard deviation counts": \
-                            self.__get_within_sds(scores, resVals["devs"])}
-            sres[drug].update(extra_data)
+        # Go through rows (i.e. drugs) for drug score distribution analysis in parallel
+        with mp.Pool(self.coreCount) as p:
+            results = p.starmap(self.drug_correlations_worker,
+                                [(row, results_dir, stds, quantiles, resVals) for i, row in gxd.iterrows()])
+        # Add all these parallel-calculated results to main results output
+        for result in results:
+            sres.update(result)
         with open(os.path.join(results_dir, "stats.json"), "w") as f:
             json.dump(sres, f, indent = 4)
         return
+
+    def drug_correlations_worker(self, row: pd.Series, results_dir: str, stds: list, quantiles: list, resVals: dict) -> dict:
+        drug, scores = row["Drug"], np.array(row.values[1:], dtype = float)
+        # Remove NaN values
+        scores = scores[~np.isnan(scores)]
+        extra_data = self.save_histogram(scores, f"{drug}-gene LOG correlations", results_dir, stds, quantiles)
+        newdict = {"standard deviations": \
+                        {d: np.mean(scores)+(np.std(scores)*d) for d in resVals["devs"]},
+                        "quantiles": \
+                        {q: np.quantile(scores, q) for q in resVals["quantiles"]},
+                        "standard deviation counts": \
+                        self.__get_within_sds(scores, resVals["devs"])}
+        newdict.update(extra_data)
+        return {drug: newdict}
     
     def plot_gene_correlations(self, stds: list = [], quantiles: list = []) -> None:
         gxd = self.datasets["AllByAll"]
@@ -133,21 +150,29 @@ class CorrelationPlotter(DataHandler):
         make_dir(results_dir)
         # Set up dictionary output for quantiles json
         sres, resVals = {}, self.__get_stats_markers(stds, quantiles)
-        for gene in tqdm(gxd.columns[1:], desc = "Analysing gene correlation score distributions"):
-            scores = np.array(gxd[gene].values, dtype = float)
-            # Remove NaN values
-            scores = scores[~np.isnan(scores)]
-            extra_data = self.save_histogram(scores, f"{gene}-drug LOG correlations", results_dir, stds, quantiles)
-            sres[gene] = {"standard deviations": \
-                            {d: np.mean(scores)+(np.std(scores)*d) for d in (resVals["devs"] + [-1*sdm for sdm in resVals["devs"]])},
-                          "quantiles": \
-                            {q: np.quantile(scores, q) for q in resVals["quantiles"]},
-                          "standard deviation counts": \
-                            self.__get_within_sds(scores, resVals["devs"])}
-            sres[gene].update(extra_data)
+        with mp.Pool(self.coreCount) as p:
+            results = p.starmap(self.gene_correlations_worker,
+                                [(gene, gxd[gene].values, results_dir, stds, quantiles, resVals) for gene in gxd.columns[1:]])
+        # Add all these parallel-calculated results to main results output
+        for result in results:
+            sres.update(result)
         with open(os.path.join(results_dir, "stats.json"), "w") as f:
             json.dump(sres, f, indent = 4)
         return
+    
+    def gene_correlations_worker(self, gene, values, results_dir, stds, quantiles, resVals) -> dict:
+        scores = np.array(values, dtype = float)
+        # Remove NaN values
+        scores = scores[~np.isnan(scores)]
+        extra_data = self.save_histogram(scores, f"{gene}-drug LOG correlations", results_dir, stds, quantiles)
+        newdict = {"standard deviations": \
+                        {d: np.mean(scores)+(np.std(scores)*d) for d in (resVals["devs"] + [-1*sdm for sdm in resVals["devs"]])},
+                        "quantiles": \
+                        {q: np.quantile(scores, q) for q in resVals["quantiles"]},
+                        "standard deviation counts": \
+                        self.__get_within_sds(scores, resVals["devs"])}
+        newdict.update(extra_data)
+        return {gene: newdict}
     
     def save_histogram(self, scores: Union[np.ndarray, list, tuple], titlebase: str, results_dir: str,
                        stds: list = [], quantiles: list = [], plot_curve: bool = True,
