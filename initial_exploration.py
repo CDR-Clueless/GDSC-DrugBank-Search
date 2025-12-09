@@ -18,6 +18,7 @@ from tqdm import tqdm
 import ast
 import igraph as ig
 import diptest
+import multiprocessing as mp
 
 from typing import Optional
 
@@ -36,6 +37,27 @@ DEFAULT_STRING_LINK_FILE: str = os.path.join(CLEANED_DATA_DIR, "9606.protein.lin
 #TARGET_DRUG: str = "965-D2"
 #START_POINT_CUTOFF: float = 0.197
 
+def initial_setup() -> None:
+    """
+    
+    Do all necessary setup for scripts to properly run
+
+    """
+    # Ensure passwords json exists
+    pdir = os.path.join("Local", "passwords.json")
+    if(os.path.exists(pdir)==False):
+        with open(pdir, "w") as f:
+            json.dump({}, f)
+    # Ensure passwords json has all necessary variables
+    with open(pdir, "r") as f:
+        pcont = json.load(f)
+    if("core-count" not in pcont.keys()):
+        pcont["core-count"] = "auto"
+    with open(pdir, "w") as f:
+        json.dump(pcont, f)
+    return
+
+
 def gaussian(x, A, mu, sigma):
     return A*np.exp(-np.divide(np.power(x-mu, 2),(2*np.power(sigma, 2))))
 
@@ -43,6 +65,8 @@ def bimodal(x, A1, mu1, sigma1, A2, mu2, sigma2):
     return gaussian(x, A1, mu1, sigma1) + gaussian(x, A2, mu2, sigma2)
 
 def main():
+    # Perform initial setup
+    initial_setup()
 
     #CorrelationPlotter().plot_all()
     #return
