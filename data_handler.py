@@ -10,6 +10,7 @@ from copy import deepcopy
 import os
 import pandas as pd
 from lxml import etree
+import json
 from typing import Union
 
 class DataHandler:
@@ -45,9 +46,12 @@ class DataHandler:
             data = pd.read_csv(dataset_fileloc, sep = " ")
         elif(fileend in ["xls", "xlsx"]):
             data = pd.read_excel(dataset_fileloc)
-        elif(fileend == ".xml"):
+        elif(fileend == "xml"):
             with open(dataset_fileloc, "r") as f:
                 data = etree.parse(f)
+        elif(fileend == "json"):
+            with open(dataset_fileloc, "r") as f:
+                data = json.load(f)
         else:
             print(f"File type '.{fileend}' not recognised. Please use a supported file type.")
             return

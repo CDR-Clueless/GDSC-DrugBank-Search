@@ -26,6 +26,7 @@ from data_handler import DataHandler
 from searcher import Searcher
 from drug_gene_correlation_histograms import CorrelationPlotter, curve_guess
 from drug_search import update_hgnc, get_data
+from modality_analysis import ModalityAnalyzer, get_survivability_threshold
 
 CLEANED_DATA_DIR: str = os.path.join("Data", "Laurence-Data")
 
@@ -90,11 +91,11 @@ def calculate_drug_paths(drug: str, g: ig.Graph, tdpfp: str, drugGeneSurv: dict,
         return "Complete"
     drugResults = {}
     # Get the appropriate threshold for 'starting point' genes
-    survivability_cutoff = get_drug_threshold(drug, drugGeneSurv, np.array(allbyallcol.values, dtype = float))
+    survivability_cutoff = get_survivability_threshold(drug, drugGeneSurv, np.array(allbyallcol.values, dtype = float))
     # Get drug targets and save results output
     targets = drugTargetsRefined["TARGET"].values
     g.vs["survivability"] = [allbyallcol.loc[gn] if gn in allbyallcol.index else float("NaN") for gn in g.vs["name"]]
-    startPoints = [n for s,n in zip(g.vs["survivability"], g.vs["name"]) if s > survivability_cutoff]
+    startPoints = [n for s,n in zip(g.vs["survivability"], g.vs["name"]) if s >= survivability_cutoff]
     # Get the shortest path for each target using parallel processing
     with mp.Pool(coresPerProcess) as p:
         results = p.starmap(calculate_target_path, [(deepcopy(g), target, startPoints) for target in targets], chunksize = int(len(targets)/coresPerProcess))
@@ -117,6 +118,12 @@ def main():
         coreCount = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
 
+    az = ModalityAnalyzer()
+    az.plot_cf()
+    az.plot_high_survivors()
+
+    # Graphing code
+    """
     #CorrelationPlotter().plot_all()
     #return
     
@@ -192,22 +199,8 @@ def main():
     os.rmdir(tdpfp)
     
     #USE HGNC ON DRUGBANK COMPARISON OUTPUT AND EXTEND SHORTEST PATHFINDING TO ALL TARGETS
+    """
     return
-
-def get_drug_threshold(drug: str, drugSurvivabilityDict: dict, survivability_array: Optional[np.ndarray]) -> float:
-    # Try to use the available data to get the appropriate cutoff
-    try:
-        rel = drugSurvivabilityDict[drug]
-        # If the modality is unimodal or unclear, use 3 SDs above the mean as the threshold
-        if(rel["modality details"]["modality"]!="bimodal"):
-            return rel["modality details"]["mean"] + rel["standard deviations"]["3.0"]
-        # If the modality is bimodal, use the mean of the higher curve survivability as the threshold
-        else:
-            return rel["curve parameters"]["mu1"]
-    # If unsuccessful, try to just use 3 SDs above the mean
-    except Exception as e:
-        print(f"Failed to retrieve modality information for {drug}; defaulting to 3SDs above norm...")
-        return float(np.mean(survivability_array)) + (float(np.std(survivability_array))*3.)
 
 if __name__ == "__main__":
     main()
