@@ -164,28 +164,46 @@ class ModalityAnalyzer(DataHandler):
         
 
         ## Make histograms
-        bins = [0, 1, 2, 5, 10, 20, 50, 250, 500] + list(np.arange(500, max((max(counts["unimodal"])+1, max(counts["bimodal"])+1, max(counts["unclear"])+1, 1001)), 500))
+        maxcount = max((max(counts["unimodal"])+1, max(counts["bimodal"])+1, max(counts["unclear"])+1, 500))
+        if(maxcount<=500):
+            bins = [0, 1, 2, 5, 10, 20, 50, 250, 500]
+        else:
+            # Note: have to make the bins this odd way as np.arange doesn't make the highest point, like Python Range
+            extra = list(np.arange(500, maxcount, 500))
+            bins = [0, 1, 2, 5, 10, 20, 50, 250, 500] + extra + [extra[-1]+500]
         maxcount, modalitycolours = -np.inf, {"unimodal": "blue", "bimodal": "orange", "unclear": "green"}
         for mtype in counts:
             h, edges = np.histogram(counts[mtype], bins)
-            if(h>maxcount):
-                maxcount = h
+            if(h.max()>maxcount):
+                maxcount = h.max()
+        # Set figure size
+        plt.figure(figsize = (19.2, 14.4))
         for typei, mtype in enumerate(counts):
             h, edges = np.histogram(counts[mtype], bins)
+            print(h)
             plt.stairs(h, edges, label = f"{mtype} ({len(counts[mtype])})", color = modalitycolours[mtype])
-            # Add text to each bin in the appropriate colour
-            for bini, bin in enumerate(bins):
-                plt.text(bin, maxcount - (typei*4), s = h[bini], fontsize = "xx-small", color = modalitycolours[mtype])
+            ## Add text to each bin in the appropriate colour
+            # Set modifiers to height for clearer text reading
+            mod = {bins[i]: int(15 - (3*i)) for i in range(5)} | {bins[j]: 0 for j in range(5, len(bins))}
+            for bini, bin in enumerate(bins[:-1]):
+                plt.text(bin, maxcount+50+mod[bin] - (typei*18), s = h[bini], fontsize = "small", color = modalitycolours[mtype])
+        # Add markers for the bin values
+        for bini, bin in enumerate(bins):
+            plt.text(bin, maxcount+70+mod[bin], s = bin, fontsize = "xx-small", color = "black")
         # Add axis labels
         plt.xlabel(f"Number of targets for a given {mode}")
         plt.ylabel("Frequency")
+        plt.ylim((0, maxcount+90))
         plt.title(f"Histogram of {mode} strong target counts")
-        plt.legend()
+        plt.legend(loc = "center right")
         plt.savefig(os.path.join(save_dir, f"{mode} strong target count histogram.png"))
         return
 
 
 def get_survivability_threshold(dg: str, SurvivabilityDict: dict, survivability_array: Optional[np.ndarray] = None) -> float:
+    # First, clear any NaN values out of survivability array (assuming it's available)
+    if(survivability_array is not None):
+        survivability_array = survivability_array[~np.isnan(survivability_array)]
     # Try to use the available data to get the appropriate cutoff
     try:
         rel = SurvivabilityDict[dg]
@@ -194,13 +212,23 @@ def get_survivability_threshold(dg: str, SurvivabilityDict: dict, survivability_
             thresh = float(rel["modality details"]["mean"]) + float(rel["standard deviations"]["3.0"])
         # If the modality is bimodal, use the mean of the higher curve survivability as the threshold
         else:
-            thresh = max(float(rel["curve parameters"]["mu0"]), float(rel["curve parameters"]["mu1"]))
-        # If the array of survivability scores is available, make sure there's at least SOMETHING above the threshold score, otherwise correct
+            thresh = max(float(rel["curve parameters"]["mu0"])+3*float(rel["curve parameters"]["sigma0"]), float(rel["curve parameters"]["mu1"])+3*float(rel["curve parameters"]["sigma1"]))
+        # If the array of survivability scores is available, make some tweaks to improve appropriate threshold determination
         if(survivability_array is not None):
+            # make sure there's at least SOMETHING above the threshold score, otherwise correct
             thresh = min(thresh, np.max(survivability_array))
+            # If the threshold means more tha 10% of the targets cross the threshold, curb this to 10%
+            if((survivability_array[survivability_array>thresh]).shape[0]*10>survivability_array.shape[0]):
+                thresh = np.quantile(survivability_array, 0.9)
         # Return the threshold rounded down to 3 dp
-        return float(str(thresh)[:5])
+        return round_down(thresh, 3)
     # If unsuccessful, try to just use 3 SDs above the mean
     except Exception as e:
         print(f"Failed to retrieve modality information for {dg}; defaulting to 3SDs above norm...")
         return float(np.mean(survivability_array)) + (float(np.std(survivability_array))*3.)
+
+def round_down(f, dp: int) -> float:
+    rounded = round(f, dp)
+    if(rounded>f):
+        rounded -= np.power(10., -1*dp)
+    return rounded
