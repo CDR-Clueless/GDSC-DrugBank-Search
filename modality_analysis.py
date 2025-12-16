@@ -49,11 +49,11 @@ class ModalityAnalyzer(DataHandler):
         return
     
     # Plot cumulative frequency graphs for each modality type, plotting medians and threshold values
-    def plot_cf(self, mode: str = "drug", save_dir = os.path.join("Data", "Results", "modality graphs")):
+    def plot_cf(self, mode: str = "drug", save_dir = os.path.join("Data", "Results", "modality graphs"), keep_unclear: bool = False, overlay_histogram: bool = True):
         mode = mode.lower().strip()
         if(mode=="both"):
-            self.plot_cf("drug")
-            self.plot_cf("gene")
+            self.plot_cf("drug", save_dir, keep_unclear, overlay_histogram)
+            self.plot_cf("gene", save_dir, keep_unclear, overlay_histogram)
             return
         
         # Get a dictionary containing all the drug/gene survivability values
@@ -61,6 +61,9 @@ class ModalityAnalyzer(DataHandler):
             survivability_arrays = {drug: self.datasets["AllByAll"].loc[[drug]].values for drug in self.datasets["AllByAll"].index}
         elif(mode=="gene"):
             survivability_arrays = {gene: self.datasets["AllByAll"][gene].values for gene in self.datasets["AllByAll"].columns}
+        else:
+            print(f"Unrecognised mode type: {mode}. Please use 'drug' or 'gene' as the mode.")
+            return
 
         # Create dictionaries for results of medians and strong-correlation thresholds for different modality types
         meds, thresh = {"unimodal": [], "bimodal": [], "unclear": []}, {"unimodal": [], "bimodal": [], "unclear": []}
@@ -71,6 +74,12 @@ class ModalityAnalyzer(DataHandler):
         else:
             data = self.datasets["gene modality summary"]
         
+        # Remove 'unclear' as an option if desired
+        if(not keep_unclear):
+            del meds["unclear"]
+            del thresh["unclear"]
+            del data["unclear"]
+
         # Insert relevant data into dictionaries - the median and threshold values
         for mtype in data:
             # dg stands for drug-gene, as depending on the function mode this variable could be iterating over drugs or genes
@@ -97,8 +106,19 @@ class ModalityAnalyzer(DataHandler):
         
         ## Plot Cumulative frequency graphs
         # Medians CF graph
+        modCols = {"unimodal": "b", "bimodal": "o"}
         for key in meds:
-            plt.plot(meds[key], ysm[key], label = f"{key.capitalize()} modality ({len(meds[key])-1})")
+            plt.plot(meds[key], ysm[key], color = modCols[key], label = f"{key.capitalize()} modality ({len(meds[key])-1})")
+            # If a histogram overlay was desired, plot it
+            if(overlay_histogram):
+                minbin, maxbin = 0.0, 0.0
+                while(minbin>min(meds[key])):
+                    minbin -= 0.05
+                while(maxbin<max(meds[key])):
+                    maxbin += 0.05
+                bins = np.arange(minbin, maxbin, 0.05)
+                h, edges = np.histogram(meds[key], bins)
+                plt.stairs(h, edges, color = modCols[key])
         plt.xlabel("Median survivability correlation")
         plt.ylabel("Cumulative frequency")
         plt.title(f"{mode.capitalize()} survivability scores median values")
@@ -165,28 +185,27 @@ class ModalityAnalyzer(DataHandler):
 
         ## Make histograms
         maxcount = max((max(counts["unimodal"])+1, max(counts["bimodal"])+1, max(counts["unclear"])+1, 500))
-        if(maxcount<=500):
-            bins = [0, 1, 2, 5, 10, 20, 50, 250, 500]
-        else:
-            # Note: have to make the bins this odd way as np.arange doesn't make the highest point, like Python Range
-            extra = list(np.arange(500, maxcount, 500))
-            bins = [0, 1, 2, 5, 10, 20, 50, 250, 500] + extra + [extra[-1]+500]
+        # Round up maxcount to nearest product of 5 + 1 (+1 as np.arange doesn't add the last value)
+        maxcount += (maxcount%5) + 1
+        bins = np.arange(0, maxcount, step = 5)
         maxcount, modalitycolours = -np.inf, {"unimodal": "blue", "bimodal": "orange", "unclear": "green"}
+        # Store the numpy histogram data and max value
+        # (This for loop needs to be run pre-emptively to get the maximum value of all types to ensure we get the maximum value of the entire graph,
+        #  but it's inefficient to re-run np.histogram so I store the results for later use)
+        histData = {}
         for mtype in counts:
             h, edges = np.histogram(counts[mtype], bins)
+            histdata[mtype] = {"h": h, "edges": edges}
             if(h.max()>maxcount):
                 maxcount = h.max()
         # Set figure size
         plt.figure(figsize = (19.2, 14.4))
         for typei, mtype in enumerate(counts):
-            h, edges = np.histogram(counts[mtype], bins)
-            print(h)
+            h, edges = histData["h"], histData["edges"]
             plt.stairs(h, edges, label = f"{mtype} ({len(counts[mtype])})", color = modalitycolours[mtype])
             ## Add text to each bin in the appropriate colour
-            # Set modifiers to height for clearer text reading
-            mod = {bins[i]: int(15 - (3*i)) for i in range(5)} | {bins[j]: 0 for j in range(5, len(bins))}
             for bini, bin in enumerate(bins[:-1]):
-                plt.text(bin, maxcount+50+mod[bin] - (typei*18), s = h[bini], fontsize = "small", color = modalitycolours[mtype])
+                plt.text(bin, maxcount+50 - (typei*18), s = h[bini], fontsize = "small", color = modalitycolours[mtype])
         # Add markers for the bin values
         for bini, bin in enumerate(bins):
             plt.text(bin, maxcount+70+mod[bin], s = bin, fontsize = "xx-small", color = "black")
