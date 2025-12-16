@@ -106,17 +106,19 @@ class ModalityAnalyzer(DataHandler):
         
         ## Plot Cumulative frequency graphs
         # Medians CF graph
-        modCols = {"unimodal": "b", "bimodal": "o"}
+        # Get colours for different modalities
+        modCols = {"unimodal": "b", "bimodal": "o", "unclear": "g"}
+        # Get the minimum and maximum bin values for histograms if later desired
+        minmed, maxmed = min([min(meds[m].values()) for m in meds.keys()]), max([max(meds[m].values()) for m in meds.keys()])
+        minmed = math.floor(minmed/0.05) * 0.05
+        maxmed = math.ceil(maxmed/0.05) * 0.05
+
+        # Plot graphs
         for key in meds:
             plt.plot(meds[key], ysm[key], color = modCols[key], label = f"{key.capitalize()} modality ({len(meds[key])-1})")
             # If a histogram overlay was desired, plot it
             if(overlay_histogram):
-                minbin, maxbin = 0.0, 0.0
-                while(minbin>min(meds[key])):
-                    minbin -= 0.05
-                while(maxbin<max(meds[key])):
-                    maxbin += 0.05
-                bins = np.arange(minbin, maxbin, 0.05)
+                bins = np.arange(minmed, maxmed+0.05, 0.05)
                 h, edges = np.histogram(meds[key], bins)
                 plt.stairs(h, edges, color = modCols[key])
         plt.xlabel("Median survivability correlation")
@@ -126,9 +128,21 @@ class ModalityAnalyzer(DataHandler):
         plt.savefig(os.path.join(save_dir, f"{mode.capitalize()} survivability correlation median values by modality CDF.png"))
         plt.clf()
         plt.close()
+
         # Threshold CF graph
+        # Again, get maximum and minimum bin values
+        minmed, maxmed = min([min(thresh[key].values()) for key in thresh.keys()]), max([max(thresh[key].values()) for key in thresh.keys()])
+        minmed = math.floor(minmed/0.05) * 0.05
+        maxmed = math.ceil(maxmed/0.05) * 0.05
+
+        # Plot graphs
         for key in thresh:
-            plt.plot(thresh[key], yst[key], label = f"{key.capitalize()} modality ({len(thresh[key])-1})")
+            plt.plot(thresh[key], yst[key], color = modCols[key], label = f"{key.capitalize()} modality ({len(thresh[key])-1})")
+            # If a histogram overlay was desired, plot it
+            if(overlay_histogram):
+                bins = np.arange(minmed, maxmed+0.05, 0.05)
+                h, edges = np.histogram(thresh[key], bins)
+                plt.stairs(h, edges, color = modCols[key]
         plt.xlabel("'strong' survivability correlation threshold")
         plt.ylabel("Cumulative frequency")
         plt.title(f"{mode.capitalize()} survivability scores threshold values")
