@@ -236,6 +236,82 @@ class ModalityAnalyzer(DataHandler):
         plt.legend(loc = "center right")
         plt.savefig(os.path.join(save_dir, f"{mode} strong target count histogram.png"))
         return
+    
+    # Plot waterfall graphs for each modality type, plotting number of targets for each drug
+    def plot_waterfall(self, mode: str = "drug", save_dir = os.path.join("Data", "Results", "modality graphs"),
+                       keep_unclear: bool = False, drugbank_comparison: bool = True):
+        mode = mode.lower().strip()
+        if(mode=="both"):
+            self.plot_waterfall("drug", save_dir, keep_unclear, drugbank_comparison)
+            self.plot_waterfall("gene", save_dir, keep_unclear, drugbank_comparison)
+            return
+        
+        # Get a dictionary containing all the drug/gene survivability values
+        if(mode=="drug"):
+            survivability_arrays = {drug: self.datasets["AllByAll"].loc[[drug]].values for drug in self.datasets["AllByAll"].index}
+        elif(mode=="gene"):
+            survivability_arrays = {gene: self.datasets["AllByAll"][gene].values for gene in self.datasets["AllByAll"].columns}
+        else:
+            print(f"Unrecognised mode type: {mode}. Please use 'drug' or 'gene' as the mode.")
+            return
+
+        # Create dictionaries for results of medians and strong-correlation thresholds for different modality types
+        thresh = {"unimodal": {}, "bimodal": {}, "unclear": {}}
+
+        # Get relevant data
+        if(mode=="drug"):
+            data = self.datasets["drug modality summary"]
+        else:
+            data = self.datasets["gene modality summary"]
+        
+        # Remove 'unclear' as an option if desired
+        if(not keep_unclear):
+            del thresh["unclear"]
+            del data["unclear"]
+
+        # Get threshold values and insert them into dictionaries
+        for mtype in data:
+            # dg stands for drug-gene, as depending on the function mode this variable could be iterating over drugs or genes
+            for dg in data[mtype].keys():
+                thresh[mtype][dg] = get_survivability_threshold(dg, data[mtype], survivability_arrays[dg])
+        
+        # Get rid of any NaN values
+        toremove = {mtype: [] for mtype in thresh.keys()}
+        for mtype in thresh:
+            for dg in thresh[mtype]:
+                if(thresh[mtype][dg]!=thresh[mtype][dg]):
+                    toremove[mtype].append(dg)
+        for mtype in toremove:
+            for tr in toremove[mtype]:
+                del thresh[mtype][tr]
+        
+        # Get number of targets above threshold values
+        counts = {mtype: {} for mtype in thresh.keys()}
+        for mtype in thresh:
+            for dg in thresh[mtype]:
+                arr = survivability_arrays[dg]
+                counts[mtype][dg] = arr[arr>thresh[mtype][dg]].shape[0]
+        
+        # Sort into sorted arrays tuples ({modalityType: [(drug, count(lowest)), (drug2, count2), ..., (drugn, countn(highest))]})
+        for mtype in counts:
+            stlist = [(key, val) for val, key in sorted(zip(list(counts[mtype].values()), list(counts[mtype].keys())))]
+            counts[mtype] = deepcopy(stlist)
+        
+        # Plot waterfall plots
+        mirror = {"drug": "gene", "gene": "drug"}[mode]
+        for mtype in counts:
+            stlist = counts[mtype][::-1]
+            plt.figure(figsize=(19.2, 14.4))
+            plt.bar([stlist[i][0] for i in range(len(stlist))], [stlist[i][1] for i in range(len(stlist))])
+            plt.title(f"{mode.capitalize()}-{mirror} strong targets")
+            plt.xlabel(mode.capitalize())
+            plt.ylabel(f"Strong {mirror} target count")
+            # Remove xticks
+            plt.tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
+            plt.savefig(os.path.join(save_dir, f"{mtype} {mode} target waterfall plot.png"))
+            plt.clf()
+            plt.close()
+        return
 
 
 def get_survivability_threshold(dg: str, SurvivabilityDict: dict, survivability_array: Optional[np.ndarray] = None) -> float:

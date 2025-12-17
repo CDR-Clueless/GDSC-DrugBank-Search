@@ -119,8 +119,9 @@ def main():
     print(f"Using {coreCount} cores")
 
     az = ModalityAnalyzer()
-    az.plot_cf()
-    az.plot_high_survivors()
+    #az.plot_cf()
+    #az.plot_high_survivors()
+    az.plot_waterfall()
 
     # Graphing code
     """
