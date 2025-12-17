@@ -7,6 +7,7 @@ Created 11 Dec 2025
 """
 
 import os
+import math
 import numpy as np
 from matplotlib import pyplot as plt
 from typing import Union, Optional
@@ -49,7 +50,8 @@ class ModalityAnalyzer(DataHandler):
         return
     
     # Plot cumulative frequency graphs for each modality type, plotting medians and threshold values
-    def plot_cf(self, mode: str = "drug", save_dir = os.path.join("Data", "Results", "modality graphs"), keep_unclear: bool = False, overlay_histogram: bool = True):
+    def plot_cf(self, mode: str = "drug", save_dir = os.path.join("Data", "Results", "modality graphs"),
+                keep_unclear: bool = False, overlay_histogram: bool = True, hist_width: float = 0.025):
         mode = mode.lower().strip()
         if(mode=="both"):
             self.plot_cf("drug", save_dir, keep_unclear, overlay_histogram)
@@ -106,47 +108,56 @@ class ModalityAnalyzer(DataHandler):
         
         ## Plot Cumulative frequency graphs
         # Medians CF graph
+        fig, ax1 = plt.subplots()
         # Get colours for different modalities
-        modCols = {"unimodal": "b", "bimodal": "o", "unclear": "g"}
+        modCols = {"unimodal": "aqua", "bimodal": "orange", "unclear": "lime"}
         # Get the minimum and maximum bin values for histograms if later desired
-        minmed, maxmed = min([min(meds[m].values()) for m in meds.keys()]), max([max(meds[m].values()) for m in meds.keys()])
-        minmed = math.floor(minmed/0.05) * 0.05
-        maxmed = math.ceil(maxmed/0.05) * 0.05
+        minmed, maxmed = min([np.min(meds[m]) for m in meds.keys()]), max([np.max(meds[m]) for m in meds.keys()])
+        minmed = math.floor(minmed/hist_width) * hist_width
+        maxmed = math.ceil(maxmed/hist_width) * hist_width
+        bins = np.arange(minmed, maxmed+hist_width, hist_width)
 
         # Plot graphs
+        if(overlay_histogram):
+            ax2 = ax1.twinx()
         for key in meds:
-            plt.plot(meds[key], ysm[key], color = modCols[key], label = f"{key.capitalize()} modality ({len(meds[key])-1})")
+            ax1.plot(meds[key], ysm[key], color = modCols[key], label = f"{key.capitalize()} modality ({len(meds[key])-1})")
             # If a histogram overlay was desired, plot it
             if(overlay_histogram):
-                bins = np.arange(minmed, maxmed+0.05, 0.05)
                 h, edges = np.histogram(meds[key], bins)
-                plt.stairs(h, edges, color = modCols[key])
-        plt.xlabel("Median survivability correlation")
-        plt.ylabel("Cumulative frequency")
-        plt.title(f"{mode.capitalize()} survivability scores median values")
-        plt.legend()
+                ax2.stairs(h, edges, color = modCols[key])
+        ax1.set_xlabel("Median survivability correlation")
+        ax1.set_ylabel("Cumulative frequency")
+        if(overlay_histogram):
+            ax2.set_ylabel("Histogram frequency")
+        ax1.set_title(f"{mode.capitalize()} survivability scores median values")
+        ax1.legend()
         plt.savefig(os.path.join(save_dir, f"{mode.capitalize()} survivability correlation median values by modality CDF.png"))
         plt.clf()
         plt.close()
 
         # Threshold CF graph
+        fig, ax1 = plt.subplots()
         # Again, get maximum and minimum bin values
-        minmed, maxmed = min([min(thresh[key].values()) for key in thresh.keys()]), max([max(thresh[key].values()) for key in thresh.keys()])
-        minmed = math.floor(minmed/0.05) * 0.05
-        maxmed = math.ceil(maxmed/0.05) * 0.05
+        minmed, maxmed = min([np.min(thresh[key]) for key in thresh.keys()]), max([np.max(thresh[key]) for key in thresh.keys()])
+        minmed = math.floor(minmed/hist_width) * hist_width
+        maxmed = math.ceil(maxmed/hist_width) * hist_width
+        bins = np.arange(minmed, maxmed+hist_width, hist_width)
 
         # Plot graphs
+        if(overlay_histogram):
+            ax2 = ax1.twinx()
         for key in thresh:
-            plt.plot(thresh[key], yst[key], color = modCols[key], label = f"{key.capitalize()} modality ({len(thresh[key])-1})")
+            ax1.plot(thresh[key], yst[key], color = modCols[key], label = f"{key.capitalize()} modality ({len(thresh[key])-1})")
             # If a histogram overlay was desired, plot it
             if(overlay_histogram):
-                bins = np.arange(minmed, maxmed+0.05, 0.05)
                 h, edges = np.histogram(thresh[key], bins)
-                plt.stairs(h, edges, color = modCols[key]
-        plt.xlabel("'strong' survivability correlation threshold")
-        plt.ylabel("Cumulative frequency")
-        plt.title(f"{mode.capitalize()} survivability scores threshold values")
-        plt.legend()
+                ax2.stairs(h, edges, color = modCols[key])
+        ax1.set_xlabel("'strong' survivability correlation threshold")
+        ax1.set_ylabel("Cumulative frequency")
+        ax2.set_ylabel("Histogram frequency")
+        ax1.set_title(f"{mode.capitalize()} survivability scores threshold values")
+        ax1.legend()
         plt.savefig(os.path.join(save_dir, f"{mode.capitalize()} survivability correlation threshold values by modality CDF.png"))
         plt.clf()
         plt.close()
@@ -198,7 +209,7 @@ class ModalityAnalyzer(DataHandler):
         
 
         ## Make histograms
-        maxcount = max((max(counts["unimodal"])+1, max(counts["bimodal"])+1, max(counts["unclear"])+1, 500))
+        maxcount = max((max(counts["unimodal"] + [0])+1, max(counts["bimodal"] + [0])+1, max(counts["unclear"] + [0])+1, 0))
         # Round up maxcount to nearest product of 5 + 1 (+1 as np.arange doesn't add the last value)
         maxcount += (maxcount%5) + 1
         bins = np.arange(0, maxcount, step = 5)
@@ -209,24 +220,18 @@ class ModalityAnalyzer(DataHandler):
         histData = {}
         for mtype in counts:
             h, edges = np.histogram(counts[mtype], bins)
-            histdata[mtype] = {"h": h, "edges": edges}
+            histData[mtype] = {"h": h, "edges": edges}
             if(h.max()>maxcount):
                 maxcount = h.max()
         # Set figure size
         plt.figure(figsize = (19.2, 14.4))
         for typei, mtype in enumerate(counts):
-            h, edges = histData["h"], histData["edges"]
+            h, edges = histData[mtype]["h"], histData[mtype]["edges"]
             plt.stairs(h, edges, label = f"{mtype} ({len(counts[mtype])})", color = modalitycolours[mtype])
-            ## Add text to each bin in the appropriate colour
-            for bini, bin in enumerate(bins[:-1]):
-                plt.text(bin, maxcount+50 - (typei*18), s = h[bini], fontsize = "small", color = modalitycolours[mtype])
-        # Add markers for the bin values
-        for bini, bin in enumerate(bins):
-            plt.text(bin, maxcount+70+mod[bin], s = bin, fontsize = "xx-small", color = "black")
         # Add axis labels
         plt.xlabel(f"Number of targets for a given {mode}")
         plt.ylabel("Frequency")
-        plt.ylim((0, maxcount+90))
+        plt.ylim((0, maxcount*1.05))
         plt.title(f"Histogram of {mode} strong target counts")
         plt.legend(loc = "center right")
         plt.savefig(os.path.join(save_dir, f"{mode} strong target count histogram.png"))
@@ -245,14 +250,21 @@ def get_survivability_threshold(dg: str, SurvivabilityDict: dict, survivability_
             thresh = float(rel["modality details"]["mean"]) + float(rel["standard deviations"]["3.0"])
         # If the modality is bimodal, use the mean of the higher curve survivability as the threshold
         else:
-            thresh = max(float(rel["curve parameters"]["mu0"])+3*float(rel["curve parameters"]["sigma0"]), float(rel["curve parameters"]["mu1"])+3*float(rel["curve parameters"]["sigma1"]))
+            if(float(rel["curve parameters"]["mu0"])>float(rel["curve parameters"]["mu1"])):
+                thresh = float(rel["curve parameters"]["mu0"])+(3*float(rel["curve parameters"]["sigma0"]))
+            else:
+                thresh = float(rel["curve parameters"]["mu1"])+(3*float(rel["curve parameters"]["sigma1"]))
         # If the array of survivability scores is available, make some tweaks to improve appropriate threshold determination
         if(survivability_array is not None):
-            # make sure there's at least SOMETHING above the threshold score, otherwise correct
+            # make sure there's at least SOMETHING above the threshold score, otherwise correct to 3SDs above mean
+            # alternatively, correct to 3SDs if more than 10% of correlations are strong
+            if(thresh>np.max(survivability_array) or (survivability_array[survivability_array>thresh]).shape[0]>survivability_array.shape[0]*0.1):
+                thresh = np.mean(survivability_array) + (3*np.std(survivability_array))
+            # If the threshold is still too high, correct to the maximum score (i.e. gives a single target equal to the threshold score)
             thresh = min(thresh, np.max(survivability_array))
-            # If the threshold means more tha 10% of the targets cross the threshold, curb this to 10%
-            if((survivability_array[survivability_array>thresh]).shape[0]*10>survivability_array.shape[0]):
-                thresh = np.quantile(survivability_array, 0.9)
+            # If the threshold means more tha 5% of the targets cross the threshold, curb this to 5%
+            if((survivability_array[survivability_array>thresh]).shape[0]>survivability_array.shape[0]*0.05):
+                thresh = np.quantile(survivability_array, 0.95)
         # Return the threshold rounded down to 3 dp
         return round_down(thresh, 3)
     # If unsuccessful, try to just use 3 SDs above the mean
