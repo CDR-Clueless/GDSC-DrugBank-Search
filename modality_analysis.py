@@ -237,38 +237,43 @@ class ModalityAnalyzer(DataHandler):
         plt.savefig(os.path.join(save_dir, f"{mode} strong target count histogram.png"))
         return
     
-    # Plot waterfall graphs for each modality type, plotting number of targets for each drug
-    def plot_waterfall(self, mode: str = "drug", save_dir = os.path.join("Data", "Results", "modality graphs"),
-                       keep_unclear: bool = False, drugbank_comparison: bool = True):
-        mode = mode.lower().strip()
-        if(mode=="both"):
-            self.plot_waterfall("drug", save_dir, keep_unclear, drugbank_comparison)
-            self.plot_waterfall("gene", save_dir, keep_unclear, drugbank_comparison)
-            return
-        
-        # Get a dictionary containing all the drug/gene survivability values
+    # Get modality data from the 'stats.json' file in results plots
+    def __get_mod_data(self, mode: str) -> Optional[dict]:
+        # Get relevant data
         if(mode=="drug"):
-            survivability_arrays = {drug: self.datasets["AllByAll"].loc[[drug]].values for drug in self.datasets["AllByAll"].index}
+            return self.datasets["drug modality summary"]
         elif(mode=="gene"):
-            survivability_arrays = {gene: self.datasets["AllByAll"][gene].values for gene in self.datasets["AllByAll"].columns}
+            return self.datasets["gene modality summary"]
         else:
             print(f"Unrecognised mode type: {mode}. Please use 'drug' or 'gene' as the mode.")
             return
-
-        # Create dictionaries for results of medians and strong-correlation thresholds for different modality types
-        thresh = {"unimodal": {}, "bimodal": {}, "unclear": {}}
-
-        # Get relevant data
+    
+    # Get arrays of survivability correlation values for targets of a given drug or gene
+    def __get_survivability_arrays(self, mode: str) -> Optional[dict]:
+        # Get a dictionary containing all the drug/gene survivability values
         if(mode=="drug"):
-            data = self.datasets["drug modality summary"]
+            return {drug: self.datasets["AllByAll"].loc[[drug]].values for drug in self.datasets["AllByAll"].index}
+        elif(mode=="gene"):
+            return {gene: self.datasets["AllByAll"][gene].values for gene in self.datasets["AllByAll"].columns}
         else:
-            data = self.datasets["gene modality summary"]
-        
-        # Remove 'unclear' as an option if desired
-        if(not keep_unclear):
-            del thresh["unclear"]
-            del data["unclear"]
-
+            print(f"Unrecognised mode type: {mode}. Please use 'drug' or 'gene' as the mode.")
+            return
+    
+    # Get nested dictionaries with all survivability correlation values
+    def __get_survivability_dicts(self, mode: str) -> Optional[dict]:
+        df = self.datasets["AllByAll"]
+        if(mode=="drug"):
+            return {drug: {gene: df.loc[[drug]][gene].values[0] for gene in df.columns} for drug in df.index}
+        elif(mode=="gene"):
+            return {gene: {drug: df.loc[[drug]][gene].values[0] for drug in df.index} for gene in df.columns}
+        else:
+            print(f"Unrecognised mode type: {mode}. Please use 'drug' or 'gene' as the mode.")
+            return
+    
+    # Get counts for targets above threshold values
+    def __get_counts(self, data: dict, survivability_arrays: dict) -> dict:
+        # Make dictionary for threshold values
+        thresh = {mtype: {} for mtype in data.keys()}
         # Get threshold values and insert them into dictionaries
         for mtype in data:
             # dg stands for drug-gene, as depending on the function mode this variable could be iterating over drugs or genes
@@ -292,6 +297,30 @@ class ModalityAnalyzer(DataHandler):
                 arr = survivability_arrays[dg]
                 counts[mtype][dg] = arr[arr>thresh[mtype][dg]].shape[0]
         
+        return counts
+
+    
+    # Plot waterfall graphs for each modality type, plotting number of targets for each drug
+    def plot_waterfall(self, mode: str = "drug", save_dir = os.path.join("Data", "Results", "modality graphs"),
+                       keep_unclear: bool = False):
+        mode = mode.lower().strip()
+        if(mode=="both"):
+            self.plot_waterfall("drug", save_dir, keep_unclear)
+            self.plot_waterfall("gene", save_dir, keep_unclear)
+            return
+        
+        # Get a dictionary containing all the drug/gene survivability values
+        survivability_arrays = self.__get_survivability_arrays(mode)
+
+        # Get relevant data
+        data = self.__get_mod_data(mode)
+        
+        # Remove 'unclear' as an option if desired
+        if(not keep_unclear):
+            del data["unclear"]
+
+        counts = self.__get_counts(data, survivability_arrays)
+        
         # Sort into sorted arrays tuples ({modalityType: [(drug, count(lowest)), (drug2, count2), ..., (drugn, countn(highest))]})
         for mtype in counts:
             stlist = [(key, val) for val, key in sorted(zip(list(counts[mtype].values()), list(counts[mtype].keys())))]
@@ -308,9 +337,13 @@ class ModalityAnalyzer(DataHandler):
             plt.ylabel(f"Strong {mirror} target count")
             # Remove xticks
             plt.tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
-            plt.savefig(os.path.join(save_dir, f"{mtype} {mode} target waterfall plot.png"))
+            plt.savefig(os.path.join(save_dir, f"{mode} target waterfall plot {mtype}.png"))
             plt.clf()
             plt.close()
+        return
+    
+    def plot_compare_targets(self, mode: str = "drug", save_dir = os.path.join("Data", "Results", "modality graphs"),
+                       keep_unclear: bool = False) -> None:
         return
 
 
