@@ -9,11 +9,15 @@ Created 11 Dec 2025
 import os
 import math
 import numpy as np
+import pandas as pd
 from matplotlib import pyplot as plt
 from typing import Union, Optional
 from copy import deepcopy
+from tqdm import tqdm
 
 from data_handler import DataHandler
+from drugbank_handler import DrugbankHandler
+from drug_search import update_hgnc_single
 CLEAN_DATA_DIR: str = os.path.join("Data", "Laurence-Data")
 
 class ModalityAnalyzer(DataHandler):
@@ -344,8 +348,67 @@ class ModalityAnalyzer(DataHandler):
     
     def plot_compare_targets(self, mode: str = "drug", save_dir = os.path.join("Data", "Results", "modality graphs"),
                        keep_unclear: bool = False) -> None:
-        return
+        mode = mode.lower().strip()
+        if(mode=="both"):
+            self.plot_compare_targets("drug", save_dir, keep_unclear)
+            self.plot_compare_targets("gene", save_dir, keep_unclear)
+            return
+        elif(mode not in ["drug", "gene", "both"]):
+            print(f"Unrecognised mode: {mode}. Please use 'drug', 'gene', or 'both' as the mode argument.")
+            return
+        
+        # Get a dictionary containing all the drug/gene survivability values
+        dbg = self.datasets["AllByAll"]
 
+        # Get relevant data
+        data = self.__get_mod_data(mode)
+        
+        # Remove 'unclear' as an option if desired
+        if(not keep_unclear):
+            del data["unclear"]
+
+        # Initialize a drug bank handler class to find the relevant drugbank targets
+        dbh = DrugbankHandler()
+
+        hgnc = pd.read_table(os.path.join("Data", "Laurence-Data", "hgnc_complete_set.tsv"), low_memory=False).fillna('')
+
+        # Go through drugs/genes
+        missing, results = [], {mtype: {} for mtype in data.keys()}
+        for mtype in data:
+            for dg in tqdm(data[mtype], desc = f"Processing drugs of {mtype} modality"):
+                # Get actual, primary targets from DrugBank
+                realTargets = dbh.fetch_targets(dg, mode)
+                # If no real targets are found, continue the loop
+                if(len(realTargets)<1):
+                    missing.append(dg)
+                    continue
+                # Get all drugs/genes and their scores
+                if(mode=="drug"):
+                    corrs = dbg.loc[[dg]]
+                    corrDict = {gene: corrs[gene].values[0] for gene in corrs.columns}
+                else:
+                    corrs = dbg[dg]
+                    corrDict = {drug: corrs.loc[[drug]].values[0] for drug in corrs.index}
+                # Get the threshold for strong targets
+                thresh = get_survivability_threshold(dg, data[mtype], np.array(list(corrDict.values()), dtype = float))
+                # Find strong targets
+                targets = [target for target in corrDict.keys() if corrDict[target]>=thresh]
+                # standardise the strong target names if necessary
+                if(mode=="drug"):
+                    for i in range(len(targets)):
+                        targets[i] = update_hgnc_single(targets[i], hgnc)
+                sim = 0
+                for target in realTargets:
+                    if(target in targets):
+                        sim += 1
+                results[mtype][dg] = sim / len(realTargets)
+        
+        with open(os.path.join("Data", "Results", "drugbankDrugs.txt"), "w") as f:
+            f.write("\n".join(dbh.fetch_drugs()))
+        with open(os.path.join("Data", "Results", "correlationDrugs.txt"), "w") as f:
+            f.write("\n".join(list(dbg.index)))
+
+        return
 
 def get_survivability_threshold(dg: str, SurvivabilityDict: dict, survivability_array: Optional[np.ndarray] = None) -> float:
     # First, clear any NaN values out of survivability array (assuming it's available)

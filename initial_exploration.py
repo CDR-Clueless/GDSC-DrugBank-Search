@@ -118,13 +118,45 @@ def main():
         coreCount = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
 
+    #"""
+    ## Drug name analysis code
+    # Drug names and DrugBank names
+    with open(os.path.join("Data", "Results", "correlationDrugs.txt"), "r") as f:
+        corrDrugs = f.read().split("\t")
+    with open(os.path.join("Data", "Results", "drugbankDrugs.txt"), "r") as f:
+        dbDrugs = f.read().split("\t")
+    
+
+
+    #for dbd in dbDrugs:
+        #if("oxozeaenol" in dbd.lower().replace(" ","")):
+            #print(dbd)
+
+    for cd in corrDrugs:
+        check, equiv = cd.lower().replace(" ", ""), False
+        for dbd in dbDrugs:
+            dbcheck = dbd.lower().replace(" ", "")
+            if(check==dbcheck):
+                equiv = True
+                break
+        
+        if(not equiv):
+            print(f"No drugbank data found for {cd}")
+            break
+    
+    #"""
+    
+    """
+    ##Modality analysis plotting code
     az = ModalityAnalyzer()
     #az.plot_cf()
     #az.plot_high_survivors()
-    az.plot_waterfall()
+    #az.plot_waterfall()
+    az.plot_compare_targets()
+    #"""
 
-    # Graphing code
     """
+    ## Target pathfinding code
     #CorrelationPlotter().plot_all()
     #return
     
