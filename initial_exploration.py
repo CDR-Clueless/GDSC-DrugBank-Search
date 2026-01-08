@@ -19,6 +19,7 @@ import ast
 import igraph as ig
 import diptest
 import multiprocessing as mp
+import tarfile, gzip
 
 from typing import Optional
 
@@ -105,6 +106,58 @@ def calculate_drug_paths(drug: str, g: ig.Graph, tdpfp: str, drugGeneSurv: dict,
         json.dump(drugResults, f)
     print(f"Saved graph path data for {drug}")
 
+def get_cosmic_columns(cosdir: str = os.path.join("Data", "Raw Data", "COSMIC"),
+                       outdir: str = os.path.join("Data", "Results", "COSMIC-columns.txt")):
+    if(os.path.exists(outdir)==True):
+        print(f"Loading columns...")
+        with open(outdir, "r") as f:
+            data = f.read()
+        entries = data.split("\n\n")
+        for i in range(len(entries))[::-1]:
+            entries[i] = entries[i].split("\n")
+            for j in range(len(entries[i]))[::-1]:
+                if(len(entries[i][j].replace(" ","").replace("\t",""))==0):
+                    entries[i].pop(j)
+            if(len(entries[i])<2):
+                entries.pop(i)
+        return entries
+    # Go through COSMIC archive
+    columns = []
+    for folder in tqdm(os.listdir(cosdir), desc = "Parsing COSMIC databases"):
+        for filename in os.listdir(os.path.join(cosdir, folder)):
+            if("readme" not in filename.lower()):
+                #print(f"Reading {filename}")
+                if(filename.lower()[-4:]==".tsv"):
+                    for df in pd.read_csv(os.path.join(cosdir, folder, filename), sep = "\t", low_memory = False, chunksize = 10000, iterator = True):
+                        cols = df.columns.values
+                        break
+                elif(filename.lower()[-4:]==".vcf"):
+                    with open(os.path.join(cosdir, folder, filename), "r") as f:
+                        for line in f.readlines():
+                            if(line[0]=="#" and line[1]!="#"):
+                                sub = line[1:].replace("\n","")
+                                cols = sub.split("\t")
+                        break
+                else:
+                    print(f"Unrecognised file type: {filename}")
+                break
+        columns.append(f"{filename}\n{cols}\n\n")
+    with open(outdir, "w") as f:
+        f.write("\n".join(columns))
+    print("Columns generated.")
+    return get_cosmic_columns(cosdir, outdir)
+
+def get_cosmic_drugs(cosdir: str = os.path.join("Data", "Raw Data", "COSMIC")):
+    cols = get_cosmic_columns(cosdir)
+    refined = []
+    for tup in cols:
+        for col in tup:
+            if("drug_name" in col.lower()):
+                refined.append(deepcopy(tup))
+    # NOTE: NEED TO FIGURE OUT HOW TO GET TO THE REFINED FILE RATHER THAN JUST HARD CODING THE LOCATION
+    df = pd.read_csv(os.path.join(cosdir, "Cosmic_ResistanceMutations_Tsv_v102_GRCh38", "Cosmic_ResistanceMutations_v102_GRCh38.tsv"), sep = "\t")
+    return df["DRUG_NAME"].unique()
+
 def main():
     # Perform initial setup
     initial_setup()
@@ -118,32 +171,43 @@ def main():
         coreCount = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
 
+    # Looking through other drug DB drug names
+    cosds = get_cosmic_drugs()
+
     #"""
     ## Drug name analysis code
     # Drug names and DrugBank names
     with open(os.path.join("Data", "Results", "correlationDrugs.txt"), "r") as f:
-        corrDrugs = f.read().split("\t")
+        corrDrugs = f.read().split("\t")[0].split("\n")
     with open(os.path.join("Data", "Results", "drugbankDrugs.txt"), "r") as f:
-        dbDrugs = f.read().split("\t")
+        dbDrugs = f.read().split("\t")[0].split("\n")
     
-
-
-    #for dbd in dbDrugs:
-        #if("oxozeaenol" in dbd.lower().replace(" ","")):
-            #print(dbd)
+    total, totalDrugbank, totalCosmic, totalUnfound = 0, 0, 0, 0
 
     for cd in corrDrugs:
+        total += 1
         check, equiv = cd.lower().replace(" ", ""), False
+
         for dbd in dbDrugs:
             dbcheck = dbd.lower().replace(" ", "")
             if(check==dbcheck):
                 equiv = True
+                totalDrugbank += 1
+                break
+        for cd in cosds:
+            cdcheck = cd.lower().replace(" ","")
+            if(check==cdcheck):
+                equiv = True
+                totalCosmic += 1
                 break
         
         if(not equiv):
-            print(f"No drugbank data found for {cd}")
-            break
+            totalUnfound += 1
     
+    print(totalUnfound)
+    print(total)
+    print(totalDrugbank)
+    print(totalCosmic)
     #"""
     
     """
