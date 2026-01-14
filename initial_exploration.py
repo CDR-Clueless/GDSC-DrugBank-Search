@@ -158,24 +158,10 @@ def get_cosmic_drugs(cosdir: str = os.path.join("Data", "Raw Data", "COSMIC")):
     df = pd.read_csv(os.path.join(cosdir, "Cosmic_ResistanceMutations_Tsv_v102_GRCh38", "Cosmic_ResistanceMutations_v102_GRCh38.tsv"), sep = "\t")
     return df["DRUG_NAME"].unique()
 
-def main():
-    # Perform initial setup
-    initial_setup()
-    # Load credentials and get available core count
-    with open(os.path.join("Local", "passwords.json"), "r") as f:
-        creds = json.load(f)
-    coreCount = creds["core-count"]
-    if(str(coreCount).strip().lower()=="auto"):
-        coreCount = max(mp.cpu_count()-2, 1)
-    else:
-        coreCount = max(int(coreCount), 1)
-    print(f"Using {coreCount} cores")
-
-    # Looking through other drug DB drug names
+## Drug name analysis code
+def check_drug_names() -> None:
+    # Get drug names listed in the COSMIC database
     cosds = get_cosmic_drugs()
-
-    #"""
-    ## Drug name analysis code
     # Drug names and DrugBank names
     with open(os.path.join("Data", "Results", "correlationDrugs.txt"), "r") as f:
         corrDrugs = f.read().split("\t")[0].split("\n")
@@ -208,7 +194,20 @@ def main():
     print(total)
     print(totalDrugbank)
     print(totalCosmic)
-    #"""
+    return
+
+def main():
+    # Perform initial setup
+    initial_setup()
+    # Load credentials and get available core count
+    with open(os.path.join("Local", "passwords.json"), "r") as f:
+        creds = json.load(f)
+    coreCount = creds["core-count"]
+    if(str(coreCount).strip().lower()=="auto"):
+        coreCount = max(mp.cpu_count()-2, 1)
+    else:
+        coreCount = max(int(coreCount), 1)
+    print(f"Using {coreCount} cores")
     
     """
     ##Modality analysis plotting code
