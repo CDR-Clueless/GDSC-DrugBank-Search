@@ -209,6 +209,37 @@ def main():
         coreCount = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
     
+    ## Import relevant datasets and amend them
+    # HGNC
+    hgnc = pd.read_table(DEFAULT_HUGO_FILE, low_memory=False).fillna('')
+    hgnc = hgnc[['symbol', 'ensembl_gene_id',
+                'prev_symbol', 'location', 'location_sortable']]
+    hgnc.set_index('symbol', inplace=True)
+
+    # DrugxGene survivability scores
+    allbyall = pd.read_csv(DEFAULT_ALL_BY_ALL_FILE, sep = "\t")
+    allbyall = update_hgnc(allbyall, hgnc)
+    allbyall = allbyall.set_index("symbol")
+
+    # Dictionary of results for drug-gene survivability distributions
+    with open(os.path.join("Data", "Results", "Drug-gene correlation frequency histograms", "stats.json"), "r") as f:
+        drugGeneSurv: dict = json.load(f)
+
+    # Fetch targets for each drug
+    results = {}
+    for drug in allbyall.columns:
+        rel = allbyall[drug]
+        thresh = get_survivability_threshold(drug, drugGeneSurv, survivability_array=np.array(rel.values))
+        genes = np.array(rel.index)[np.array(rel.values) >= thresh]
+        results[drug] = list(genes)
+        break
+
+    with open(os.path.join("Data", "Results", "DrugTargets.json"), "w") as f:
+        json.dump(results, f, indent=4)
+    
+    return
+
+
     """
     ##Modality analysis plotting code
     az = ModalityAnalyzer()
