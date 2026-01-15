@@ -21,7 +21,7 @@ import diptest
 import multiprocessing as mp
 import tarfile, gzip
 import requests
-from bs4 import BeautifulSoup as soup
+from bs4 import BeautifulSoup as bsoup
 
 from typing import Optional
 
@@ -290,7 +290,10 @@ def main():
         link = link.replace("GENETYPE", geneType)
         link = link.replace("DAVID_TOOL", tool)
         link = link.replace("GENEIDS", ",".join(results[drug]))
-        print(link)
+
+        response = requests.get(link)
+        soup = bsoup(response.text, "html.parser")
+        print(soup.prettify())
         break
     return
 
