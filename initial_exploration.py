@@ -20,6 +20,8 @@ import igraph as ig
 import diptest
 import multiprocessing as mp
 import tarfile, gzip
+import requests
+from bs4 import BeautifulSoup as soup
 
 from typing import Optional
 
@@ -196,6 +198,43 @@ def check_drug_names() -> None:
     print(totalCosmic)
     return
 
+# Output drug targets
+def fetch_drug_targets(save_output: bool = False) -> dict:
+    ## Import relevant datasets and amend them
+    # HGNC
+    hgnc = pd.read_table(DEFAULT_HUGO_FILE, low_memory=False).fillna('')
+    hgnc = hgnc[['symbol', 'ensembl_gene_id',
+                'prev_symbol', 'location', 'location_sortable']]
+    hgnc.set_index('symbol', inplace=True)
+
+    # DrugxGene survivability scores
+    allbyall = pd.read_csv(DEFAULT_ALL_BY_ALL_FILE, sep = "\t")
+    allbyall = update_hgnc(allbyall, hgnc)
+    allbyall = allbyall.set_index("symbol")
+
+    # Dictionary of results for drug-gene survivability distributions
+    with open(os.path.join("Data", "Results", "Drug-gene correlation frequency histograms", "stats.json"), "r") as f:
+        drugGeneSurv: dict = json.load(f)
+
+    # Fetch targets for each drug
+    if(os.path.exists(os.path.join("Data", "Results", "Drug Targets"))==False):
+        os.mkdir(os.path.join("Data", "Results", "Drug Targets"))
+    results: dict = {}
+    for drug in allbyall.columns:
+        rel = allbyall[drug]
+        thresh = get_survivability_threshold(drug, drugGeneSurv, survivability_array=np.array(rel.values))
+        genes = np.array(rel.index)[np.array(rel.values) >= thresh]
+        results[drug] = list(genes)
+        if(save_output):
+            with open(os.path.join("Data", "Results", "Drug Targets", f"{drug}.txt"), "w") as f:
+                f.write("\n".join(genes))
+
+    if(save_output):
+        with open(os.path.join("Data", "Results", "DrugTargets.json"), "w") as f:
+            json.dump(results, f, indent=4)
+
+    return results
+
 def main():
     # Perform initial setup
     initial_setup()
@@ -234,12 +273,25 @@ def main():
         thresh = get_survivability_threshold(drug, drugGeneSurv, survivability_array=np.array(rel.values))
         genes = np.array(rel.index)[np.array(rel.values) >= thresh]
         results[drug] = list(genes)
-        with open(os.path.join("Data", "Results", "Drug Targets", f"{drug}.txt"), "w") as f:
-            f.write("\n".join(genes))
 
-    with open(os.path.join("Data", "Results", "DrugTargets.json"), "w") as f:
-        json.dump(results, f, indent=4)
-    
+    linkBase: str = "https://davidbioinformatics.nih.gov/api.jsp?type=GENETYPE&ids=GENEIDS&tool=DAVID_TOOL&annot=ANNOTATIONCATEGORIES"
+
+    geneType: str = "OFFICIAL_GENE_SYMBOL"
+    tool: str = "summary"
+    annotationTypes: list = ["all"]
+
+    for drug in results:
+        
+        if(annotationTypes[0]=="all"):
+            link: str = linkBase[:linkBase.index("&annot")]
+        else:
+            link: str = linkBase.replace("ANNOTATIONCATEGORIES", ",".join(annotationTypes))
+        
+        link = link.replace("GENETYPE", geneType)
+        link = link.replace("DAVID_TOOL", tool)
+        link = link.replace("GENEIDS", ",".join(results[drug]))
+        print(link)
+        break
     return
 
 
