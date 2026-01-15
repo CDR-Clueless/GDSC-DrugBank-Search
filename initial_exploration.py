@@ -226,13 +226,16 @@ def main():
         drugGeneSurv: dict = json.load(f)
 
     # Fetch targets for each drug
-    results = {}
+    if(os.path.exists(os.path.join("Data", "Results", "Drug Targets"))==False):
+        os.mkdir(os.path.join("Data", "Results", "Drug Targets"))
+    results: dict = {}
     for drug in allbyall.columns:
         rel = allbyall[drug]
         thresh = get_survivability_threshold(drug, drugGeneSurv, survivability_array=np.array(rel.values))
         genes = np.array(rel.index)[np.array(rel.values) >= thresh]
         results[drug] = list(genes)
-        break
+        with open(os.path.join("Data", "Results", "Drug Targets", f"{drug}.txt"), "w") as f:
+            f.write("\n".join(genes))
 
     with open(os.path.join("Data", "Results", "DrugTargets.json"), "w") as f:
         json.dump(results, f, indent=4)
