@@ -22,8 +22,9 @@ import multiprocessing as mp
 import tarfile, gzip
 import requests
 from bs4 import BeautifulSoup as bsoup
+import shutil
 
-from typing import Optional
+from typing import Optional, Tuple
 
 from data_handler import DataHandler
 from searcher import Searcher
@@ -41,7 +42,7 @@ DEFAULT_STRING_LINK_FILE: str = os.path.join(CLEANED_DATA_DIR, "9606.protein.lin
 #TARGET_DRUG: str = "965-D2"
 #START_POINT_CUTOFF: float = 0.197
 
-def initial_setup() -> None:
+def initial_setup(cosdir: str = os.path.join("Data", "Raw Data", "COSMIC")) -> None:
     """
     
     Do all necessary setup for scripts to properly run
@@ -50,6 +51,7 @@ def initial_setup() -> None:
     # Ensure passwords json exists
     pdir = os.path.join("Local", "passwords.json")
     if(os.path.exists(pdir)==False):
+        os.mkdir("Local")
         with open(pdir, "w") as f:
             json.dump({}, f)
     # Ensure passwords json has all necessary variables
@@ -59,6 +61,27 @@ def initial_setup() -> None:
         pcont["core-count"] = "auto"
     with open(pdir, "w") as f:
         json.dump(pcont, f)
+    # Unzip COSMIC data
+    if(os.path.exists(cosdir)==False):
+        print("No COSMIC directory found. Any tasks relating to COSMIC data will not function.")
+    else:
+        for filename in tqdm(os.listdir(cosdir), desc="Extract tar archives"):
+            if(filename.lower().split(".")[-1] == "tar.gz"):
+                tar = tarfile.open(os.path.join(cosdir, filename), "r:gz")
+                tar.extractall(os.path.join(cosdir, filename.replace(".tar.gz","")))
+                tar.close()
+                os.remove(os.path.join(cosdir, filename))
+        for dirname in tqdm(os.listdir(cosdir), desc="Decompressing .gz files"):
+            ndir = os.path.join(cosdir, dirname)
+            if(os.path.isdir(ndir)):
+                for filename in os.listdir(ndir):
+                    if(filename.lower().split(".")[-1]=="gz"):
+                        indir = os.path.join(ndir, filename)
+                        outdir = os.path.join(ndir, filename.replace(".gz",""))
+                        with gzip.open(indir, "rb") as f_in:
+                            with open(outdir, "wb") as f_out:
+                                shutil.copyfileobj(f_in, f_out)
+                        os.remove(indir)
     return
 
 
@@ -161,7 +184,13 @@ def get_cosmic_drugs(cosdir: str = os.path.join("Data", "Raw Data", "COSMIC")):
     return df["DRUG_NAME"].unique()
 
 ## Drug name analysis code
-def check_drug_names() -> None:
+def check_drug_names() -> Tuple[list, list, list]:
+    """
+    Finds which drugs listed in GDSC are in DrugBank and COSMIC
+    
+    :return: Drugs found in DrugBank, drugs found in COSMIC, and drugs not found in either
+    :rtype: Tuple[list, list, list]
+    """
     # Get drug names listed in the COSMIC database
     cosds = get_cosmic_drugs()
     # Drug names and DrugBank names
@@ -172,6 +201,8 @@ def check_drug_names() -> None:
     
     total, totalDrugbank, totalCosmic, totalUnfound = 0, 0, 0, 0
 
+    drugsDrugbank, drugsCosmic, drugsUnfound = [], [], []
+
     for cd in corrDrugs:
         total += 1
         check, equiv = cd.lower().replace(" ", ""), False
@@ -181,22 +212,25 @@ def check_drug_names() -> None:
             if(check==dbcheck):
                 equiv = True
                 totalDrugbank += 1
+                drugsDrugbank.append(cd)
                 break
-        for cd in cosds:
-            cdcheck = cd.lower().replace(" ","")
+        for cosd in cosds:
+            cdcheck = cosd.lower().replace(" ","")
             if(check==cdcheck):
                 equiv = True
                 totalCosmic += 1
+                drugsCosmic.append(cd)
                 break
         
         if(not equiv):
             totalUnfound += 1
+            drugsUnfound.append(cd)
     
-    print(totalUnfound)
-    print(total)
-    print(totalDrugbank)
-    print(totalCosmic)
-    return
+    print(f"Total drugs found in DrugBank and/or COSMIC: {total}")
+    print(f"Total not found in either: {totalUnfound}")
+    print(f"Total drugs found in DrugBank: {totalDrugbank}")
+    print(f"Total drugs found in COSMIC: {totalCosmic}")
+    return (drugsDrugbank, drugsCosmic, drugsUnfound)
 
 # Output drug targets
 def fetch_drug_targets(save_output: bool = False) -> dict:
@@ -247,6 +281,7 @@ def main():
     else:
         coreCount = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
+
     
     ## Import relevant datasets and amend them
     # HGNC
@@ -264,6 +299,10 @@ def main():
     with open(os.path.join("Data", "Results", "Drug-gene correlation frequency histograms", "stats.json"), "r") as f:
         drugGeneSurv: dict = json.load(f)
 
+    drugbankDrugs, cosmicDrugs, unfoundDrugs = check_drug_names()
+    print(unfoundDrugs)
+    """
+    ### Investigate genes using online DAVID tool
     # Fetch targets for each drug
     if(os.path.exists(os.path.join("Data", "Results", "Drug Targets"))==False):
         os.mkdir(os.path.join("Data", "Results", "Drug Targets"))
@@ -295,11 +334,10 @@ def main():
         soup = bsoup(response.text, "html.parser")
         print(soup.prettify())
         break
-    return
-
+    """
 
     """
-    ##Modality analysis plotting code
+    ### Modality analysis plotting code
     az = ModalityAnalyzer()
     #az.plot_cf()
     #az.plot_high_survivors()
@@ -308,7 +346,7 @@ def main():
     #"""
 
     """
-    ## Target pathfinding code
+    ### Target pathfinding code
     #CorrelationPlotter().plot_all()
     #return
     
