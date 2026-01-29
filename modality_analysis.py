@@ -403,9 +403,9 @@ class ModalityAnalyzer(DataHandler):
                         sim += 1
                 results[mtype][dg] = sim / len(realTargets)
         
-        with open(os.path.join("Data", "Results", "drugbankDrugs.txt"), "w") as f:
+        with open(os.path.join(os.path.dirname(save_dir), "drugbankDrugs.txt"), "w") as f:
             f.write("\n".join(dbh.fetch_drugs()))
-        with open(os.path.join("Data", "Results", "correlationDrugs.txt"), "w") as f:
+        with open(os.path.join(os.path.dirname(save_dir), "correlationDrugs.txt"), "w") as f:
             f.write("\n".join(list(dbg.index)))
 
         return

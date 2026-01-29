@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+ <head>
+  <meta charset="utf-8"/>
+  <meta content="IE=edge" http-equiv="X-UA-Compatible"/>
+  <meta content="width=device-width, initial-scale=.8, maximum-scale=1" name="viewport"/>
+  <meta content="telephone=no" name="format-detection">
+   <meta content="DrugCentral is online drug information resource created and maintained by Division of Translational Informatics at University of New Mexico." name="description">
+    <link href="/static/images/favicon.ico" rel="icon" type="image/x-icon"/>
+    <link href="/static/styles.css" rel="stylesheet" type="text/css">
+     <title>
+      Drug Central
+     </title>
+     <!-- Bootstrap -->
+     <link href="/static/css/bootstrap.css" rel="stylesheet"/>
+     <link href="/static/css/style.css" rel="stylesheet"/>
+     <!-- Links -->
+     <link href="/static/css/search.css" rel="stylesheet"/>
+     <link href="/static/css/jquery.dataTables.min.css" rel="stylesheet"/>
+     <!--JS-->
+     <script src="/static/js/jquery.min.js">
+     </script>
+     <script src="/static/js/jquery.dataTables.min.js">
+     </script>
+     <script src="/static/js/jquery.rd-navbar.js">
+     </script>
+     <script src="/static/js/tmstickup.js">
+     </script>
+     <script src="/static/js/device.min.js">
+     </script>
+     <script>
+      $(document).ready(function(){
+  // Stick up menu
+  $('#stuck_container').TMStickUp({})
+
+  // Add smooth scrolling to all links
+  $("a").on('click', function(event) {
+
+    // Make sure this.hash has a value before overriding default behavior
+    //if (this.hash !== "") {
+    if (this.href[0] === "#") {
+      // Prevent default anchor click behavior
+      event.preventDefault();
+
+      // Store hash
+      var hash = this.hash;
+
+      // Using jQuery's animate() method to add smooth page scroll
+      // The optional number (800) specifies the number of milliseconds it takes to scroll to the specified area
+      $('html, body').animate({
+        scrollTop: $(hash).offset().top
+      }, 800, function(){
+
+        // Add hash (#) to URL when done scrolling (default click behavior)
+        window.location.hash = hash;
+      });
+    } // End if
+  });
+});
+     </script>
+     <meta content="3F52A17DC2B652A499E0E983E7895672" name="msvalidate.01">
+      <meta content="cH5JKb6S04-4d4Ba5pGx1GSjXpmchZHQrZ5MIiTl910" name="google-site-verification"/>
+      <script>
+       (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-90288404-1', 'auto');
+  ga('send', 'pageview');
+      </script>
+     </meta>
+    </link>
+   </meta>
+  </meta>
+ </head>
+ <body>
+  <header>
+   <div class="stuck_container" id="stuck_container">
+    <nav class="navbar navbar-default navbar-static-top clearfix">
+     <div class="container1">
+      <div class="navbar-header">
+       <h1 class="navbar-brand">
+        <a href="/" style="color: white">
+         DrugCentral 2023    🐕
+        </a>
+        <span class="brand-slogan">
+         2022 Update-Veterinary Drugs &amp; Uses
+        </span>
+       </h1>
+      </div>
+      <div class="navbar-right">
+       <ul class="navbar-nav sf-menu" data-type="navbar">
+        <li style="color: black">
+         <a href="/">
+          Search
+         </a>
+        </li>
+        <li style="color: black">
+         <a href="/substructure">
+          Structure 🔎
+         </a>
+        </li>
+        <li style="color: black">
+         <a href="/similarity">
+          Similarity 🔎
+         </a>
+        </li>
+        <li style="color: black">
+         <a href="/OpenAPI">
+          Smart API
+         </a>
+        </li>
+        <li style="color: black">
+         <a href="/Redial">
+          Redial
+         </a>
+        </li>
+        <li style="color: black">
+         <a href="/about">
+          About
+         </a>
+        </li>
+        <!-- <li>
+                                <a href="#">Our Search </a>
+                            </li>-->
+        <li class="dropdown" style="color: black">
+         <a href="/download">
+          Download
+         </a>
+        </li>
+        <li style="color: black">
+         <a href="/LINCS">
+          L1000
+         </a>
+        </li>
+        <li style="color: black">
+         <a href="/help">
+          FAQ
+         </a>
+        </li>
+       </ul>
+      </div>
+     </div>
+    </nav>
+   </div>
+  </header>
+  <a class="scrollup" href="#">
+   Scroll
+  </a>
+  <div class="content container">
+   <!--<h1>database updated</h1>-->
+   <script src="/autocomplete.js" type="text/javascript">
+   </script>
+   <section class="cont-wr" style="height:135px">
+    <div class="container text-center banner">
+     <form action="/?" autocomplete="off" class="search-form" method="GET">
+      <div class="autocomplete">
+       <input class="search-form_input1" id="q" name="q" placeholder="Enter: Drug, Target, Disease, Uniprot ID, Veterinary Drug" type="text" value="5-azacytidine"/>
+      </div>
+      <input checked="checked" id="approval_none" name="approval" type="radio" value=""/>
+      <label for="approval_none">
+       All
+      </label>
+      <input id="approval_fda" name="approval" type="radio" value="fda"/>
+      <label for="approval_fda">
+       FDA-approved
+      </label>
+      <input id="approval_ema" name="approval" type="radio" value="ema"/>
+      <label for="approval_ema">
+       EMA-approved
+      </label>
+      <input id="approval_pmda" name="approval" type="radio" value="pmda"/>
+      <label for="approval_pmda">
+       PMDA-approved
+      </label>
+      <br/>
+      <span style="">
+       Target Card Uniprot Example:
+       <a href="/?q=P23975" style="color: white;">
+        P23975
+       </a>
+      </span>
+      <span class="search-form_liveout">
+      </span>
+      <button class="search-form_submit" type="submit">
+      </button>
+     </form>
+    </div>
+   </section>
+   <script type="text/javascript">
+    function escapeRegex(s) {
+    return s.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+}
+function autocomplete(inp, arr) {
+    /*the autocomplete function takes two arguments,
+    the text field element and an array of possible autocompleted values:*/
+    var currentFocus;
+    /*execute a function when someone writes in the text field:*/
+    inp.addEventListener("input", function(e) {
+        var a, b, i, val = this.value;
+        /*close any already open lists of autocompleted values*/
+        closeAllLists();
+        var filler = '[-() ,:_+\\.]';
+        var fillerRE = new RegExp(filler + '+');
+        var val = val.replace(fillerRE, '');
+        if (!val) { return false; }
+        var pattern = '^';
+        for (i = 0; i < val.length; ++i) {
+            pattern += filler + '*';
+            pattern += escapeRegex(val[i]);
+        }
+        var re = new RegExp(pattern, 'i');
+        currentFocus = -1;
+        /*create a DIV element that will contain the items (values):*/
+        a = document.createElement("div");
+        a.setAttribute("id", this.id + "autocomplete-list");
+        a.setAttribute("class", "autocomplete-items");
+        /*append the DIV element as a child of the autocomplete container:*/
+        this.parentNode.appendChild(a);
+        /*for each item in the array...*/
+        var n = 0;
+        for (i = 0; i < arr.length; i++) {
+            /*check if the item starts with the same letters as the text field value:*/
+            var match = re.exec(arr[i]);
+            if (match && match[0]) {
+                var idx = match.index + match[0].length;
+                b = document.createElement("a");
+                var strong = document.createElement("strong");
+                strong.innerText = arr[i].substr(0, idx);
+                b.appendChild(strong);
+                var text = document.createTextNode(arr[i].substr(idx));
+                b.appendChild(text);
+                b.autocompleteValue = arr[i];
+                b.addEventListener("click", function(e) {
+                    /*insert the value for the autocomplete text field:*/
+                    inp.value = this.autocompleteValue;
+                    /*close the list of autocompleted values,
+                    (or any other open lists of autocompleted values:*/
+                    closeAllLists();
+                });
+                a.appendChild(b);
+                if (++n == 8) {
+                    break;
+                }
+            }
+        }
+    });
+    /*execute a function presses a key on the keyboard:*/
+    inp.addEventListener("keydown", function(e) {
+        var x = document.getElementById(this.id + "autocomplete-list");
+        if (!x) return;
+        x = x.getElementsByTagName("a");
+        if (!x) return;
+        if (e.keyCode == 40) {
+            /*If the arrow DOWN key is pressed,
+            increase the currentFocus variable:*/
+            currentFocus++;
+            /*and and make the current item more visible:*/
+            addActive(x);
+        } else if (e.keyCode == 38) { //up
+            /*If the arrow UP key is pressed,
+            decrease the currentFocus variable:*/
+            currentFocus--;
+            /*and and make the current item more visible:*/
+            addActive(x);
+        } else if (e.keyCode == 13 && currentFocus >= 0) {
+            /*If the ENTER key is pressed, prevent the form from being submitted,*/
+            e.preventDefault();
+            /*and simulate a click on the "active" item:*/
+            if (x) x[currentFocus].click();
+        }
+    });
+    function addActive(x) {
+        /*a function to classify an item as "active":*/
+        if (!x) return false;
+        /*start by removing the "active" class on all items:*/
+        removeActive(x);
+        if (currentFocus >= x.length) currentFocus = 0;
+        if (currentFocus < 0) currentFocus = (x.length - 1);
+        /*add class "autocomplete-active":*/
+        x[currentFocus].classList.add("autocomplete-active");
+    }
+    function removeActive(x) {
+        /*a function to remove the "active" class from all autocomplete items:*/
+        for (var i = 0; i < x.length; i++) {
+            x[i].classList.remove("autocomplete-active");
+        }
+    }
+    function closeAllLists(elmnt) {
+        /*close all autocomplete lists in the document,
+        except the one passed as an argument:*/
+        var x = document.getElementsByClassName("autocomplete-items");
+        for (var i = 0; i < x.length; i++) {
+            if (elmnt != x[i] && elmnt != inp) {
+                x[i].parentNode.removeChild(x[i]);
+            }
+        }
+    }
+    /*execute a function when someone clicks in the document:*/
+    document.addEventListener("click", function (e) {
+        closeAllLists(e.target);
+    });
+}
+autocomplete(document.getElementById("q"), autocompleteNames);
+   </script>
+   <p>
+    Drug results: 1
+   </p>
+   <table style="margin-bottom: 30px;">
+    <tr>
+     <td id="nobr3" style="color: dodgerblue">
+      <!--0.6079271-->
+      <a href="/drugcard/25?q=5-azacytidine">
+       <strong class="sealine">
+        azacitidine
+       </strong>
+      </a>
+     </td>
+     <td id="sea">
+      A pyrimidine analogue that inhibits DNA methyltransferase, impairing DNA methylation. It is also an antimetabolite of cytidine, incorporated primarily into RNA. Azacytidine has been used as an antineoplastic agent.
+     </td>
+     <td>
+      <a href="/drug/25/image">
+       <img id="sea2" src="/drug/25/image"/>
+      </a>
+     </td>
+    </tr>
+   </table>
+  </div>
+  <section class="well5 bg-alt">
+   <div class="container" style="padding: 5px">
+    <div style="margin-left: 10px">
+    </div>
+    <br/>
+    <h3 class="text-center">
+     Featured
+     <strong>
+      News
+     </strong>
+    </h3>
+    <h2 class="text-center" style="letter-spacing: 4px">
+     <a href="https://doi.org/10.1093/nar/gkac1085" target="_blank" title="Drugcentral 2023 NAR Paper">
+      Drugcentral 2023 NAR Article
+     </a>
+     <br/>
+     <br/>
+     <a href="https://pubs.acs.org/page/vi/chemistry_coronavirus_research?utm_source=pubs_content_marketing&amp;utm_medium=email&amp;utm_campaign=PUBS_0621_FMT_Coronavirus_Email_30&amp;src=PUBS_0621_FMT_Coronavirus_Email_30&amp;ref=pubs_content_marketing_email_PUBS_0621_FMT_Coronavirus_Email_30&amp;" target="_blank" title="ACS Matters Coronavirus Research">
+      The Latest in Chemistry in Coronavirus Research
+     </a>
+    </h2>
+    <br/>
+    <h3 class="text-center">
+     Drugs
+     <strong>
+      in the News
+     </strong>
+    </h3>
+    <h2 class="text-center" style="letter-spacing: 4px">
+     <br/>
+     <a href="/drugcard/4189?q=makena" target="_self" title="makena">
+      Makena
+     </a>
+     <a href="/drugcard/5133?q=venetoclax" target="_self" title="venetoclax">
+      Venetoclax
+     </a>
+     <a href="/drugcard/4304?q=dapagliflozin" target="_self" title="dapagliflozin">
+      Dapagliflozin
+     </a>
+     <a href="/drugcard/4924?q=KEYTRUDA" target="_self" title="KEYTRUDA">
+      KEYTRUDA
+     </a>
+     <a href="/drugcard/5012?q=sacubitril" target="_self" title="sacubitril%20">
+      Sacubitril
+     </a>
+     <a href="/drugcard/5302?q=%20LORBRENA" target="_self" title="LORBRENA">
+      LORBRENA
+     </a>
+     <a href="/drugcard/1395?q=Hydroxychloroquine%20" target="_self" title="Hydroxychloroquine">
+      Hydroxychloroquine
+     </a>
+    </h2>
+    <br/>
+    <h3 class="text-center">
+     DrugCentral
+     <strong>
+      Search Overview
+     </strong>
+    </h3>
+    <ul class="">
+     <li class="col-md-4 col-sm-4 col-xs-4">
+      <h4 style="text-align: center;margin-right: 35px ">
+       <img src="static/images/oleglogo.png"/>
+      </h4>
+      <h4 class="fw-n txt-sec">
+       <strong>
+        Drug search example:
+       </strong>
+      </h4>
+      <p>
+       <h4 class="txt-sec">
+        Generic drug names, drug synonyms, trade names terms can be used to search for drugs.
+                          Example search for
+        <strong style="color:#e2cb31">
+         Lipitor
+        </strong>
+        can query using either
+        <strong style="color:#e2cb31">
+         “Atorvastatin” or “Lipitor”.
+        </strong>
+        A comprehensive list of drug development codes and salt or ester forms
+                      are also stored in the database and can be used as search terms, for example search for
+        <strong style="color:#e2cb31">
+         "rosuvastatin"
+        </strong>
+        the following terms can be used:
+        <strong style="color:#e2cb31">
+         "rosuvastatin calcium"
+        </strong>
+        or
+        <strong style="color:#e2cb31">
+         "ZD4522".
+        </strong>
+       </h4>
+      </p>
+      <p>
+       <h4 style="text-align: center;margin-right: 50px ">
+        <img src="static/images/oleglogo.png"/>
+       </h4>
+       <h4 class="fw-n txt-sec">
+        <strong>
+         Disease search example:
+        </strong>
+       </h4>
+       <h4 class="fw-n txt-sec">
+        Supported disease terms are
+        <a href="http://www.ihtsdo.org/snomed-ct" style="color: #e2cb31">
+         SNOMED-CT
+        </a>
+        and
+        <a href="http://omop.org/Vocabularies" style="color: #e2cb31">
+         OMOP vocabulary
+        </a>
+        terms. Disease annotations for drugs approved before 2012
+        <strong style="color:black">
+         originate from OMOP vocabulary mappings.
+        </strong>
+        For drugs approved after 2012
+        <strong>
+         disease annotations are extracted manually
+        </strong>
+        from approved drug labels and mapped to SNOMED-CT concepts.
+       </h4>
+      </p>
+      <p>
+       <h4 class="fw-n txt-sec">
+        Example search for
+        <strong style="color:#e2cb31">
+         “Chronic Hepatitis
+                                                       C”
+        </strong>
+        returns the list of antiviral
+                                                    drugs
+    indicated to treat
+        <strong style="color:#e2cb31">
+         “Chronic Hepatitis C”
+        </strong>
+        followed by drugs
+        <strong style="color:#e2cb31">
+         contra-indicated in hepatitis C.
+        </strong>
+       </h4>
+       <p>
+        <h4 style="text-align: center;margin-right: 50px ">
+         <img src="static/images/oleglogo.png"/>
+        </h4>
+        <h4 class="fw-n txt-sec">
+         <strong style="color: #e2cb31">
+          New!
+         </strong>
+         <strong>
+          Medical (off label) uses suggestion form
+         </strong>
+        </h4>
+        <center>
+         <a href="https://forms.gle/JBNbKmnrPtKr6fTW6" target="_blank">
+          Off label Uses Form
+         </a>
+        </center>
+       </p>
+      </p>
+     </li>
+     <li class="col-md-4 col-sm-4 col-xs-4">
+      <h4 style="text-align: center;margin-right: 35px ">
+       <img src="static/images/oleglogo.png"/>
+      </h4>
+      <h4 class="fw-n txt-sec">
+       <strong style="color: #e2cb31">
+        New!
+       </strong>
+       <strong>
+        Substructure Search:
+       </strong>
+       <br/>
+       The current update supports chemical substructure searching. Typing a SMILES string in the DrugCentral Substructure search bar launches a chemical substructure search that finds matching compounds in DrugCentral. E.g.,
+       <a href="/substructure?m=n1cnccc1">
+        N1cnccc1
+       </a>
+       . SMILES strings can be located on all Drug Cards under "Description".
+       <br/>
+       <br/>
+       <strong style="color: #e2cb31">
+        New!
+       </strong>
+       <strong>
+        FDA Adverse Event Reporting System:
+       </strong>
+       <br/>
+       The 2021 DrugCentral update, we separately calculated FAERS for men and women to enable research on sex differences in drug safety. The
+       <strong>
+        2022 version
+       </strong>
+       goes further by computing adverse drug event scores granulated by age: pediatric data (FAERS_PED) covers patients from 1 day to 17 years, and geriatric data (FAERS_GER) focuses on elderly patients over 65 years of age, respectively.
+ Female, Male, Geriatric &amp; Pediatrics. E.g.,
+       <a href="/drugcard/195?q=adderall#FAER">
+        amfetamine
+       </a>
+      </h4>
+      <br/>
+      <br/>
+      <h4 class="fw-n txt-sec">
+       <strong style="color: #e2cb31">
+        New!
+       </strong>
+       <strong>
+        Target Cards:
+       </strong>
+       <br/>
+       To perform a target card search enter a Uniprot target Accession ID e.g.,
+       <a href="/target/P23975/view?q=P23975">
+        P23975
+       </a>
+       . The target cards depict the "Accession", "Swissprot", "Organism", "Gene" &amp; "Target class" followed by "Drug relations" where the drugs "Bioactivity mechanism-of-actions" are identified.
+      </h4>
+      <h4 style="text-align: center;margin-right: 35px ">
+       <img src="static/images/oleglogo.png"/>
+      </h4>
+      <h4 class="fw-n txt-sec">
+       <strong>
+        Target search example:
+       </strong>
+      </h4>
+      <h4 class="fw-n txt-sec">
+       Supported target search terms are HUGO gene symbols, Uniprot accessions and target names, and Swissprot identifiers.
+                      Example search for drugs targeting Mu-type opioid receptor can be run using either of the
+                        terms:
+       <strong style="color:red">
+        “OPRM1”, P35372, “OPRM_HUMAN”,
+       </strong>
+       full or partial
+                        Uniprot target name. Returned drugs are ranked using the following criteria: top ranked drugs have mechanism of action target Mu-type opioid receptor, next in the list are drugs with potencies measured against this receptor.
+       <br/>
+       <br/>
+       <br/>
+       In collaboration with the
+       <strong>
+        IDG
+       </strong>
+       <a href="https://druggablegenome.net/" target="_blank">
+        <img src="static/images/IDGLink.png" width="95%"/>
+       </a>
+      </h4>
+     </li>
+     <li class="col-md-4 col-sm-4 col-xs-4">
+      <h4 style="text-align: center;margin-right: 35px ">
+       <img src="static/images/oleglogoD.png"/>
+      </h4>
+      <h4 class="fw-n txt-sec">
+       <strong style="color: #e2cb31">
+        New!
+       </strong>
+       <strong>
+        Veterinary Drugs, Uses &amp; Products:
+       </strong>
+      </h4>
+      <h4 class="txt-sec">
+       Drug Central now contains
+       <strong>
+        Veterinary Drugs, Uses &amp; Products.
+       </strong>
+       The current update adds 1805 bioactivities for 226 veterinary drugs and 804 targets. DrugCentral veterinary data contains application numbers and types, trade names, applicant names, and prescription types for 1492 drug products as referenced in FDA’s Green Book.  DrugCentral currently holds 1664 indications (pairs of drug and concept names) for 34 species. Dogs, cattle, and cats sum up to 63% of the indications covered by 193 veterinary drugs.
+       <strong>
+        Veterinary Drug Use
+       </strong>
+       can be found on each drug card by selecting the sub menu link:
+       <span style="font-size: 27px;">
+        🐶
+       </span>
+       <strong style="color:#38a99c;">
+        Veterinary Use on the drug card.
+       </strong>
+       E.g.,
+       <a href="/drugcard/5532?q=enrofloxacin">
+        enrofloxacin
+       </a>
+      </h4>
+      <p dir="ltr">
+      </p>
+      <p dir="ltr">
+      </p>
+     </li>
+     <li class="col-md-4 col-sm-4 col-xs-4">
+      <h4 style="text-align: center;margin-right: 35px ">
+       <img src="static/images/oleglogo.png"/>
+      </h4>
+      <h4 class="fw-n txt-sec">
+       <strong>
+        Pharmacologic action search example:
+       </strong>
+      </h4>
+      <h4 class="txt-sec">
+       Supported pharmacologic action terms are
+       <a href="https://www.nlm.nih.gov/mesh/MBrowser.html" style="color: #38a99c">
+        MeSH
+       </a>
+       ,
+       <a href="http://www.fda.gov/ForIndustry/DataStandards/StructuredProductLabeling/ucm162549.htm" style="color:#38a99c">
+        FDA [EPC, MoA, PE]
+       </a>
+       ,
+       <a href="https://www.ebi.ac.uk/chebi/" style="color: #38a99c">
+        ChEBI
+       </a>
+       action roles.
+      </h4>
+      <h4 class="txt-sec">
+       Example search for
+       <strong style="color:#38a99c">
+        “HMG-CoA Reductase Inhibitor”
+       </strong>
+       FDA EPC term for statin drugs returns list of all statin drugs classified by FDA as HMG-CoA reductase inhibitors.
+      </h4>
+      <p dir="ltr">
+      </p>
+      <p dir="ltr">
+      </p>
+      <h4 style="text-align: center;margin-right: 50px ">
+       <img src="static/images/oleglogo.png"/>
+      </h4>
+      <h4 class="txt-sec">
+       Ranked result list is annotated with
+       <strong style="color:#38a99c">
+        4 level ranking system
+       </strong>
+       ordered from highest to lowest:
+      </h4>
+      <h4 class="txt-sec">
+       <strong style="color:#38a99c">
+        A - query term
+       </strong>
+       matched drug name or synonyms, mechanism of action target, or drug indication.
+      </h4>
+      <h4 class="txt-sec">
+       <strong style="color:#38a99c">
+        B - query term
+       </strong>
+       matched disease term in drug contraindications or off-label uses, targets listed in drug bioactivity profiles (not MoA targets), or pharmacologic action descriptions.
+      </h4>
+      <h4 class="txt-sec">
+       <strong style="color:#38a99c">
+        C - query term
+       </strong>
+       matched short drug description text.
+      </h4>
+      <h4 class="txt-sec">
+       <strong style="color:#38a99c">
+        D - query term
+       </strong>
+       matched full text in FDA drug labels.
+      </h4>
+     </li>
+    </ul>
+   </div>
+  </section>
+  <div class="container">
+   <p class="copyright">
+    <a href="https://doi.org/10.1093/nar/gkac1085" target="_blank">
+     Citing DrugCentral
+    </a>
+    ©
+    <span id="copyright-year">
+     2026
+    </span>
+    .
+    <a href="/privacy">
+     License
+    </a>
+    <img src="static/images/mobile.png" style="vertical-align:middle;margin:auto;top:0;left:340px;right:0;bottom:0;">
+    </img>
+   </p>
+  </div>
+  <script type="text/javascript">
+   $(document).ready(function () {
+
+    $(window).scroll(function () {
+        if ($(this).scrollTop() > 100) {
+            $('.scrollup').fadeIn();
+        } else {
+            $('.scrollup').fadeOut();
+        }
+    });
+
+    $('.scrollup').click(function () {
+        $("html, body").animate({
+            scrollTop: 0
+        }, 600);
+        return false;
+    });
+
+});
+  </script>
+ </body>
+</html>

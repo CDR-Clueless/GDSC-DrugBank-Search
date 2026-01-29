@@ -20,7 +20,7 @@ import igraph as ig
 import diptest
 import multiprocessing as mp
 import tarfile, gzip
-import requests
+from urllib import request
 from bs4 import BeautifulSoup as bsoup
 import shutil
 
@@ -183,6 +183,19 @@ def get_cosmic_drugs(cosdir: str = os.path.join("Data", "Raw Data", "COSMIC")):
     df = pd.read_csv(os.path.join(cosdir, "Cosmic_ResistanceMutations_Tsv_v102_GRCh38", "Cosmic_ResistanceMutations_v102_GRCh38.tsv"), sep = "\t")
     return df["DRUG_NAME"].unique()
 
+def correlationDrugs_txt_check(results_dir: str = os.path.join("Data", "Results")) -> None:
+    """
+    Function to ensure the correlationDrugs.txt results document exists, and generate it if not
+    
+    :param results_dir: Directory in which to find correlationDrugs.txt
+    :type results_dir: str
+    """
+
+    if(os.path.exists(os.path.join(results_dir, "correlationDrugs.txt"))==False or 
+       os.path.exists(os.path.join(results_dir, "drugbankDrugs.txt"))==False):
+        print("Required txt files not found; generating...")
+        ModalityAnalyzer().plot_compare_targets(save_dir = os.path.join(results_dir, "modality graphs"))
+
 ## Drug name analysis code
 def check_drug_names() -> Tuple[list, list, list]:
     """
@@ -194,6 +207,7 @@ def check_drug_names() -> Tuple[list, list, list]:
     # Get drug names listed in the COSMIC database
     cosds = get_cosmic_drugs()
     # Drug names and DrugBank names
+    correlationDrugs_txt_check()
     with open(os.path.join("Data", "Results", "correlationDrugs.txt"), "r") as f:
         corrDrugs = f.read().split("\t")[0].split("\n")
     with open(os.path.join("Data", "Results", "drugbankDrugs.txt"), "r") as f:
@@ -282,7 +296,6 @@ def main():
         coreCount = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
 
-    
     ## Import relevant datasets and amend them
     # HGNC
     hgnc = pd.read_table(DEFAULT_HUGO_FILE, low_memory=False).fillna('')
@@ -299,8 +312,22 @@ def main():
     with open(os.path.join("Data", "Results", "Drug-gene correlation frequency histograms", "stats.json"), "r") as f:
         drugGeneSurv: dict = json.load(f)
 
+    ## Use Drug Central to try and get unfound drug official names
+    toSearch = "5-AZACYTIDINE".lower()
+    searchAddress = f"https://drugcentral.org/?q={toSearch}&approval="
+    #with request.urlopen(searchAddress) as response:
+        #html = response.read()
+    #with open("testout.xml", "w") as f:
+        #f.write(bsoup(html, "html.parser").prettify())
+    with open("testout.xml", "r") as f:
+        soup = bsoup(f.read(), "html.parser")
+    table = soup.find("table")
+    #print(table)
+    print(str(table.find("strong").text).strip())
+    return
+    ## Get drugs not found in GDSC/COSMIC
     drugbankDrugs, cosmicDrugs, unfoundDrugs = check_drug_names()
-    print(unfoundDrugs)
+    print(unfoundDrugs[:10])
     """
     ### Investigate genes using online DAVID tool
     # Fetch targets for each drug
