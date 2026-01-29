@@ -283,6 +283,32 @@ def fetch_drug_targets(save_output: bool = False) -> dict:
 
     return results
 
+def check_drugCentral(toCheck: str) -> list | None:
+    """
+    Docstring for check_drugCentral
+    
+    :param toCheck: Drug name to check against DrugCentral records
+    :type toCheck: str
+    :return: list of drugs found by DrugCentral (should be in order of most likely first, least likely last)
+    :rtype: list | None
+    """
+
+    # Get search result from Drug Central
+    searchAddress = f"https://drugcentral.org/?q={toCheck}&approval="
+    with request.urlopen(searchAddress) as response:
+        html = response.read()
+    # Soupify the result and find the first table (this table is what contains relevant search results)
+    soup = bsoup(html, "html.parser")
+    table = soup.find("table")
+    # If no table was found (most likely means no results or a website error), return None
+    if table is None:
+        return None
+    # Loop through table entries and add the names of all results (drugs) found to the list of drug names
+    officialDrugs = []
+    for entry in table.find_all("strong"):
+        officialDrugs.append(str(entry.text).strip())
+    return officialDrugs
+
 def main():
     # Perform initial setup
     initial_setup()
@@ -314,16 +340,7 @@ def main():
 
     ## Use Drug Central to try and get unfound drug official names
     toSearch = "5-AZACYTIDINE".lower()
-    searchAddress = f"https://drugcentral.org/?q={toSearch}&approval="
-    #with request.urlopen(searchAddress) as response:
-        #html = response.read()
-    #with open("testout.xml", "w") as f:
-        #f.write(bsoup(html, "html.parser").prettify())
-    with open("testout.xml", "r") as f:
-        soup = bsoup(f.read(), "html.parser")
-    table = soup.find("table")
-    #print(table)
-    print(str(table.find("strong").text).strip())
+    print(check_drugCentral(toSearch))
     return
     ## Get drugs not found in GDSC/COSMIC
     drugbankDrugs, cosmicDrugs, unfoundDrugs = check_drug_names()
