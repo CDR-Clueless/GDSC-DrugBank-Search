@@ -375,13 +375,9 @@ def main():
     for drug in cosmicDrugs:
         if(drug not in drugbankDrugs):
             nondrugbank.append(drug)
-    print(f"{len(nondrugbank)} drugs in GDSC not found in DrugBank")
-    # Record of new drug names found
-    totalAlternatives: int = 0
     # First, find drugs already tested or make file if appropriate
     drugCentralOutput: str = os.path.join("Data", "Results", "drugCentral_dictionary.tsv")
-    search_drugCentral(nondrugbank, drugCentralOutput)
-    return
+    #search_drugCentral(nondrugbank, drugCentralOutput)
 
     ## Downloading tsv of GDSC drugs
     request.urlretrieve("https://www.cancerrxgene.org/api/compounds?list=all&sEcho=1&iColumns=7&sColumns=&iDisplayStart=0&iDisplayLength=25&mDataProp_0=0&mDataProp_1=1&mDataProp_2=2&mDataProp_3=3&mDataProp_4=4&mDataProp_5=5&mDataProp_6=6&sSearch=&bRegex=false&sSearch_0=&bRegex_0=false&bSearchable_0=true&sSearch_1=&bRegex_1=false&bSearchable_1=true&sSearch_2=&bRegex_2=false&bSearchable_2=true&sSearch_3=&bRegex_3=false&bSearchable_3=true&sSearch_4=&bRegex_4=false&bSearchable_4=true&sSearch_5=&bRegex_5=false&bSearchable_5=true&sSearch_6=&bRegex_6=false&bSearchable_6=true&iSortCol_0=0&sSortDir_0=asc&iSortingCols=1&bSortable_0=true&bSortable_1=true&bSortable_2=true&bSortable_3=true&bSortable_4=true&bSortable_5=true&bSortable_6=true&export=tsv",
