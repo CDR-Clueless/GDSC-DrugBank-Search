@@ -25,6 +25,8 @@ from bs4 import BeautifulSoup as bsoup
 import shutil
 import time
 import random
+from lxml import etree
+
 
 from typing import Optional, Tuple
 
@@ -33,6 +35,7 @@ from searcher import Searcher
 from drug_gene_correlation_histograms import CorrelationPlotter, curve_guess
 from drug_search import update_hgnc, get_data
 from modality_analysis import ModalityAnalyzer, get_survivability_threshold
+from drugbank_handler import DrugbankHandler
 
 CLEANED_DATA_DIR: str = os.path.join("Data", "Laurence-Data")
 
@@ -337,8 +340,31 @@ def search_drugCentral(tofind: list, out_dir: str = os.path.join("Data", "Result
     print(f"Found {totalAlternatives} new drug names out of {len(tofind)} unidentifiable GDSC drugs. Written to {out_dir}")
     return
 
+def make_drugbank_pubchem_converter() -> None:
+    """
+    Creates a tab-separated value file for all DrugBank drugs with PubChem and ChEMBL values
+    """
+    ## Exploring DrugBank drugs
+    dbh = DrugbankHandler()
+    conversion = []
+    for drug in dbh.main_tree.getroot():
+        name = drug.find(f"{dbh.dbprefix}name").text
+        for ei in drug.findall(f".//{dbh.dbprefix}external-identifier"):
+            resource = ei.find(f"{dbh.dbprefix}resource")
+            if("pubchem" in resource.text.lower()):
+                pcid = ei.find(f"{dbh.dbprefix}identifier").text
+            elif("chembl" in resource.text.lower()):
+                chemblid = ei.find(f"{dbh.dbprefix}identifier").text
+        conversion.append((name, pcid, chemblid))
+        #with open(os.path.join("Data", "Results", "single.xml"), "w") as f:
+            #f.write(str(etree.tostring(drug, encoding = str, pretty_print = True)))
+    df = pd.DataFrame(conversion, columns = ["DrugBank name", "PubChem ID", "ChEMBL ID"])
+    
+    df.to_csv(os.path.join("Data", "Results", "DrugBank-PubChem.tsv"), lineterminator="\n", sep = "\t")
+    return
+
 def main():
-    # Perform initial setup
+    ### Perform initial setup
     initial_setup()
     # Load credentials and get available core count
     with open(os.path.join("Local", "passwords.json"), "r") as f:
@@ -350,7 +376,7 @@ def main():
         coreCount = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
 
-    ## Import relevant datasets and amend them
+    ### Import relevant datasets and amend them
     # HGNC
     hgnc = pd.read_table(DEFAULT_HUGO_FILE, low_memory=False).fillna('')
     hgnc = hgnc[['symbol', 'ensembl_gene_id',
@@ -375,13 +401,18 @@ def main():
     for drug in cosmicDrugs:
         if(drug not in drugbankDrugs):
             nondrugbank.append(drug)
-    # First, find drugs already tested or make file if appropriate
+    
     drugCentralOutput: str = os.path.join("Data", "Results", "drugCentral_dictionary.tsv")
     #search_drugCentral(nondrugbank, drugCentralOutput)
 
     ## Downloading tsv of GDSC drugs
-    request.urlretrieve("https://www.cancerrxgene.org/api/compounds?list=all&sEcho=1&iColumns=7&sColumns=&iDisplayStart=0&iDisplayLength=25&mDataProp_0=0&mDataProp_1=1&mDataProp_2=2&mDataProp_3=3&mDataProp_4=4&mDataProp_5=5&mDataProp_6=6&sSearch=&bRegex=false&sSearch_0=&bRegex_0=false&bSearchable_0=true&sSearch_1=&bRegex_1=false&bSearchable_1=true&sSearch_2=&bRegex_2=false&bSearchable_2=true&sSearch_3=&bRegex_3=false&bSearchable_3=true&sSearch_4=&bRegex_4=false&bSearchable_4=true&sSearch_5=&bRegex_5=false&bSearchable_5=true&sSearch_6=&bRegex_6=false&bSearchable_6=true&iSortCol_0=0&sSortDir_0=asc&iSortingCols=1&bSortable_0=true&bSortable_1=true&bSortable_2=true&bSortable_3=true&bSortable_4=true&bSortable_5=true&bSortable_6=true&export=tsv",
-                        os.path.join("Data", "Results", "GDSCdrugs.tsv"))
+    GDSCtsv = os.path.join("Data", "Results", "GDSCdrugs.tsv")
+    if(os.path.exists(GDSCtsv)==False):
+        request.urlretrieve("https://www.cancerrxgene.org/api/compounds?list=all&sEcho=1&iColumns=7&sColumns=&iDisplayStart=0&iDisplayLength=25&mDataProp_0=0&mDataProp_1=1&mDataProp_2=2&mDataProp_3=3&mDataProp_4=4&mDataProp_5=5&mDataProp_6=6&sSearch=&bRegex=false&sSearch_0=&bRegex_0=false&bSearchable_0=true&sSearch_1=&bRegex_1=false&bSearchable_1=true&sSearch_2=&bRegex_2=false&bSearchable_2=true&sSearch_3=&bRegex_3=false&bSearchable_3=true&sSearch_4=&bRegex_4=false&bSearchable_4=true&sSearch_5=&bRegex_5=false&bSearchable_5=true&sSearch_6=&bRegex_6=false&bSearchable_6=true&iSortCol_0=0&sSortDir_0=asc&iSortingCols=1&bSortable_0=true&bSortable_1=true&bSortable_2=true&bSortable_3=true&bSortable_4=true&bSortable_5=true&bSortable_6=true&export=tsv",
+                            GDSCtsv)
+    return
+    
+    
     """
     ### Investigate genes using online DAVID tool
     # Fetch targets for each drug
