@@ -202,13 +202,28 @@ def correlationDrugs_txt_check(results_dir: str = os.path.join("Data", "Results"
         ModalityAnalyzer().plot_compare_targets(save_dir = os.path.join(results_dir, "modality graphs"))
 
 ## Drug name analysis code
-def check_drug_names() -> Tuple[list, list, list]:
+def check_drug_names(DrugBankPubChem: str = os.path.join("Data", "Results", "DrugBank-PubChem.tsv"),
+                     GDSCPubChem: str = os.path.join("Data", "Results", "GDSCdrugs.tsv")) -> Tuple[list, list, list]:
     """
     Finds which drugs listed in GDSC are in DrugBank and COSMIC
     
     :return: Drugs found in DrugBank, drugs found in COSMIC, and drugs not found in either
     :rtype: Tuple[list, list, list]
     """
+
+    PubChemCheck = True
+    if(os.path.exists(DrugBankPubChem)==False):
+        print(f"No DrugBank to PubChem translator tsv. Cannot used PubChem ID to determine drugs.")
+        PubChemCheck = False
+    if(os.path.exists(GDSCPubChem) == False):
+        print(f"No GDSC to PubChem translator tsv. Cannot used PubChem ID to determine drugs.")
+        PubChemCheck = False
+    if(PubChemCheck):
+        dbdf = pd.read_csv(DrugBankPubChem, sep = "\t")
+        dbdf["PCID"] = dbdf["PubChem ID"].fillna("").astype(str)
+        gdscdf = pd.read_csv(GDSCPubChem, sep = "\t")
+        gdscdf["PCID"] = gdscdf[" PubCHEM"].fillna("").astype(str)
+
     # Get drug names listed in the COSMIC database
     cosds = get_cosmic_drugs()
     # Drug names and DrugBank names
@@ -218,21 +233,60 @@ def check_drug_names() -> Tuple[list, list, list]:
     with open(os.path.join("Data", "Results", "drugbankDrugs.txt"), "r") as f:
         dbDrugs = f.read().split("\t")[0].split("\n")
     
-    total, totalDrugbank, totalCosmic, totalUnfound = 0, 0, 0, 0
+    total, totalDrugbank, totalCosmic, totalPubChem, totalUnfound = 0, 0, 0, 0, 0
 
-    drugsDrugbank, drugsCosmic, drugsUnfound = [], [], []
+    drugsDrugbank, drugsCosmic, drugsPubChem, drugsUnfound = [], [], [], []
 
+    # Go over GDSC drugs
     for cd in corrDrugs:
         total += 1
         check, equiv = cd.lower().replace(" ", ""), False
 
-        for dbd in dbDrugs:
-            dbcheck = dbd.lower().replace(" ", "")
-            if(check==dbcheck):
-                equiv = True
-                totalDrugbank += 1
-                drugsDrugbank.append(cd)
-                break
+        # If possible, use PubChem to compare DrugBank and GDSC drugs
+        pcfailed = False
+        if(PubChemCheck):
+            rel = gdscdf.loc[gdscdf[" Name"]==cd]
+            if(len(rel)<1):
+                #print(f"{cd} not found in GDSC file")
+                pcfailed = True
+            else:
+                #print(f"{cd} found in GDSC file; PCID length {len(rel['PCID'].values)}")
+                val = rel["PCID"].values[0]
+                # If there aren't any entries in the GDSC-PubChem translator for this drug name, fall back to checking the name
+                if(len(rel)<1):
+                    pcfailed = True
+                else:
+                    # Note that this drug was found in PubChem
+                    drugsPubChem.append(cd)
+                    totalPubChem += 1
+                    equiv = True
+                    # Check if there's a DrugBank drug with this PubChem ID
+                    dbrel = dbdf.loc[dbdf["PCID"]==val]
+                    # If there's nothing found in DrugBank with this PubChem ID, fall back to checking the name
+                    if(len(dbrel)<1):
+                        #print(f"{cd} found in GDSC file but no PubChem ID found in DrugBank")
+                        pcfailed = True
+                    else:
+                        #print(f"{cd} found in GDSC file; PubChem ID also found")
+                        # If there is only 1 entry, use it
+                        if(len(dbrel)==1):
+                            totalDrugbank += 1
+                            drugsDrugbank.append(cd)
+                        # If there are multiple entries, use the first one
+                        # NOTE: This should ideally be changed in some way
+                        else:
+                            totalDrugbank += 1
+                            drugsDrugbank.append(cd)
+
+        # If PubChem translators are unavailable or translation failed; fall back on drug names
+        if(not PubChemCheck or pcfailed):   
+            for dbd in dbDrugs:
+                dbcheck = dbd.lower().replace(" ", "")
+                if(check==dbcheck):
+                    equiv = True
+                    totalDrugbank += 1
+                    drugsDrugbank.append(cd)
+                    break
         for cosd in cosds:
             cdcheck = cosd.lower().replace(" ","")
             if(check==cdcheck):
@@ -245,9 +299,10 @@ def check_drug_names() -> Tuple[list, list, list]:
             totalUnfound += 1
             drugsUnfound.append(cd)
     
-    print(f"Total drugs found in DrugBank and/or COSMIC: {total}")
+    print(f"Total drugs found in GDSC: {total}")
     print(f"Total not found in either: {totalUnfound}")
     print(f"Total drugs found in DrugBank: {totalDrugbank}")
+    print(f"Total drugs found in PubChem: {totalPubChem}")
     print(f"Total drugs found in COSMIC: {totalCosmic}")
     return (drugsDrugbank, drugsCosmic, drugsUnfound)
 
@@ -392,6 +447,11 @@ def main():
     with open(os.path.join("Data", "Results", "Drug-gene correlation frequency histograms", "stats.json"), "r") as f:
         drugGeneSurv: dict = json.load(f)
 
+    #test = pd.read_csv(os.path.join("Data", "Results", "GDSCdrugs.tsv"), sep = "\t")
+    #test["PCID"] = test[" PubCHEM"].fillna("").astype(str)
+    #print(test)
+    #return
+
     ## Use Drug Central to try and get unfound drug official names
     #toSearch = "5-AZACYTIDINE".lower()
     #print(check_drugCentral(toSearch))
@@ -410,7 +470,6 @@ def main():
     if(os.path.exists(GDSCtsv)==False):
         request.urlretrieve("https://www.cancerrxgene.org/api/compounds?list=all&sEcho=1&iColumns=7&sColumns=&iDisplayStart=0&iDisplayLength=25&mDataProp_0=0&mDataProp_1=1&mDataProp_2=2&mDataProp_3=3&mDataProp_4=4&mDataProp_5=5&mDataProp_6=6&sSearch=&bRegex=false&sSearch_0=&bRegex_0=false&bSearchable_0=true&sSearch_1=&bRegex_1=false&bSearchable_1=true&sSearch_2=&bRegex_2=false&bSearchable_2=true&sSearch_3=&bRegex_3=false&bSearchable_3=true&sSearch_4=&bRegex_4=false&bSearchable_4=true&sSearch_5=&bRegex_5=false&bSearchable_5=true&sSearch_6=&bRegex_6=false&bSearchable_6=true&iSortCol_0=0&sSortDir_0=asc&iSortingCols=1&bSortable_0=true&bSortable_1=true&bSortable_2=true&bSortable_3=true&bSortable_4=true&bSortable_5=true&bSortable_6=true&export=tsv",
                             GDSCtsv)
-    return
     
     
     """
