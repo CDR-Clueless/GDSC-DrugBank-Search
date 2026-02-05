@@ -10,6 +10,7 @@ dependencies = [
     "igraph>=1.0.0",
     "lxml>=6.0.2",
     "matplotlib>=3.10.7",
+    "matplotlib-venn>=1.1.2",
     "numpy>=2.3.4",
     "openpyxl>=3.1.5",
     "pandas>=2.3.3",

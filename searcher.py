@@ -75,7 +75,7 @@ class Searcher(DataHandler):
             targets_lbtheory = ast.literal_eval(targets_lbtheory)
             results[drug]["TargetRanking Top10"] = {gene: {"locus": "Unknown", "score": scores_local[gene].values[0]} for gene in targets_lbtheory}
             # Get scores for all target genes according to DrugBank
-            targets_db = self.get_targets(drug)
+            targets_db = self.get_targets(drug)["DrugBank"]
             results[drug]["DrugBank"] = {gene: {"locus": targets_db[gene], "score": (scores_local[gene].values[0] if gene in scores_local.columns else "Unknown")}\
                                         for gene in targets_db}
         # Save the results as a json if desired

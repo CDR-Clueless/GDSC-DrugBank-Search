@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 from lxml import etree
 from tqdm import tqdm
+from urllib import request
 
 from typing import Optional, Union
 
@@ -19,7 +20,70 @@ DEFAULT_HUGO_FILE: str = os.path.join(CLEANED_DATA_DIR, "hgnc_complete_set.tsv")
 
 DRUG_TAG_PREFIX: str = "{http://www.drugbank.ca}"
 
-def get_targets(drug_selected: str, data: Optional[Union[list, tuple]] = None, hgncdata: Optional[pd.DataFrame] = None):
+def get_targets_all(data: Optional[Union[list, tuple]] = None,
+                hgncdata: Optional[pd.DataFrame] = None,
+                gdscoverview: Union[pd.DataFrame, str] = os.path.join("Data", "Results", "GDSCdrugs.tsv")) -> pd.DataFrame:
+    # Load in DrugBank and GDSC data
+    if(data is None):
+        db, g1, g2 = get_data()
+    # Load in HGNC data
+    if(hgncdata is None):
+        hgncdata = pd.read_table(DEFAULT_HUGO_FILE, low_memory=False).fillna('')
+    ## Load in GDSC overview data
+    # Check GDSC overview file exists
+    if(type(gdscoverview)==str):
+        # Try to locate and/or download GDSC overview file
+        if(os.path.exists(gdscoverview)==False):
+            gdscoverview = os.path.join("Data", "Results", "GDSCdrugs.tsv")
+            if(os.path.exists(gdscoverview)==False):
+                print(f"GDSC Overview file not found. Attempting to download... to 'Data/Results/GDSCdrugs.tsv'")
+                try:
+                    request.urlretrieve("https://www.cancerrxgene.org/api/compounds?list=all&sEcho=1&iColumns=7&sColumns=&iDisplayStart=0&iDisplayLength=25&mDataProp_0=0&mDataProp_1=1&mDataProp_2=2&mDataProp_3=3&mDataProp_4=4&mDataProp_5=5&mDataProp_6=6&sSearch=&bRegex=false&sSearch_0=&bRegex_0=false&bSearchable_0=true&sSearch_1=&bRegex_1=false&bSearchable_1=true&sSearch_2=&bRegex_2=false&bSearchable_2=true&sSearch_3=&bRegex_3=false&bSearchable_3=true&sSearch_4=&bRegex_4=false&bSearchable_4=true&sSearch_5=&bRegex_5=false&bSearchable_5=true&sSearch_6=&bRegex_6=false&bSearchable_6=true&iSortCol_0=0&sSortDir_0=asc&iSortingCols=1&bSortable_0=true&bSortable_1=true&bSortable_2=true&bSortable_3=true&bSortable_4=true&bSortable_5=true&bSortable_6=true&export=tsv",
+                    gdscoverview)
+                except:
+                    pass
+        # Try to read in GDSC overview file
+        if(os.path.exists(gdscoverview)):
+            gdscoverview = pd.read_csv(gdscoverview, sep = "\t")
+        else:
+            print(f"Failed to load GDSC overview table; cannot get drugs to check")
+    output = {}
+    for drug in tqdm(gdscoverview[" Name"].unique(), desc = "Fetching available drug targets"):
+        output[drug] = get_targets(drug, (db, g1, g2), hgncdata, gdscoverview)
+    # Transpose list to get database as columns and drugs as rows
+    df = pd.DataFrame(output).T
+    # Amend the PubChem information to replace empty lists and lists of nan/none to be NaN values
+    newcol = df["PubChem"].tolist()
+    for i in range(len(newcol)):
+        newcol[i] = list(newcol[i])
+        for j, entry in enumerate(newcol[i]):
+            if(str(entry).lower().replace("'","") in ["nan", "none"]):
+                newcol[i].pop(j)
+    df["PubChem"] = newcol
+
+    # Replace empty lists and empty dictionaries as NaN values
+    df.mask(df.map(str).isin(["[]", "{}"]), inplace = True)
+    #df=df.where(df.astype(bool),np.nan, inplace = False)
+    #df.replace({"DrugBank": {{}: np.nan}, "GDSC": {[]: np.nan}}, inplace=True)
+    return df
+
+def get_targets(drug_selected: str, data: Optional[Union[list, tuple]] = None,
+                hgncdata: Optional[pd.DataFrame] = None,
+                gdscoverview: Union[pd.DataFrame, str] = os.path.join("Data", "Results", "GDSCdrugs.tsv")) -> dict:
+    """
+    Function to retrieve official, known targets for a given drug
+    
+    :param drug_selected: Description
+    :type drug_selected: str
+    :param data: Description
+    :type data: Optional[Union[list, tuple]]
+    :param hgncdata: Description
+    :type hgncdata: Optional[pd.DataFrame]
+    :param gdscoverview: Description
+    :type gdscoverview: Union[pd.DataFrame, str]
+    :return: Description
+    :rtype: dict
+    """
     # Load in the data with the get_data function; this loads GDSC1 and GDSC2 as pandas dataframes, and DrugBank as an lxml ElementTree object
     if(data is None):
         db, g1, g2 = get_data()
@@ -40,10 +104,44 @@ def get_targets(drug_selected: str, data: Optional[Union[list, tuple]] = None, h
     if(hgncdata is None):
         hgncdata = pd.read_table(DEFAULT_HUGO_FILE, low_memory=False).fillna('')
     
+    output: dict = {}
+    
     # Find the gene names and loci targeted by the drug according to DrugBank
-    return find_targets(drug_selected, root, hgncdata)
+    output["DrugBank"] = find_targets_drugbank(drug_selected, root, hgncdata)
 
-def find_targets(drugTarget: str, drugBank: etree.ElementTree, hgncdata: pd.DataFrame) -> dict:
+    # Check GDSC overview file exists
+    if(type(gdscoverview)==str):
+        # Try to locate and/or download GDSC overview file
+        if(os.path.exists(gdscoverview)==False):
+            gdscoverview = os.path.join("Data", "Results", "GDSCdrugs.tsv")
+            if(os.path.exists(gdscoverview)==False):
+                print(f"GDSC Overview file not found. Attempting to download... to 'Data/Results/GDSCdrugs.tsv'")
+                try:
+                    request.urlretrieve("https://www.cancerrxgene.org/api/compounds?list=all&sEcho=1&iColumns=7&sColumns=&iDisplayStart=0&iDisplayLength=25&mDataProp_0=0&mDataProp_1=1&mDataProp_2=2&mDataProp_3=3&mDataProp_4=4&mDataProp_5=5&mDataProp_6=6&sSearch=&bRegex=false&sSearch_0=&bRegex_0=false&bSearchable_0=true&sSearch_1=&bRegex_1=false&bSearchable_1=true&sSearch_2=&bRegex_2=false&bSearchable_2=true&sSearch_3=&bRegex_3=false&bSearchable_3=true&sSearch_4=&bRegex_4=false&bSearchable_4=true&sSearch_5=&bRegex_5=false&bSearchable_5=true&sSearch_6=&bRegex_6=false&bSearchable_6=true&iSortCol_0=0&sSortDir_0=asc&iSortingCols=1&bSortable_0=true&bSortable_1=true&bSortable_2=true&bSortable_3=true&bSortable_4=true&bSortable_5=true&bSortable_6=true&export=tsv",
+                    gdscoverview)
+                except:
+                    pass
+        # Try to read in GDSC overview file
+        if(os.path.exists(gdscoverview)):
+            gdscoverview = pd.read_csv(gdscoverview, sep = "\t")
+        else:
+            print(f"Failed to load GDSC overview table; target results will be lacking")
+    
+    # Load targets and PubChem from GDSC overview file
+    if(type(gdscoverview)==pd.DataFrame):
+        #gdscoverview[" Targets"].replace("", np.nan, inplace=True)
+        gdscoverview.replace({" Targets": {"": np.nan}}, inplace=True)
+        gdscoverview.dropna(subset=[" Targets"], inplace=True)
+        if(drug_selected in gdscoverview[" Name"].values):
+            output["GDSC"] = gdscoverview.loc[gdscoverview[" Name"]==drug_selected][" Targets"].values
+            output["PubChem"] = gdscoverview.loc[gdscoverview[" Name"]==drug_selected][" PubCHEM"].values
+        else:
+            output["GDSC"] = []
+            output["PubChem"] = []
+    
+    return output
+
+def find_targets_drugbank(drugTarget: str, drugBank: etree.ElementTree, hgncdata: pd.DataFrame) -> dict:
 
     # Set up dictionary which will be populated by gene targets
     gene_targets = {}
@@ -60,7 +158,7 @@ def find_targets(drugTarget: str, drugBank: etree.ElementTree, hgncdata: pd.Data
                 polypeptide = target.find(DRUG_TAG_PREFIX+"polypeptide")
                 # If there is no polypeptide found, add this target as an exception
                 if(polypeptide is None):
-                    gene_targets.update({f"{target} (Irregualr target)": None})
+                    gene_targets.update({f"{target} (Irregular target)": None})
                     continue
                 genename, locus, cl = polypeptide.find(DRUG_TAG_PREFIX+"gene-name"), polypeptide.find(DRUG_TAG_PREFIX+"locus"), polypeptide.find(DRUG_TAG_PREFIX+"chromosome-location")
                 # Update genename if necessary

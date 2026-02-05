@@ -27,13 +27,16 @@ import time
 import random
 from lxml import etree
 
+import matplotlib.pyplot as plt
+from matplotlib_venn import venn3
+
 
 from typing import Optional, Tuple
 
 from data_handler import DataHandler
 from searcher import Searcher
 from drug_gene_correlation_histograms import CorrelationPlotter, curve_guess
-from drug_search import update_hgnc, get_data
+from drug_search import update_hgnc, get_data, get_targets_all
 from modality_analysis import ModalityAnalyzer, get_survivability_threshold
 from drugbank_handler import DrugbankHandler
 
@@ -431,6 +434,24 @@ def main():
         coreCount = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
 
+    check = get_targets_all()
+    print(check)
+    print(check["PubChem"].values)
+    print(check["PubChem"].isna().sum())
+
+    # Make dictionary of sets
+    dfsets = {}
+    for col in check.columns:
+        # Make set for each column, removing NaN values
+        dfsets[col] = set()
+        rel = check.dropna(axis = 0, subset = col, inplace = False)
+        for drug in rel.index:
+            dfsets[col].add(str(drug))
+    
+    venn3([s for s in dfsets.values()], [s for s in dfsets.keys()])
+    plt.show()
+    return
+
     ### Import relevant datasets and amend them
     # HGNC
     hgnc = pd.read_table(DEFAULT_HUGO_FILE, low_memory=False).fillna('')
@@ -470,6 +491,22 @@ def main():
     if(os.path.exists(GDSCtsv)==False):
         request.urlretrieve("https://www.cancerrxgene.org/api/compounds?list=all&sEcho=1&iColumns=7&sColumns=&iDisplayStart=0&iDisplayLength=25&mDataProp_0=0&mDataProp_1=1&mDataProp_2=2&mDataProp_3=3&mDataProp_4=4&mDataProp_5=5&mDataProp_6=6&sSearch=&bRegex=false&sSearch_0=&bRegex_0=false&bSearchable_0=true&sSearch_1=&bRegex_1=false&bSearchable_1=true&sSearch_2=&bRegex_2=false&bSearchable_2=true&sSearch_3=&bRegex_3=false&bSearchable_3=true&sSearch_4=&bRegex_4=false&bSearchable_4=true&sSearch_5=&bRegex_5=false&bSearchable_5=true&sSearch_6=&bRegex_6=false&bSearchable_6=true&iSortCol_0=0&sSortDir_0=asc&iSortingCols=1&bSortable_0=true&bSortable_1=true&bSortable_2=true&bSortable_3=true&bSortable_4=true&bSortable_5=true&bSortable_6=true&export=tsv",
                             GDSCtsv)
+    
+    dbdf = pd.read_csv(os.path.join("Data", "Results", "DrugBank-PubChem.tsv"), sep = "\t")
+    gdscdf = pd.read_csv(os.path.join("Data", "Results", "GDSCdrugs.tsv"), sep = "\t")
+    del dbdf["Unnamed: 0"]
+    del gdscdf["Drug Id"]; del gdscdf[" Synonyms"]; del gdscdf[" Target pathway"]; del gdscdf[" Datasets"]
+    del gdscdf[" number of cell lines"]; del gdscdf[" Screening site"]
+    gdscdf = gdscdf.rename({" Name": "Drug Name", " Targets": "Drug Targets", " PubCHEM": "PubChem ID"}, axis = 1)
+    dbdf["PubChem ID"] = dbdf["PubChem ID"].astype(str)
+    gdscdf["PubChem ID"] = gdscdf["PubChem ID"].astype(str)
+    print(dbdf.columns)
+    print(gdscdf.columns)
+    print(dbdf["PubChem ID"].unique())
+    print("\n\n")
+    print(gdscdf["PubChem ID"].unique())
+    print("\n\n")
+    print(dbdf.loc[dbdf["PubChem ID"].isin(gdscdf["PubChem ID"])])
     
     
     """
