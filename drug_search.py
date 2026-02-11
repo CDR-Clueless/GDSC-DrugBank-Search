@@ -12,6 +12,7 @@ import pandas as pd
 from lxml import etree
 from tqdm import tqdm
 from urllib import request
+import re
 
 from typing import Optional, Union
 
@@ -52,12 +53,38 @@ def get_targets_all(data: Optional[Union[list, tuple]] = None,
         output[drug] = get_targets(drug, (db, g1, g2), hgncdata, gdscoverview)
     # Transpose list to get database as columns and drugs as rows
     df = pd.DataFrame(output).T
+    # Integrate manual PubChem identifications
+    if(os.path.exists(os.path.join("Data", "Results", "manual_drug_translations.tsv"))):
+        sdf = pd.read_csv(os.path.join("Data", "Results", "manual_drug_translations.tsv"), sep = "\t")
+        for oname, pcid in zip(sdf["GDSC Drug Name"].values, sdf["PubChem"].values):
+            # Ensure not dealing with a NaN value
+            if(pcid==pcid):
+                df.loc[df.index == oname, "PubChem"] = str(pcid)
     # Amend the PubChem information to replace empty lists and lists of nan/none to be NaN values
     newcol = df["PubChem"].tolist()
     for i in range(len(newcol)):
-        newcol[i] = list(newcol[i])
-        for j, entry in enumerate(newcol[i]):
-            if(str(entry).lower().replace("'","") in ["nan", "none"]):
+        if(i<50):
+            print(f"Pre-processing: {newcol[i]}")
+        newcol[i] = str(newcol[i])
+        if("[" in newcol[i]):
+            # Split using commas and spaces as delimiters
+            newcol[i] = re.split(",| ", newcol[i])
+            # Remove any opening/closing brackets
+            for j in range(len(newcol[i])):
+                newcol[i][j] = newcol[i][j].replace("[","").replace("]", "")
+        elif(len(newcol[i])>0 and "nan" not in newcol[i].lower() and "none" not in newcol[i].lower()):
+            newcol[i] = [newcol[i],]
+        else:
+            newcol[i] = []
+            continue
+        if(i<50):
+            print(f"Pre-nan removal: {newcol[i]}")
+        for j in range(len(newcol[i]))[::-1]:
+            # Remove any apostrophes/speech marks
+            newcol[i][j] = str(newcol[i][j]).replace("\'","").replace("\"", "")
+            # Remove NaN entries
+            entry = newcol[i][j]
+            if(entry.lower() in ["nan", "none",""]):
                 newcol[i].pop(j)
     df["PubChem"] = newcol
 

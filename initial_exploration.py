@@ -435,9 +435,96 @@ def main():
     print(f"Using {coreCount} cores")
 
     check = get_targets_all()
-    print(check)
-    print(check["PubChem"].values)
-    print(check["PubChem"].isna().sum())
+    print(check.loc[check.index=="Acetalax"])
+    #print(check)
+    #print(check["PubChem"].values)
+    #print(check["PubChem"].isna().sum())
+
+    #print(check.iloc[0])
+    #print(check["PubChem"].iloc[:50])
+
+    nonan = check.dropna(axis = "index", how = "all", inplace = False)
+    print(len(nonan))
+    print(len(check))
+    help = []
+    for dn in check.index:
+        if(dn not in nonan.index):
+            help.append(dn)
+    
+    with open(os.path.join("Data", "Results", "unknown_drugs.txt"), "w") as f:
+        f.write("\n".join(help))
+
+    print(help)
+    print(len(help))
+
+    #print(check)
+
+    return
+    # PubChem-Target results
+    pubchemTargetsFileloc = os.path.join("Data", "Results", "pubchemtargets.tsv")
+    errorFileloc = os.path.join("Data", "Results", "errorlog.txt")
+    if(os.path.exists(pubchemTargetsFileloc) == False):
+        with open(pubchemTargetsFileloc, "w") as f:
+            f.write("PubChem ID\tTargets\n")
+    existing = list(pd.read_csv(pubchemTargetsFileloc, sep = "\t")["PubChem ID"].astype(str).values)
+
+    # Go through lists of PubChem IDs in the DataFrame of drug PubChem values
+    for ls in tqdm(check["PubChem"].values, desc = "Fetching PubChem targets"):
+        # If there is anything here, go through the available PubChem ID's
+        if(type(ls) == list):
+            for somenum in ls:
+                # Ensure this entry is a properly formatted string, and split into further substrings if there are any commas
+                somenum = str(somenum)
+                if("," in somenum):
+                    nums = somenum.split(",")
+                else:
+                    nums = [somenum]
+                for i in range(len(nums)):
+                    nums[i] = nums[i].strip()
+                    # Change floating point to integer
+                    if(".") in nums[i]:
+                        nums[i] = str(int(nums[i]))
+                # Go through this refined list of numbers
+                for num in nums:
+                    if(num in existing):
+                        continue
+                    newentry = []
+                    # Download Drug interactions from PubChem
+                    link = "https://pubchem.ncbi.nlm.nih.gov/sdq/sphinxql.cgi?infmt=json&outfmt=json&query={%22download%22:%22*%22,%22collection%22:%22consolidatedcompoundtarget%22,%22order%22:[%22cid,asc%22],%22start%22:1,%22limit%22:10000000,%22downloadfilename%22:%22pubchem_cid_INSERTPUBCHEMIDHERE_consolidatedcompoundtarget%22,%22where%22:{%22ands%22:[{%22cid%22:%229863776%22}]}}".replace(
+                        "INSERTPUBCHEMIDHERE", num
+                    )
+                    tempfileloc = os.path.join("Data", "Results", "tempfile.json")
+                    try:
+                        request.urlretrieve(link, tempfileloc)
+                    except:
+                        # Check if there is a manually-downloaded file for this drug, and set the filepath if so
+                        for filename in os.listdir(os.path.join("Data", "Results", "manual_pubchem")):
+                            if(num in filename):
+                                tempfileloc = os.path.join("Data", "Results", "manual_pubchem", filename)
+                                break
+                        # If there is no manually-downloaded file, skip this drug and add to the error output
+                        if("tempfile.json" in tempfileloc):
+                            with open(errorFileloc, "a+") as f:
+                                f.write(f"Failed to download data for PubChem ID {num}\n")
+                            continue
+                    with open(tempfileloc, "r") as f:
+                        targetdata = json.load(f)
+                    # Note: targetdata is a list of dictionaries; each dictionary corresponds to a drug target
+                    for entry in targetdata:
+                        # Add any relevant (human) targets for this drug
+                            if("human" in entry["taxname"].lower() and entry["genename"] not in newentry):
+                                newentry.append(entry["genename"])
+                    # Save this information to existing file so we don't have to keep fetching data from PubChem
+                    with open(pubchemTargetsFileloc, "a+") as f:
+                        f.write(f"{num}\t{newentry}\n")
+                    # Add this discovery to existing PubChem ID's checked, delete temporary file, and wait a few seconds before fetching the next so we don't seem like a bot
+                    existing.append(num)
+                    if("tempfile.json" in tempfileloc):
+                        os.remove(tempfileloc)
+                    time.sleep(random.randint(3, 13))
+
+    return
+    ### make the venn diagrams
 
     # Make dictionary of sets
     dfsets = {}
