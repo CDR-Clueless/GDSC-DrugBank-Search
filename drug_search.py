@@ -24,6 +24,16 @@ DRUG_TAG_PREFIX: str = "{http://www.drugbank.ca}"
 def get_targets_all(data: Optional[Union[list, tuple]] = None,
                 hgncdata: Optional[pd.DataFrame] = None,
                 gdscoverview: Union[pd.DataFrame, str] = os.path.join("Data", "Results", "GDSCdrugs.tsv")) -> pd.DataFrame:
+    """Compile known (official) targets from DrugBank, GDSC supplementary data and PubChem-ChEMBL
+
+    Args:
+        data (Optional[Union[list, tuple]], optional): Data to be supplied (loads from default path if None). Defaults to None.
+        hgncdata (Optional[pd.DataFrame], optional): HUGO standard gene name table (loads from default path if None). Defaults to None.
+        gdscoverview (Union[pd.DataFrame, str], optional): Supplementary GDSC information file dataframe or file location (attempts to download if nothing is found). Defaults to os.path.join("Data", "Results", "GDSCdrugs.tsv").
+
+    Returns:
+        pd.DataFrame: A dataframe with the columns 'DrugBank', 'GDSC' and 'PubChem-ChEMBL' containing known gene targets for each drug
+    """
     # Load in DrugBank and GDSC data
     if(data is None):
         db, g1, g2 = get_data()
@@ -63,8 +73,6 @@ def get_targets_all(data: Optional[Union[list, tuple]] = None,
     # Amend the PubChem information to replace empty lists and lists of nan/none to be NaN values
     newcol = df["PubChem"].tolist()
     for i in range(len(newcol)):
-        if(i<50):
-            print(f"Pre-processing: {newcol[i]}")
         newcol[i] = str(newcol[i])
         if("[" in newcol[i]):
             # Split using commas and spaces as delimiters
@@ -77,19 +85,34 @@ def get_targets_all(data: Optional[Union[list, tuple]] = None,
         else:
             newcol[i] = []
             continue
-        if(i<50):
-            print(f"Pre-nan removal: {newcol[i]}")
         for j in range(len(newcol[i]))[::-1]:
             # Remove any apostrophes/speech marks
             newcol[i][j] = str(newcol[i][j]).replace("\'","").replace("\"", "")
             # Remove NaN entries
             entry = newcol[i][j]
-            if(entry.lower() in ["nan", "none",""]):
+            if(entry.lower() in ["nan", "none","","several"]):
                 newcol[i].pop(j)
     df["PubChem"] = newcol
 
     # Replace empty lists and empty dictionaries as NaN values
     df.mask(df.map(str).isin(["[]", "{}"]), inplace = True)
+    # Change lists of (duplicated) PubChem IDs to a single PubChem ID
+    newvals = []
+    for val in df["PubChem"].values:
+        if(type(val) == list):
+            newvals.append(val[0])
+        else:
+            if(val is not np.nan):
+                print(type(val))
+            newvals.append(val)
+    df["PubChem"] = newvals
+
+    # Convert PubChem ID's into known drug targets
+    chembltargets = pd.read_csv(os.path.join("Data", "Results", "pubchem-chembl.tsv"), sep = "\t")[["PubChem", "ChEMBL Gene Targets"]]
+    converter = {str(chembltargets["PubChem"].values[i]): chembltargets["ChEMBL Gene Targets"].values[i] for i in range(len(chembltargets))}
+    df["PubChem-ChEMBL"] = df["PubChem"].astype(str).map(converter)
+    df.drop(["PubChem"], axis = 1, inplace = True)
+
     #df=df.where(df.astype(bool),np.nan, inplace = False)
     #df.replace({"DrugBank": {{}: np.nan}, "GDSC": {[]: np.nan}}, inplace=True)
     return df

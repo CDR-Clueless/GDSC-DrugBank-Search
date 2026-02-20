@@ -28,7 +28,10 @@ import random
 from lxml import etree
 
 import matplotlib.pyplot as plt
-from matplotlib_venn import venn3
+from matplotlib_venn import venn3 as pltvenn3
+from matplotlib_venn.layout.venn3 import DefaultLayoutAlgorithm as pltvenn3DefaultLayoutAlgorithm
+
+import pubchempy as pcp
 
 
 from typing import Optional, Tuple
@@ -434,8 +437,27 @@ def main():
         coreCount = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
 
+    """
+    ### Modality analysis plotting code
+    az = ModalityAnalyzer()
+    #az.plot_cf()
+    az.plot_high_survivors()
+    az.plot_waterfall()
+    az.plot_compare_targets()
+    #"""
+
+    # Go through PubChem identifiers
+    pubchemchembl = pd.read_csv(os.path.join("Data", "Results", "pubchem-chembl.tsv"), sep = "\t")
+
+    pubchemchembl.dropna(inplace = True)
+    pubchemchembl.drop_duplicates("PubChem", inplace=True)
+    #pubchemchembl = {pubchemchembl["PubChem"].values[i]: pubchemchembl["ChEMBL"].values[i] for i in range(len(pubchemchembl))}
+
+
+
     check = get_targets_all()
-    print(check.loc[check.index=="Acetalax"])
+    print(check.columns)
+
     #print(check)
     #print(check["PubChem"].values)
     #print(check["PubChem"].isna().sum())
@@ -443,19 +465,50 @@ def main():
     #print(check.iloc[0])
     #print(check["PubChem"].iloc[:50])
 
+    # Get unidentifiable compounds
     nonan = check.dropna(axis = "index", how = "all", inplace = False)
-    print(len(nonan))
-    print(len(check))
     help = []
     for dn in check.index:
         if(dn not in nonan.index):
             help.append(dn)
-    
-    with open(os.path.join("Data", "Results", "unknown_drugs.txt"), "w") as f:
-        f.write("\n".join(help))
 
-    print(help)
-    print(len(help))
+    print(f"{len(help)} unidentiable compounds:\n{help}")
+    # Save unidentifiable compounds to tsv file
+    udp = os.path.join("Data", "Results", "unknown_drugs.tsv")
+    if(os.path.exists(udp)):
+        df = pd.read_csv(udp, sep = "\t")
+    else:
+        df = pd.DataFrame(data = None, columns = ["Drug", "Gene Targets"])
+    toadd = [h for h in help if h not in df["Drug"].values]
+    toadd = pd.DataFrame(data = zip(toadd, [np.nan for _ in range(len(toadd))]), columns = ["Drug", "Gene Targets"])
+    output = pd.concat((df, toadd))
+    output.to_csv(udp, sep = "\t", lineterminator="\n", index = False)
+
+    # Merge information from manually-acquired information into database
+    mantargs = {output["Drug"].values[i]: output["Gene Targets"].values[i] for i in range(len(mantargs))}
+    internals = output.loc[output["Alternate Names"]=="INTERNAL COMPOUND"]
+    internals = {internals["Drug"].values[i]: internals["Gene Targets"].values[i] for i in range(len(internals))}
+    print(mantargs)
+    print(internals)
+    return
+    
+    ### Make venn diagrams for drug information sources
+
+    # Make dictionary of sets
+    allset = set()
+    sourceSets = {col: set() for col in check.columns}
+    for drug in check.index:
+        allset.add(str(drug))
+    for col in check.columns:
+        # Add all non-nan values to sets
+        rel = check.dropna(axis = 0, subset = col, inplace = False)
+        for drug in rel.index:
+            sourceSets[col].add(str(drug))
+        
+    pltvenn3([s for s in sourceSets.values()], [s for s in sourceSets.keys()], layout_algorithm=pltvenn3DefaultLayoutAlgorithm(fixed_subset_sizes=(1,)*7))
+    plt.text(-0.6, -0.4,
+             len(allset.difference(set.union(*(sourceSets[col] for col in check.columns)))))
+    plt.show()
 
     #print(check)
 
@@ -630,15 +683,6 @@ def main():
         print(soup.prettify())
         break
     """
-
-    """
-    ### Modality analysis plotting code
-    az = ModalityAnalyzer()
-    #az.plot_cf()
-    #az.plot_high_survivors()
-    #az.plot_waterfall()
-    az.plot_compare_targets()
-    #"""
 
     """
     ### Target pathfinding code
