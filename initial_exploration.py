@@ -484,30 +484,49 @@ def main():
     output = pd.concat((df, toadd))
     output.to_csv(udp, sep = "\t", lineterminator="\n", index = False)
 
-    # Merge information from manually-acquired information into database
-    mantargs = {output["Drug"].values[i]: output["Gene Targets"].values[i] for i in range(len(mantargs))}
-    internals = output.loc[output["Alternate Names"]=="INTERNAL COMPOUND"]
-    internals = {internals["Drug"].values[i]: internals["Gene Targets"].values[i] for i in range(len(internals))}
-    print(mantargs)
-    print(internals)
-    return
+    # Merge the Internal compound and manual drug target information into the main dataframe
+    manTargDict = {output["Drug"].values[i]: output["Gene Targets"].values[i] for i in range(len(output))}
+    check["Manual"] = check.index.map(manTargDict)
+
+    internals = output.loc[output["Alternate Names"]=="INTERNAL COMPOUND"]["Drug"]
+    internals = {i: True for i in internals}
+    check["Internal Compound"] = check.index.map(internals)
     
     ### Make venn diagrams for drug information sources
 
     # Make dictionary of sets
     allset = set()
-    sourceSets = {col: set() for col in check.columns}
+    maincols = list(check.columns); maincols.remove("Manual"); maincols.remove("Internal Compound")
+    sourceSets = {col: set() for col in maincols}
     for drug in check.index:
         allset.add(str(drug))
-    for col in check.columns:
+    for col in maincols:
         # Add all non-nan values to sets
         rel = check.dropna(axis = 0, subset = col, inplace = False)
         for drug in rel.index:
             sourceSets[col].add(str(drug))
-        
-    pltvenn3([s for s in sourceSets.values()], [s for s in sourceSets.keys()], layout_algorithm=pltvenn3DefaultLayoutAlgorithm(fixed_subset_sizes=(1,)*7))
-    plt.text(-0.6, -0.4,
-             len(allset.difference(set.union(*(sourceSets[col] for col in check.columns)))))
+
+    # Compounds with targets from GDSC, DrugBank and/or PubChem-ChEMBL
+    figure, ax = plt.subplots()
+    pltvenn3([s for s in sourceSets.values()], [s for s in sourceSets.keys()],
+             layout_algorithm=pltvenn3DefaultLayoutAlgorithm(fixed_subset_sizes=(1,)*7),
+             ax = ax)
+    # Unidentified compounds
+    ax.text(-0.6, -0.4,
+             len(allset.difference(set.union(*(*(sourceSets[col] for col in maincols), set(output["Gene Targets"].dropna().tolist()), set(internals.keys()))))))
+    # Set a scale between manual targets and compounds to get reasonably differing-sized circles
+    scale = np.divide(0.67, max([len(internals.keys()), len(output["Gene Targets"].dropna().tolist())]))
+    # Compounds with manually-identified targets
+    ax.add_patch(plt.Circle((0.55, -0.3), radius = 0.075*(0.33+(scale*len(output["Gene Targets"].dropna().tolist()))), color = "green"))
+    ax.annotate(str(len(output["Gene Targets"].dropna().tolist())), (0.55, -0.3),
+            ha = "center", va = "center", transform = ax.transAxes)
+    ax.text(0.66, -0.3, "Manual Identification", size = "small", va = "center")
+    # Internal GDSC Compounds
+    ax.add_patch(plt.Circle((0.55, -0.5), radius = 0.075*(0.33+(scale*len(internals.keys()))), color = "red"))
+    ax.annotate(str(len(internals.keys())), (0.55, -0.5),
+            ha = "center", va = "center", transform = ax.transAxes)
+    ax.text(0.66, -0.5, "Internal Compounds", size = "small", va = "center")
+    # Show the venn diagram
     plt.show()
 
     #print(check)
