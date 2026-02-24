@@ -129,10 +129,13 @@ class CorrelationPlotter(DataHandler):
         return
 
     def drug_correlations_worker(self, row: pd.Series, results_dir: str, stds: list, quantiles: list, resVals: dict) -> dict:
+        # Get drug name and all survivability correlations
         drug, scores = row["Drug"], np.array(row.values[1:], dtype = float)
         # Remove NaN values
         scores = scores[~np.isnan(scores)]
+        # Plot histograms and get histogram-plotting-related information (i.e. stats which are calculated in the histogram plotting step)
         extra_data = self.save_histogram(scores, f"{drug}-gene LOG correlations", results_dir, stds, quantiles)
+        # Add some extra basic information, i.e. standard deviation, quantiles, and numbers of gene targets within given SD boundaries
         newdict = {"standard deviations": \
                         {d: np.mean(scores)+(np.std(scores)*d) for d in resVals["devs"]},
                         "quantiles": \

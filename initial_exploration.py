@@ -31,6 +31,8 @@ import matplotlib.pyplot as plt
 from matplotlib_venn import venn3 as pltvenn3
 from matplotlib_venn.layout.venn3 import DefaultLayoutAlgorithm as pltvenn3DefaultLayoutAlgorithm
 
+from sklearn.mixture import BayesianGaussianMixture
+
 import pubchempy as pcp
 
 
@@ -446,6 +448,7 @@ def main():
     az.plot_compare_targets()
     #"""
 
+    """
     # Go through PubChem identifiers
     pubchemchembl = pd.read_csv(os.path.join("Data", "Results", "pubchem-chembl.tsv"), sep = "\t")
 
@@ -529,9 +532,9 @@ def main():
     # Show the venn diagram
     plt.show()
 
-    #print(check)
+    #"""
 
-    return
+    """
     # PubChem-Target results
     pubchemTargetsFileloc = os.path.join("Data", "Results", "pubchemtargets.tsv")
     errorFileloc = os.path.join("Data", "Results", "errorlog.txt")
@@ -595,22 +598,9 @@ def main():
                         os.remove(tempfileloc)
                     time.sleep(random.randint(3, 13))
 
-    return
-    ### make the venn diagrams
+    #"""
 
-    # Make dictionary of sets
-    dfsets = {}
-    for col in check.columns:
-        # Make set for each column, removing NaN values
-        dfsets[col] = set()
-        rel = check.dropna(axis = 0, subset = col, inplace = False)
-        for drug in rel.index:
-            dfsets[col].add(str(drug))
-    
-    venn3([s for s in dfsets.values()], [s for s in dfsets.keys()])
-    plt.show()
-    return
-
+    """
     ### Import relevant datasets and amend them
     # HGNC
     hgnc = pd.read_table(DEFAULT_HUGO_FILE, low_memory=False).fillna('')
@@ -668,6 +658,8 @@ def main():
     print(dbdf.loc[dbdf["PubChem ID"].isin(gdscdf["PubChem ID"])])
     
     
+    #"""
+
     """
     ### Investigate genes using online DAVID tool
     # Fetch targets for each drug
@@ -703,11 +695,11 @@ def main():
         break
     """
 
-    """
+    #"""
     ### Target pathfinding code
+
     #CorrelationPlotter().plot_all()
-    #return
-    
+   
 
     ## Import relevant datasets and amend them
     # HGNC
@@ -735,6 +727,49 @@ def main():
     allbyall = pd.read_csv(DEFAULT_ALL_BY_ALL_FILE, sep = "\t")
     allbyall = update_hgnc(allbyall, hgnc)
     allbyall = allbyall.set_index("symbol")
+
+    ## NOTE: TEMPORARY PLACE FOR CODE
+    ## Bayesian Gaussian mixture modelling
+    drugUnimodal = "BAY-MPS-COMBO-1__PACLITAXEL_5_UM_"
+    drugBimodal = "AZD6482"
+
+    distUnimodal = allbyall[drugUnimodal].values
+    distBimodal = allbyall[drugBimodal].values
+
+    for dist in [distUnimodal, distBimodal]:
+
+        counts, bins = np.histogram(dist, bins = np.arange(-1, 1, 0.05), density = True)
+        countsReal, _ = np.histogram(dist, bins = np.arange(-1, 1, 0.05))
+        xs = np.array([np.divide(bins[i-1]+bins[i],2) for i in range(1,bins.shape[0])], dtype = float)
+        errors = {}
+        for n_components in range(1, 6):
+            bgm = BayesianGaussianMixture(n_components = n_components, random_state = 42).fit(dist.reshape(-1, 1))
+
+            x = np.linspace(-1, 1, 1000)
+            logprob = bgm.score_samples(x.reshape(-1, 1))
+            responsibilities = bgm.predict_proba(x.reshape(-1, 1))
+            pdf = np.exp(logprob)
+            #pdf_individual = responsibilities * pdf[:, np.newaxis]
+
+            #print(bm.covariances_)
+            #print(bgm.weights_)
+            #print(bgm.means_)
+
+            #plt.plot(x, pdf, label = f"{n_components}-components pdf")
+            #plt.plot(x, pdf_individual, label = "pdf individual")
+
+            plt.plot(xs, countsReal, label = "True")
+            plt.plot(x, pdf * np.nanmax(countsReal/counts), label = f"{n_components}-components scaled pdf")
+            error = np.exp(bgm.score_samples(xs.reshape(-1, 1)))
+            error = np.power(np.abs(error*np.nanmax(countsReal)), 2.)
+            errors[n_components] = np.sum(error)
+        
+            plt.legend()
+            plt.show()
+        print([f"{c} components error: {v}" for v, c in sorted(zip(errors.values(), errors.keys()))])
+    #plt.plot(xsUnimodal, countsUnimodal, label = "True")
+
+    return
 
     # DataFrame for the gene/protein targets of all drugs
     drugTargets = pd.read_csv(os.path.join(CLEANED_DATA_DIR, "TargetRanking.tsv"), sep = "\t")
@@ -780,7 +815,7 @@ def main():
     os.rmdir(tdpfp)
     
     #USE HGNC ON DRUGBANK COMPARISON OUTPUT AND EXTEND SHORTEST PATHFINDING TO ALL TARGETS
-    """
+    #"""
     return
 
 if __name__ == "__main__":
