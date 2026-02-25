@@ -7,6 +7,7 @@ Created Oct 2025
 """
 
 import os
+import warnings
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
@@ -31,7 +32,7 @@ import matplotlib.pyplot as plt
 from matplotlib_venn import venn3 as pltvenn3
 from matplotlib_venn.layout.venn3 import DefaultLayoutAlgorithm as pltvenn3DefaultLayoutAlgorithm
 
-from sklearn.mixture import BayesianGaussianMixture
+from sklearn.mixture import BayesianGaussianMixture, GaussianMixture
 
 import pubchempy as pcp
 
@@ -741,33 +742,53 @@ def main():
         counts, bins = np.histogram(dist, bins = np.arange(-1, 1, 0.05), density = True)
         countsReal, _ = np.histogram(dist, bins = np.arange(-1, 1, 0.05))
         xs = np.array([np.divide(bins[i-1]+bins[i],2) for i in range(1,bins.shape[0])], dtype = float)
-        errors = {}
+        errors, bics = {}, []
         for n_components in range(1, 6):
-            bgm = BayesianGaussianMixture(n_components = n_components, random_state = 42).fit(dist.reshape(-1, 1))
+            errors[n_components] = {}
+            for cov_type in ("full", "tied", "diag", "spherical"):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    bgm = GaussianMixture(n_components = n_components, covariance_type = cov_type,
+                                                random_state = 42, max_iter = 1000).fit(dist.reshape(-1, 1))
+                    scaler = np.nanmax(countsReal/counts)
 
-            x = np.linspace(-1, 1, 1000)
-            logprob = bgm.score_samples(x.reshape(-1, 1))
-            responsibilities = bgm.predict_proba(x.reshape(-1, 1))
-            pdf = np.exp(logprob)
-            #pdf_individual = responsibilities * pdf[:, np.newaxis]
+                x = np.linspace(-1, 1, 1000)
+                logprob = bgm.score_samples(x.reshape(-1, 1))
+                #responsibilities = bgm.predict_proba(x.reshape(-1, 1))
+                pdf = np.exp(logprob)
+                #pdf_individual = responsibilities * pdf[:, np.newaxis]
 
-            #print(bm.covariances_)
-            #print(bgm.weights_)
-            #print(bgm.means_)
+                #print(bm.covariances_)
+                #print(bgm.weights_)
+                #print(bgm.means_)
 
-            #plt.plot(x, pdf, label = f"{n_components}-components pdf")
-            #plt.plot(x, pdf_individual, label = "pdf individual")
+                #plt.plot(x, pdf, label = f"{n_components}-components pdf")
+                #plt.plot(x, pdf_individual, label = "pdf individual")
 
-            plt.plot(xs, countsReal, label = "True")
-            plt.plot(x, pdf * np.nanmax(countsReal/counts), label = f"{n_components}-components scaled pdf")
-            error = np.exp(bgm.score_samples(xs.reshape(-1, 1)))
-            error = np.power(np.abs(error*np.nanmax(countsReal)), 2.)
-            errors[n_components] = np.sum(error)
+                #plt.plot(xs, countsReal, label = "True")
+                #plt.plot(x, pdf * scaler, label = f"{n_components}-components scaled pdf")
+                # Prediction
+                pred = np.exp(bgm.score_samples(xs.reshape(-1, 1)))
+                # Square errors
+                error = np.power(np.abs(countsReal - (pred*scaler)), 2.)
+                # Summed errors * complexity-scaling penalty
+                errors[n_components][cov_type] = np.sum(error)*1.
+            
+                #plt.legend()
+                #plt.show()
+                bics.append(np.power(bgm.bic(dist.reshape(-1, 1)), float(n_components)))
+                break
         
-            plt.legend()
-            plt.show()
-        print([f"{c} components error: {v}" for v, c in sorted(zip(errors.values(), errors.keys()))])
-    #plt.plot(xsUnimodal, countsUnimodal, label = "True")
+        #xsBar = np.array(list(errors.keys()), dtype = float)
+        #plt.bar(xsBar-.3, [errors[n]["full"] for n in errors.keys()], width = 0.2, color = "b", align = "center")
+        #plt.bar(xsBar-.1, [errors[n]["tied"] for n in errors.keys()], width = 0.2, color = "r", align = "center")
+        #plt.bar(xsBar+.1, [errors[n]["diag"] for n in errors.keys()], width = 0.2, color = "g", align = "center")
+        #plt.bar(xsBar+.3, [errors[n]["spherical"] for n in errors.keys()], width = 0.2, color = "y", align = "center")
+        plt.plot(range(1, len(bics)+1), np.sqrt(np.array(bics, dtype = float)))
+        plt.show()
+        #plt.plot(range(1, len(bics)), [bics[i+1]-bics[i] for i in range(len(bics)-1)])
+        #plt.show()
+        #plt.plot(xsUnimodal, countsUnimodal, label = "True")
 
     return
 

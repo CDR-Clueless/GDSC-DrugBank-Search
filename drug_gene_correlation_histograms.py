@@ -17,6 +17,8 @@ from copy import deepcopy
 from scipy.optimize import curve_fit
 import multiprocessing as mp
 
+from sklearn.mixture import BayesianGaussianMixture
+
 from typing import Union
 from typing import Optional
 
@@ -72,7 +74,28 @@ class CorrelationPlotter(DataHandler):
         res["Total"] = len(vals)
         return res
     
-    def __get_modality_entry(self, dist: Union[list, tuple, np.ndarray]) -> dict:
+    def __get_modality_entry(self, dist: Union[list, tuple, np.ndarray]) -> Union[dict, tuple[dict, BayesianGaussianMixture]]:
+        # First, initialize and train all the BGM models
+        bgmDict = {i: {cov_type: BayesianGaussianMixture(n_components = i, covariance_type = cov_type,
+                                        max_iter = 500, random_state = 42).fit(dist.reshape(-1, 1)) \
+                                            for cov_type in ["full", "tied", "diag", "spherical"]} \
+                                                for i in range(6)}
+        # Setup histograms for later use in calculating errors etc.
+        countsReal, bins = np.histogram(dist, bins = np.arange(-1, 1, 0.05))
+        xs = np.array([np.divide(bins[i-1]+bins[i],2) for i in range(1,bins.shape[0])], dtype = float)
+        # Set up a record of the best model scores (error, n_components, covariance_type)
+        best = [np.inf, float("NaN"), float("NaN")]
+        for n_components in bgmDict.keys():
+            for cov_type in bgmDict[n_components].keys():
+                # Get BGM
+                bgm = bgmDict[n_components][cov_type]
+                # Get e^x-axis, giving us our probability distribution
+                error = np.exp(bgm.score_samples(xs.reshape(-1, 1)))
+                # Get error * max counts, giving us our actual curve of histogram bin count
+                error = np.power(np.abs(error*np.nanmax(countsReal)), 2.)
+                error = np.sum(error)*np.power(1.025, float(n_components))
+                if(error < best[0]):
+                    best = [error, n_components, cov_type]
         res = diptest.diptest(dist)
         if(res[1]<0.15):
             modality = "bimodal"
@@ -182,8 +205,11 @@ class CorrelationPlotter(DataHandler):
                        test_modality: bool = True) -> dict:
         # Set up output dictionary if necessary
         output = {}
-        # Get counts and bins for histograms
+        # Get counts, bins and xs for histograms
         counts, bins = np.histogram(scores, bins = np.arange(-1, 1, 0.05))
+        xs = [(bins[i]+bins[i+1])/2 for i in range(len(bins)-1)]
+        # Get counts as probabilities for later gaussian -> real conversion
+        countsProbs, _ = np.histogram(scores, bins = np.arange(-1, 1, 0.05), density=True)
         # Get the (corrected) log of these counts for the log graph
         logcounts = np.log(counts)
         logcounts[logcounts == -np.inf] = 0
@@ -193,7 +219,6 @@ class CorrelationPlotter(DataHandler):
             # Main histogram
             plt.stairs(y, bins, fill = True)
             # Black line showing trend
-            xs = [(bins[i]+bins[i+1])/2 for i in range(len(bins)-1)]
             plt.plot(xs, y, color = "black")
             plt.xlabel("Survivability correlation")
             plt.ylabel(ylabel)
@@ -218,7 +243,7 @@ class CorrelationPlotter(DataHandler):
                     plt.text(x, max(y)*1.05, f"Quantile {quantile} = {round(val, 3)}", size = "xx-small")
             # Get modality details if appropriate
             if((test_modality or plot_curve) and "log" not in title.lower()):
-                output["modality details"] = self.__get_modality_entry(scores)
+                output["modality details"], bgm = self.__get_modality_entry(scores)
                 curve_type = output["modality details"]["modality"]
             # Add curve fit if appropriate
             if(plot_curve and "log" not in title.lower()):
