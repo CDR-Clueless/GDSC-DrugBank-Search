@@ -119,30 +119,44 @@ def calculate_target_path(g: ig.Graph, target: str, startPoints: list) -> dict:
                         "survivability": pathnodes[i].attributes()["survivability"]} \
                                 for i in range(len(pathnodes))}}
 
-def calculate_drug_paths(drug: str, g: ig.Graph, tdpfp: str, drugGeneSurv: dict, allbyallcol: pd.Series, drugTargetsRefined: pd.DataFrame,
-                         coresPerProcess: int):
-    print(f"Calculating {drug}...")
-    # Make sure there's at least 1 core available
-    coresPerProcess = max(coresPerProcess, 1)
-    # Check if data for this drug already exists
+def calculate_drug_paths(drug: str, g_base: ig.Graph, tdpfp: str, drugGeneSurv: dict, allbyallcol: pd.Series, drugTargetsRefined: pd.DataFrame,
+                         coresPerProcess: Optional[int]):
+    # If there are no targets or this drug's paths have already been calculated, skip
+    targets = drugTargetsRefined["TARGET"].values
+    if(len(targets)<1):
+        return "No Targets"
     if(os.path.exists(os.path.join(tdpfp, f"{drug}.json"))):
         print(f"Found drug path data already calculated for {drug}; skipping...")
         return "Complete"
+    #print(f"Calculating {drug}...")
+    # Make sure there's at least 1 core available if it isn't a Nonetype
+    if(coresPerProcess is not None):
+        if(type(coresPerProcess)==int):
+            coresPerProcess = max(coresPerProcess, 1)
+        else:
+            coresPerProcess = None
+    # Set up results
     drugResults = {}
     # Get the appropriate threshold for 'starting point' genes
     survivability_cutoff = get_survivability_threshold(drug, drugGeneSurv, np.array(allbyallcol.values, dtype = float))
     # Get drug targets and save results output
-    targets = drugTargetsRefined["TARGET"].values
+    g = deepcopy(g_base)
     g.vs["survivability"] = [allbyallcol.loc[gn] if gn in allbyallcol.index else float("NaN") for gn in g.vs["name"]]
     startPoints = [n for s,n in zip(g.vs["survivability"], g.vs["name"]) if s >= survivability_cutoff]
-    # Get the shortest path for each target using parallel processing
-    with mp.Pool(coresPerProcess) as p:
-        results = p.starmap(calculate_target_path, [(deepcopy(g), target, startPoints) for target in targets], chunksize = int(len(targets)/coresPerProcess))
+    # Get the shortest path for each target using parallel processing or non-parallel processing if specified
+    if(coresPerProcess is None):
+        results = []
+        for target in targets:
+            results.append(calculate_target_path(deepcopy(g), target, startPoints))
+    else:
+        with mp.Pool(coresPerProcess) as p:
+            results = p.starmap(calculate_target_path, [(deepcopy(g), target, startPoints) for target in targets], chunksize = int(len(targets)/coresPerProcess))
     for target, result in zip(targets, results):
         drugResults[target] = result
     with open(os.path.join(tdpfp, f"{drug}.json"), "w") as f:
         json.dump(drugResults, f)
-    print(f"Saved graph path data for {drug}")
+    #print(f"Saved graph path data for {drug}")
+    return
 
 def get_cosmic_columns(cosdir: str = os.path.join("Data", "Raw Data", "COSMIC"),
                        outdir: str = os.path.join("Data", "Results", "COSMIC-columns.txt")):
@@ -448,7 +462,8 @@ def main():
     az.plot_compare_targets()
     #"""
 
-    """
+    #"""
+    ### Get All known Drug targets
     # Go through PubChem identifiers
     pubchemchembl = pd.read_csv(os.path.join("Data", "Results", "pubchem-chembl.tsv"), sep = "\t")
 
@@ -494,7 +509,51 @@ def main():
     internals = output.loc[output["Alternate Names"]=="INTERNAL COMPOUND"]["Drug"]
     internals = {i: True for i in internals}
     check["Internal Compound"] = check.index.map(internals)
+
+    # Refine the DataFrame so we've just got a list of drugs and targets
+    drugTargets = check.loc[check["Internal Compound"]!=True]
+    del drugTargets["Internal Compound"]
+    #print(drugTargets)
+    # Get all relevant entries from drugTargets
+    targets = {}
+    for row in drugTargets.iterrows():
+        drug = row[0]
+        entry = row[1]
+        new = []
+        # drop NaN entries
+        entry = entry.dropna()
+        # Get all relevant values
+        try:
+            for i in entry.index:
+                # Get just the gene name targets as lists and add them to target list
+                if(i=="DrugBank"):
+                    new += list(entry[i].keys())
+                else:
+                    if(type(entry[i]) == list):
+                        tosplit = ",".join(entry[i])
+                    elif(type(entry[i]) == str):
+                         tosplit = entry[i]
+                    else:
+                        tosplit = ",".join(entry[i].tolist())
+                    tosplit = tosplit.replace(" ","").replace("[","").replace("]","")
+                    new += tosplit.split(",")
+            targets[drug] = deepcopy(new)
+        except Exception as e:
+            print(f"Error with entry {entry}: {e}")
+            break
     
+    data = []
+    for drug in targets.keys():
+        for i in range(len(targets[drug])):
+            data.append((drug, targets[drug][i]))
+
+    drugTargets = pd.DataFrame(data, columns = ["DRUG", "TARGET"])
+    drugTargets.drop_duplicates(inplace = True)
+    drugTargets["TARGET"] = drugTargets["TARGET"].str.replace("'","")
+    
+    #"""
+
+    """
     ### Make venn diagrams for drug information sources
 
     # Make dictionary of sets
@@ -728,73 +787,52 @@ def main():
     allbyall = update_hgnc(allbyall, hgnc)
     allbyall = allbyall.set_index("symbol")
 
-    ## NOTE: TEMPORARY PLACE FOR CODE
-    ## Bayesian Gaussian mixture modelling
-    drugUnimodal = "BAY-MPS-COMBO-1__PACLITAXEL_5_UM_"
-    drugBimodal = "AZD6482"
-
-    distUnimodal = allbyall[drugUnimodal].values
-    distBimodal = allbyall[drugBimodal].values
-
-    for dist in [distUnimodal, distBimodal]:
-
-        counts, bins = np.histogram(dist, bins = np.arange(-1, 1, 0.05), density = True)
-        countsReal, _ = np.histogram(dist, bins = np.arange(-1, 1, 0.05))
-        xs = np.array([np.divide(bins[i-1]+bins[i],2) for i in range(1,bins.shape[0])], dtype = float)
-        errors = {}
-        for n_components in range(1, 6):
-            bgm = BayesianGaussianMixture(n_components = n_components, random_state = 42).fit(dist.reshape(-1, 1))
-
-            x = np.linspace(-1, 1, 1000)
-            logprob = bgm.score_samples(x.reshape(-1, 1))
-            responsibilities = bgm.predict_proba(x.reshape(-1, 1))
-            pdf = np.exp(logprob)
-            #pdf_individual = responsibilities * pdf[:, np.newaxis]
-
-            #print(bm.covariances_)
-            #print(bgm.weights_)
-            #print(bgm.means_)
-
-            #plt.plot(x, pdf, label = f"{n_components}-components pdf")
-            #plt.plot(x, pdf_individual, label = "pdf individual")
-
-            plt.plot(xs, countsReal, label = "True")
-            plt.plot(x, pdf * np.nanmax(countsReal/counts), label = f"{n_components}-components scaled pdf")
-            error = np.exp(bgm.score_samples(xs.reshape(-1, 1)))
-            error = np.power(np.abs(error*np.nanmax(countsReal)), 2.)
-            errors[n_components] = np.sum(error)
-        
-            plt.legend()
-            plt.show()
-        print([f"{c} components error: {v}" for v, c in sorted(zip(errors.values(), errors.keys()))])
-    #plt.plot(xsUnimodal, countsUnimodal, label = "True")
-
-    return
-
     # DataFrame for the gene/protein targets of all drugs
-    drugTargets = pd.read_csv(os.path.join(CLEANED_DATA_DIR, "TargetRanking.tsv"), sep = "\t")
-    drugTargets = update_hgnc(drugTargets, hgnc, "TARGET")
+    #drugTargets = pd.read_csv(os.path.join(CLEANED_DATA_DIR, "TargetRanking.tsv"), sep = "\t")
+    #drugTargets = update_hgnc(drugTargets, hgnc, "TARGET")
 
     # Dictionary of results for drug-gene survivability distributions
     with open(os.path.join("Data", "Results", "Drug-gene correlation frequency histograms", "stats.json"), "r") as f:
         drugGeneSurv: dict = json.load(f)
 
     ## Prepare graphs
-    # Refine STRING links to those with a combined score >0.8
-    stlink[stlink.combined_score.gt(800)]
+    # Refine STRING links to those with a combined score >0.6
+    stlink[stlink.combined_score.gt(600)]
     
+    # Convert the STRING connectivity information to a graph with igraph
     print('Building human link graph ...')
     g_global = ig.Graph.TupleList(stlink.itertuples(index=False), directed=True, weights=False, edge_attrs="combined_score")
     print('Done !!')
+    # Make sure the graph is sufficiently connected for our purposes
+    if(not g_global.is_connected()):
+        print("STRING network graph is not fully connected; try lowering score requirement or removing unneeded cliques")
+        return
     # Make path for temporary data storage if none exists
-    tdpfp: str = os.path.join("Data", "Results", "drug_path_temp")
+    tdpfp: str = os.path.join("Data", "Results", "temp_drug_path")
     if(os.path.exists(tdpfp)==False):
         os.mkdir(tdpfp)
-    with mp.Pool(max(int(coreCount/2), 1)) as p:
-        p.starmap(calculate_drug_paths, [(drug, deepcopy(g_global), tdpfp, drugGeneSurv, allbyall[drug], \
-                                         drugTargets.loc[drugTargets["DRUG"]==drug], int(coreCount/2)) \
-                                            for drug in allbyall.columns],
-                                         chunksize=int(len(allbyall.columns)/int(coreCount/2)))
+    output_record = "Drug\tOutcome"
+    for drug in tqdm(allbyall.columns, desc="Calculating target-strongSC drug paths"):
+        try:
+            calculate_drug_paths(drug, g_global, tdpfp, drugGeneSurv, allbyall[drug],
+                                drugTargets.loc[drugTargets["DRUG"]==drug],
+                                #coresPerProcess = min(coreCount/2, len(drugTargets.loc[drugTargets["DRUG"]==drug]["TARGET"].dropna())))
+                                coresPerProcess=None)
+            if(os.path.exists(os.path.join(tdpfp, f"{drug}.json"))):
+                output_record += f"\n{drug}\tSuccess"
+            else:
+                output_record += f"\n{drug}\tNo Targets"
+        except Exception as error:
+            output_record += f"\n{drug}\tError: {error}"
+    with open(os.path.join(tdpfp, "Drug path records.tsv"), "w") as f:
+        f.write(output_record)
+
+    ## Multiprocessing variant of above for loop: size of graph (and maybe other variables?) crashes code
+    #with mp.Pool(max(int(coreCount/2), 1)) as p:
+    #    p.starmap(calculate_drug_paths, [(drug, deepcopy(g_global), tdpfp, drugGeneSurv, allbyall[drug], \
+    #                                     drugTargets.loc[drugTargets["DRUG"]==drug], int(coreCount/2)) \
+    #                                        for drug in allbyall.columns])#,
+                                         #chunksize=int(len(allbyall.columns)/int(coreCount/2)))
     
     ## Combine the per-drug jsons into a single, human-readable json and delete the originals
     # Combine per-drug jsons
