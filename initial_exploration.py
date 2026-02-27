@@ -490,7 +490,7 @@ def main():
         if(dn not in nonan.index):
             help.append(dn)
 
-    print(f"{len(help)} unidentiable compounds:\n{help}")
+    #print(f"{len(help)} unidentiable compounds:\n{help}")
     # Save unidentifiable compounds to tsv file
     udp = os.path.join("Data", "Results", "unknown_drugs.tsv")
     if(os.path.exists(udp)):
@@ -811,21 +811,31 @@ def main():
     tdpfp: str = os.path.join("Data", "Results", "temp_drug_path")
     if(os.path.exists(tdpfp)==False):
         os.mkdir(tdpfp)
-    output_record = "Drug\tOutcome"
-    for drug in tqdm(allbyall.columns, desc="Calculating target-strongSC drug paths"):
+    # Make/get record of drugs already checked so they can be skipped
+    drugPathRecordDir = os.path.join(tdpfp, "Drug path records.tsv")
+    if(not os.path.exists(drugPathRecordDir)):
+        with open(drugPathRecordDir, "w") as f:
+            f.write("Drug\tOutcome\n")
+    output_record = pd.read_csv(drugPathRecordDir, sep = "\t")
+    completed = output_record["Drug"].values
+    tocheck = [drug for drug in allbyall.columns if drug not in completed]
+    for drug in tqdm(tocheck, desc="Calculating target-strongSC drug paths"):
         try:
             calculate_drug_paths(drug, g_global, tdpfp, drugGeneSurv, allbyall[drug],
                                 drugTargets.loc[drugTargets["DRUG"]==drug],
                                 #coresPerProcess = min(coreCount/2, len(drugTargets.loc[drugTargets["DRUG"]==drug]["TARGET"].dropna())))
                                 coresPerProcess=None)
             if(os.path.exists(os.path.join(tdpfp, f"{drug}.json"))):
-                output_record += f"\n{drug}\tSuccess"
+                with open(drugPathRecordDir, "a+") as f:
+                    f.write(f"{drug}\tSuccess\n")
             else:
-                output_record += f"\n{drug}\tNo Targets"
+                with open(drugPathRecordDir, "a+") as f:
+                    f.write(f"{drug}\tNo Targets\n")
         except Exception as error:
-            output_record += f"\n{drug}\tError: {error}"
-    with open(os.path.join(tdpfp, "Drug path records.tsv"), "w") as f:
-        f.write(output_record)
+            # Ensure there's no tabs in the error message as this would mess with the tsv
+            error = str(error).replace("\t",":TAB:")
+            with open(drugPathRecordDir, "a+") as f:
+                f.write(f"{drug}\tError: {error}\n")
 
     ## Multiprocessing variant of above for loop: size of graph (and maybe other variables?) crashes code
     #with mp.Pool(max(int(coreCount/2), 1)) as p:
