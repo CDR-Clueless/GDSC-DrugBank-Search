@@ -14,6 +14,8 @@ import numpy as np
 import pandas as pd
 from scipy.stats import pearsonr
 
+from tqdm import tqdm
+
 import multiprocessing as mp
 
 from typing import Union, Tuple, Optional
@@ -138,7 +140,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
     result.set_index("symbol", inplace=True)
 
     # loop through all indexes, i.e. drugs/compounds, calculating r for all genes
-    for d in il:
+    for d in tqdm(il, desc=f"Thread {it} progress"):
         # Load the calculation for this data if it has already been calculated
         starfiledir = os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store", f"starmapcorrelations-{d}")
         if(os.path.exists(starfiledir)):
