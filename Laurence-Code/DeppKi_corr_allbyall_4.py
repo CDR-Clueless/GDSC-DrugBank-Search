@@ -185,6 +185,7 @@ if __name__ == '__main__':
     #         f = default_dep_dat_file
     print(f'Loading {f}')
     
+    # Known CRISPR cell line-gene dependencies (row index = Cell Line name, column = Gene)
     deps = pd.read_csv(f).fillna(0.0)
     
     default_dep_dat_file = f
@@ -216,6 +217,7 @@ if __name__ == '__main__':
     hgnc.set_index('symbol', inplace=True)
     hgnc_loaded = True
     # print(hgnc)
+    
     # correct legacy deps gene symbols to HUGO
     
     bad_names = set(deps.columns) & (set(hgnc.index) ^ set(deps.columns))
