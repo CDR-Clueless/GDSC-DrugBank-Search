@@ -146,7 +146,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
         # Load the calculation for this data if it has already been calculated
         starfiledir = os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store", f"starmapcorrelations-{d}")
         if(os.path.exists(starfiledir)):
-           dresult = pd.read_csv(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store", f""), sep = "\t", index = False, lineterminator="\n")
+           dresult = pd.read_csv(starfiledir)
            result[:, d] = deepcopy(dresult)
            print(f"Thread {it} found and loaded correlations for {d}", flush = True)
            continue
