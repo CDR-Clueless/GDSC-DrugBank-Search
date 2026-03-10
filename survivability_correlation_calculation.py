@@ -153,7 +153,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
            if(dresult[0][0] not in ["0","-"]):
                dresult.pop(0)
            # Turn dresult from list of strings into list of floats
-           dresult = [float(dresult[i]) for i in range(len(dresult))]
+           dresult = [float(dresult[i]) if dresult[i] != "" else float("NaN") for i in range(len(dresult))]
            result[:, d] = deepcopy(dresult)
            print(f"Thread {it} found and loaded correlations for {d}", flush = True)
            continue
