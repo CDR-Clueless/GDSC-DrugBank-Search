@@ -146,7 +146,14 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
         # Load the calculation for this data if it has already been calculated
         starfiledir = os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store", f"starmapcorrelations-{d}")
         if(os.path.exists(starfiledir)):
-           dresult = pd.read_csv(starfiledir)
+           # Get finished results
+           with open(starfiledir, "r") as f:
+               dresult = str(f.read()).split("\n")
+           # Temporary check to format results if the drug name is at the top
+           if(dresult[0][0] not in ["0","-"]):
+               dresult.pop(0)
+           # Turn dresult from list of strings into list of floats
+           dresult = [float(dresult[i]) for i in range(len(dresult))]
            result[:, d] = deepcopy(dresult)
            print(f"Thread {it} found and loaded correlations for {d}", flush = True)
            continue
@@ -217,7 +224,9 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                 result.at[gn, d] = np.nan
 
         # Save result for this valud of 'd', in case the program is interrupted
-        result[d].to_csv(starfiledir, sep = "\t", index = False, lineterminator="\n")
+        with open(starfiledir, "w") as f:
+            f.write("\n".join(result[d].values))
+        #result[d].to_csv(starfiledir, sep = "\t", index = False, lineterminator="\n")
             
     return(result)
 
