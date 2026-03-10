@@ -113,7 +113,9 @@ def main(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     print('Writing Drugs x Genes file)')
     allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, 'AllDrugsByAllGenes.tsv'), sep='\t', index=True, header=True)
     print('Writing Genes x Drugs file)')
-    allbyall.rename({'symbol': 'drug'}, axis='columns').set_index('drug').T.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, 'AllGenesByAllDrugs.tsv'), sep='\t', index=True, header=True)
+    allbyall = allbyall.T
+    allbyall.index.names = ["drug"]
+    allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, 'AllGenesByAllDrugs.tsv'), sep='\t', index=True, header=True)
     
     # Delete the temporary data store
     for filename in os.listdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store")):
