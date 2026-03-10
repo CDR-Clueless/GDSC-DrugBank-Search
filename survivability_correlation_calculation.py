@@ -154,7 +154,8 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                dresult.pop(0)
            # Turn dresult from list of strings into list of floats
            dresult = [float(dresult[i])  for i in range(len(dresult)) if dresult[i] != ""]
-           result[:, d] = deepcopy(dresult)
+           #result[:, d] = deepcopy(dresult)
+           result[d] = deepcopy(dresult)
            print(f"Thread {it} found and loaded correlations for {d}", flush = True)
            continue
 
