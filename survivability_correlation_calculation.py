@@ -32,7 +32,8 @@ DEFAULT_OUTPUT_DIR: str = os.path.join("Data", "Results")
 def main():
     gdscc()
 
-def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = False):
+def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = False,
+               cellLineTranslators: list = [DEFAULT_DRUG1_FILE, DEFAULT_DRUG2_FILE]):
     df = pd.DataFrame(data = None, columns = ["Combo Name", "Cell Line Name", "Left Drug eMax", "Right Drug eMax", "Combo eMax"])
     loaded_files = []
     # Go through available files in the directory
@@ -87,6 +88,18 @@ def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = Fal
                                                                         "Left Drug eMax", "Right Drug eMax",
                                                                         "Combo eMax"])], ignore_index=True)
                 loaded_files.append(filename)
+    ## Now, translate the Cell Line Names into 'ModelID' which is more standardised and crosses with the CRISPR data
+    translatorDict = {}
+    for translator in cellLineTranslators:
+        filetype = translator.split(".")[-1].lower()
+        if(filetype == "tsv"):
+            tdf = pd.read_csv(translator, sep = "\t")
+        elif(filetype == "csv"):
+            tdf = pd.read_csv(translator, sep = ",")
+        for i in range(len(tdf)):
+            if(tdf["CELL_LINE_NAME"].values[i] not in translatorDict.keys()):
+                translatorDict[tdf["CELL_LINE_NAME"].values[i]] = tdf["ModelID"].values[i]
+    df["ModelID"] = df["Cell Line Name"].map(translatorDict)
     # Return either the output DataFrame or that plus the list of loaded files if requested
     if(returnLoaded):
         return df, loaded_files
@@ -143,50 +156,47 @@ def gdscc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, ce
     cancer_types = set(clInfo['OncotreeLineage'])
 
     # Load in GDSCC data
-    drugData, files = load_gdscc(fileLocs["gdscc"], returnLoaded=True)
-    print(drugData)
-    print(files)
-
-    return
-    
-    drug2 = pd.read_table(DEFAULT_DRUG2_FILE, low_memory=False).fillna('')
-    drug2["DRUG_NAME"] = drug2["DRUG_NAME"].apply(lambda x:x.upper())
+    drugData, files = load_gdscc(fileLocs["gdscc"], returnLoaded = True)
 
     # Initilise drug by gene data
-    dList = sorted(set(drug1["DRUG_NAME"]) | set(drug2["DRUG_NAME"]))
+    dList = sorted(set(drugData["Combo Name"]))
     
     allbyall = pd.DataFrame(columns=["symbol"]+dList)
     allbyall["symbol"] = list(crisprDeps.columns)
-    allbyall = allbyall.fillna(0.0)
+    #allbyall = allbyall.fillna(0.0)
     allbyall.set_index("symbol", inplace=True)
-
-    # Set up directory to store temporary calculations from parallel functions
-    if(os.path.exists(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))==False):
-        os.mkdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))
 
     # Record time before parallel running
     t_base = time.time()
 
     # Break the list of drugs/compounds into a smaller lists which are passed to a parallel function to calculate them
-    batch_dlist = split_list(dList,cpu_count)  
-    nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
-            [(i,batch_dlist[i],crisprDeps,[drug2,drug1])
-             for i in range(cpu_count)]).get()
-    
-    print(f'All by All took {((time.time())-t_base)/60.0:.4} min')
-    
-    allbyall = pd.concat(nested_dfs,axis=1)   
-    
-    print('Writing Drugs x Genes file)')
-    allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, 'AllDrugsByAllGenes.tsv'), sep='\t', index=True, header=True)
-    print('Writing Genes x Drugs file)')
-    allbyall = allbyall.T
-    allbyall.index.names = ["drug"]
-    allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, 'AllGenesByAllDrugs.tsv'), sep='\t', index=True, header=True)
-    # Delete the temporary data store
-    for filename in os.listdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store")):
-        os.remove(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store", filename))
-    os.rmdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))
+    batch_dlist = split_list(dList,cpu_count)
+
+    # Go through the Left, Right and Combo eMax columns
+    for emax in ["Combo eMax", "Left Drug eMax", "Right Drug eMax"]:
+        # Create directory for temporary parallel calculation storage
+        tempDir = os.path.join(DEFAULT_OUTPUT_DIR, f"temp_starmap_store-GDSCC-{emax}")
+        if(not os.path.exists(tempDir)):
+            os.mkdir(tempDir)
+        # Get results
+        nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
+                [(i,batch_dlist[i],crisprDeps,[drugData], "Combo Name", "ModelID", emax, True, tempDir)
+                for i in range(cpu_count)]).get()
+        
+        print(f'All by All for {emax} eMax took {((time.time())-t_base)/60.0:.4} min')
+        
+        allbyall = pd.concat(nested_dfs,axis=1)   
+        
+        print('Writing Drugs x Genes file)')
+        allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{emax}-AllDrugsByAllGenes.tsv"), sep='\t', index=True, header=True)
+        print('Writing Genes x Drugs file)')
+        allbyall = allbyall.T
+        allbyall.index.names = ["drugCombination"]
+        allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{emax}-AllGenesByAllDrugs.tsv"), sep='\t', index=True, header=True)
+        # Delete the temporary data storage
+        for filename in os.listdir(tempDir):
+            os.remove(os.path.join(tempDir, filename))
+        os.rmdir(tempDir)
 
 def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
          gdsc1Loc: Optional[str] = None, gdsc2Loc: Optional[str] = None):
@@ -285,7 +295,7 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
 
 def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrames: list[pd.DataFrame],
                            drugColumn: str = "DRUG_NAME", cellLineColumn: str = "ModelID", responseColumn: str = "pKi",
-                           priorityList: bool = True):
+                           priorityList: bool = True, starfiledirBase: Optional[str] = None):
     """Altered version of ChunkDrugGene to calculate survival correlations for GDSC1/2 and GDSCC
 
     Args:
@@ -305,31 +315,39 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
     # loop through all indexes, i.e. drugs/compounds, calculating r for all genes
     for d in tqdm(il, desc=f"Thread {it} progress"):
         # Load the calculation for this data if it has already been calculated
-        starfiledir = os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store",
-            f"starmapcorrelations-drugColumn_{drugColumn}-cellLineColumn_{cellLineColumn}-responseColumn_{responseColumn}-drug_{d}")
+        if(starfiledirBase is None):
+            starfiledir = os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store",
+                f"starmapcorrelations-drugColumn_{drugColumn}-cellLineColumn_{cellLineColumn}-responseColumn_{responseColumn}-drug_{d}")
+        else:
+            starfiledir = os.path.join(starfiledirBase, f"starmapcorrelations-drugColumn_{drugColumn}-cellLineColumn_{cellLineColumn}-responseColumn_{responseColumn}-drug_{d}")
         if(os.path.exists(starfiledir)):
            # Get finished results
            with open(starfiledir, "r") as f:
                dresult = str(f.read()).split("\n")
-           # Temporary check to format results if the drug name is at the top
-           if(dresult[0][0] not in ["0","-"]):
-               dresult.pop(0)
-           # Turn dresult from list of strings into list of floats
-           dresult = [dresult[i].replace("\"", "").replace("\'", "") for i in range(len(dresult))]
-           dresult = [float(dresult[i]) if dresult[i] != "" else float("NaN") for i in range(len(dresult))]
-           # Trim down to remove any spillover values caused by excess newlines in file writing
-           dresult = dresult[:len(result[d])]
-           #result[:, d] = deepcopy(dresult)
-           # Copy results in
-           result[d] = deepcopy(dresult)
-           print(f"Thread {it} found and loaded correlations for {d}", flush = True)
-           continue
+           # First, ensure the results aren't empty - fill the results with np.nan values if not
+           if(len(dresult)>1):
+                # Temporary check to format results if the drug name is at the top
+                if(dresult[0][0] not in ["0","-"]):
+                    dresult.pop(0)
+                # Turn dresult from list of strings into list of floats
+                dresult = [dresult[i].replace("\"", "").replace("\'", "") for i in range(len(dresult))]
+                dresult = [float(dresult[i]) if dresult[i] != "" else float("NaN") for i in range(len(dresult))]
+                # Trim down to remove any spillover values caused by excess newlines in file writing
+                dresult = dresult[:len(result[d])]
+                # Copy results in
+                result[d] = deepcopy(dresult)
+                print(f"Thread {it} found and loaded correlations for {d}", flush = True)
+                continue
+           # If the results are blank, fill this with np.nan values
+           else:
+                result[d] = deepcopy([np.nan]*len(result[d]))
 
         # If there is no file, calculate the correlations for this drug
         print(f'Thread {it} Calculating correlations for {d}',flush=True)
 
         # Get all available cell lines
         cs = [df[df[drugColumn]==d] for df in drugFrames]
+        #print(cs)
         
         # Go through all genes from CRISPR dependencies DataFrame
         for i, gn in enumerate(CRISPRdeps.columns):
@@ -338,6 +356,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
             # were found within the deps DataFrame
 
             deps = [CRISPRdeps[CRISPRdeps.index.isin(cldf[cellLineColumn].values)][gn].reset_index() for cldf in cs]
+            #print(deps)
             dep_names = []
             for cldf in deps:
                 if(len(cldf)>0):
@@ -392,7 +411,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
 
         # Save result for this valud of 'd', in case the program is interrupted
         with open(starfiledir, "w") as f:
-            f.write("\n".join(result[d].values))
+            f.write("\n".join([str(v) for v in result[d].values]))
             
     return(result)
 
