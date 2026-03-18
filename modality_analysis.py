@@ -56,6 +56,9 @@ class ModalityAnalyzer(DataHandler):
     # Plot cumulative frequency graphs for each modality type, plotting medians and threshold values
     def plot_cf(self, mode: str = "drug", save_dir = os.path.join("Data", "Results", "modality graphs"),
                 keep_unclear: bool = False, overlay_histogram: bool = True, hist_width: float = 0.025):
+        # First, ensure the directory is valid
+        if(not os.path.exists(save_dir)):
+            os.mkdir(save_dir)
         mode = mode.lower().strip()
         if(mode=="both"):
             self.plot_cf("drug", save_dir, keep_unclear, overlay_histogram)
@@ -81,7 +84,7 @@ class ModalityAnalyzer(DataHandler):
             data = self.datasets["gene modality summary"]
         
         # Remove 'unclear' as an option if desired
-        if(not keep_unclear):
+        if(not keep_unclear and "unclear" in data.keys()):
             del meds["unclear"]
             del thresh["unclear"]
             del data["unclear"]
@@ -320,7 +323,7 @@ class ModalityAnalyzer(DataHandler):
         data = self.__get_mod_data(mode)
         
         # Remove 'unclear' as an option if desired
-        if(not keep_unclear):
+        if(not keep_unclear and "unclear" in data.keys()):
             del data["unclear"]
 
         counts = self.__get_counts(data, survivability_arrays)
@@ -364,7 +367,7 @@ class ModalityAnalyzer(DataHandler):
         data = self.__get_mod_data(mode)
         
         # Remove 'unclear' as an option if desired
-        if(not keep_unclear):
+        if(not keep_unclear and "unclear" in data.keys()):
             del data["unclear"]
 
         # Initialize a drug bank handler class to find the relevant drugbank targets

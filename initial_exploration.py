@@ -453,6 +453,7 @@ def main():
         coreCount = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
 
+    """
     ### Get the best hundred druggable genes
     df = pd.read_csv(os.path.join(CLEANED_DATA_DIR, "AllDrugsByAllGenes.tsv"), sep = "\t")
     mat = df.to_numpy()
@@ -507,14 +508,15 @@ def main():
                                      "Best Hundred Gene Scores (Average)", "Best Scores (Average)"])
     tosave.to_csv(os.path.join("Data", "Results", "Best Hundred Genes.tsv"), sep = "\t", lineterminator = "\n", index = False)
     #"""
-    return
-        
-    #print(df)
 
-    """
+    #"""
     ### Modality analysis plotting code
+    # Generate histograms if they haven't been plotted yet
+    if(not os.path.exists(os.path.join("Data", "Results", "Drug-gene correlation frequency histograms"))):
+        CorrelationPlotter(coreCount).plot_all()
+    # Modality analysis
     az = ModalityAnalyzer()
-    #az.plot_cf()
+    az.plot_cf()
     az.plot_high_survivors()
     az.plot_waterfall()
     az.plot_compare_targets()
