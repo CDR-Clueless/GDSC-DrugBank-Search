@@ -453,6 +453,64 @@ def main():
         coreCount = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
 
+    ### Get the best hundred druggable genes
+    df = pd.read_csv(os.path.join(CLEANED_DATA_DIR, "AllDrugsByAllGenes.tsv"), sep = "\t")
+    mat = df.to_numpy()
+    # 100 Genes with a single highest-scoring survivability correlation
+    bestHunGenes, bestHunScores = [mat[i][0] for i in range(min(100, mat.shape[0]))], [np.max(mat[i][1:]) for i in range(min(100, mat.shape[0]))]
+    # Sort the lists in advance
+    bestHunGenes = [g for _, g in sorted(zip(bestHunScores, bestHunGenes))]
+    bestHunScores = sorted(bestHunScores)
+    # Go through genes adding as necessary
+    for i in tqdm(range(100, mat.shape[0]), desc="Getting 100 highest-scoring genes"):
+        newScore = np.max(mat[i][1:])
+        if(newScore > bestHunScores[0]):
+            # Remove worst-scoring value
+            bestHunGenes.pop(0)
+            bestHunScores.pop(0)
+            j = 0
+            while(j<len(bestHunScores)):
+                if(newScore < bestHunScores[j]):
+                    bestHunScores.insert(j, newScore)
+                    bestHunGenes.insert(j, mat[i][0])
+                    break
+                j += 1
+            if(j>=len(bestHunScores)):
+                bestHunScores.append(newScore)
+                bestHunGenes.append(mat[i][0])
+    
+    # 100 Genes with highest average survivability correlation
+    meanHunGenes, meanHunScores = [mat[i][0] for i in range(min(100, mat.shape[0]))], [np.mean(mat[i][1:]) for i in range(min(100, mat.shape[0]))]
+    # Sort the lists in advance
+    meanHunGenes = [g for _, g in sorted(zip(meanHunScores, meanHunGenes))]
+    meanHunScores = sorted(meanHunScores)
+    # Go through genes adding as necessary
+    for i in tqdm(range(100, mat.shape[0]), desc="Getting 100 highest-average genes"):
+        newScore = np.mean(mat[i][1:])
+        if(newScore > meanHunScores[0]):
+            # Remove worst-scoring value
+            meanHunGenes.pop(0)
+            meanHunScores.pop(0)
+            j = 0
+            while(j<len(meanHunScores)):
+                if(newScore < meanHunScores[j]):
+                    meanHunScores.insert(j, newScore)
+                    meanHunGenes.insert(j, mat[i][0])
+                    break
+                j += 1
+            if(j>=len(meanHunScores)):
+                meanHunScores.append(newScore)
+                meanHunGenes.append(mat[i][0])
+    
+    tosave = pd.DataFrame(data = zip(bestHunGenes[::-1], bestHunScores[::-1], meanHunGenes[::-1], meanHunScores[::-1]),
+                          columns = ["Best Hundred Gene Scores", "Best Scores",
+                                     "Best Hundred Gene Scores (Average)", "Best Scores (Average)"])
+    tosave.to_csv(os.path.join("Data", "Results", "Best Hundred Genes.tsv"), sep = "\t", lineterminator = "\n", index = False)
+    #"""
+    return
+        
+    #print(df)
+
     """
     ### Modality analysis plotting code
     az = ModalityAnalyzer()
@@ -462,7 +520,7 @@ def main():
     az.plot_compare_targets()
     #"""
 
-    #"""
+    """
     ### Get All known Drug targets
     # Go through PubChem identifiers
     pubchemchembl = pd.read_csv(os.path.join("Data", "Results", "pubchem-chembl.tsv"), sep = "\t")
@@ -754,7 +812,7 @@ def main():
         break
     """
 
-    #"""
+    """
     ### Target pathfinding code
 
     #CorrelationPlotter().plot_all()
