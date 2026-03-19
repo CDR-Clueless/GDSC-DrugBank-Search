@@ -108,8 +108,10 @@ class ModalityAnalyzer(DataHandler):
         # Format the values and into x and y cumulative frequency values
         ysm, yst = {}, {}
         for key in meds:
-            meds[key] = np.array([0] + sorted(meds[key]), dtype = float)
-            thresh[key] = np.array([0] + sorted(thresh[key]), dtype = float)
+            # Note: the minimum is repeated at the start as this point forms the start of the graph (otherwise the minimimum x value would have a y of 0)
+            # This used to be adding a 0 so the graph started at origin but this caused issues with x-axes starting below zero
+            meds[key] = np.array([np.min(meds[key])] + sorted(meds[key]), dtype = float)
+            thresh[key] = np.array([np.min(meds[key])] + sorted(thresh[key]), dtype = float)
             ysm[key] = np.array(range(meds[key].shape[0]))/float(meds[key].shape[0]-1)
             yst[key] = np.array(range(thresh[key].shape[0]))/float(thresh[key].shape[0]-1)
         

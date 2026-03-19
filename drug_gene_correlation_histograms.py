@@ -39,7 +39,7 @@ class CorrelationPlotter(DataHandler):
         else:
             self.coreCount = max(mp.cpu_count()-2, 1)
     
-    def plot_all(self, stds:list = [1, 2, 3], quantiles: list = []) -> None:
+    def plot_all(self, stds:list = [-3, -2, -1, 1, 2, 3], quantiles: list = []) -> None:
         self.plot_drug_correlations(stds, quantiles)
         self.plot_gene_correlations(stds, quantiles)
         self.plot_sd_cumulative()
@@ -110,17 +110,25 @@ class CorrelationPlotter(DataHandler):
         plt.close()
         return
 
-    def plot_drug_correlations(self, stds: list = [], quantiles: list = []) -> None:
+    def plot_drug_correlations(self, graphStds: list = [3], graphQuantiles: list = [], dataStds: list = [-3, -2, -1, 1, 2, 3], dataQuantiles: list = [0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]) -> None:
+        # Make sure all details from the graph list is in the data list
+        for entry in graphStds:
+            if(entry not in dataStds):
+                dataStds.append(entry)
+        for entry in graphQuantiles:
+            if(entry not in dataQuantiles):
+                dataQuantiles.append(entry)
+        # Get data
         gxd = self.datasets["AllByAll"]
         sns.set_theme()
         results_dir = os.path.join("Data", "Results", "Drug-gene correlation frequency histograms")
         make_dir(results_dir)
         # Set up dictionary output for quantiles and SDs json
-        sres, resVals = {}, self.__get_stats_markers(stds, quantiles)
+        sres, resVals = {}, self.__get_stats_markers(dataStds, dataQuantiles)
         # Go through rows (i.e. drugs) for drug score distribution analysis in parallel
         with mp.Pool(self.coreCount) as p:
             results = p.starmap(self.drug_correlations_worker,
-                                [(row, results_dir, stds, quantiles, resVals) for i, row in gxd.iterrows()])
+                                [(row, results_dir, graphStds, graphQuantiles, resVals) for i, row in gxd.iterrows()])
         # Add all these parallel-calculated results to main results output
         for result in results:
             sres.update(result)
@@ -145,17 +153,17 @@ class CorrelationPlotter(DataHandler):
         newdict.update(extra_data)
         return {drug: newdict}
     
-    def plot_gene_correlations(self, stds: list = [], quantiles: list = []) -> None:
+    def plot_gene_correlations(self, graphStds: list = [3], graphQuantiles: list = [], dataStds: list = [-3, -2, -1, 1, 2, 3], dataQuantiles: list = [0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]) -> None:
         gxd = self.datasets["AllByAll"]
         sns.set_theme()
         # Go through columns - gene score distribution analysis
         results_dir = os.path.join("Data", "Results", "Gene-drug correlation frequency histograms")
         make_dir(results_dir)
         # Set up dictionary output for quantiles json
-        sres, resVals = {}, self.__get_stats_markers(stds, quantiles)
+        sres, resVals = {}, self.__get_stats_markers(dataStds, dataQuantiles)
         with mp.Pool(self.coreCount) as p:
             results = p.starmap(self.gene_correlations_worker,
-                                [(gene, gxd[gene].values, results_dir, stds, quantiles, resVals) for gene in gxd.columns[1:]])
+                                [(gene, gxd[gene].values, results_dir, graphStds, graphQuantiles, resVals) for gene in gxd.columns[1:]])
         # Add all these parallel-calculated results to main results output
         for result in results:
             sres.update(result)
@@ -204,9 +212,7 @@ class CorrelationPlotter(DataHandler):
                 if("log" in title.lower()):
                     avg, dev = np.log(avg), np.log(dev)
                 for std in stds:
-                    plt.plot([avg-(dev*std)]*2, [0, max(y)*1.01], linestyle = "--", color = "g")
                     plt.plot([avg+(dev*std)]*2, [0, max(y)*1.01], linestyle = "--", color = "g")
-                    plt.text(avg-(dev*std), max(y)*1.05, f"-{std} SDs", size = "xx-small")
                     plt.text(avg+(dev*std), max(y)*1.05, f"+{std} SDs", size = "xx-small")
             # Add quantile markings if appropriate
             if(len(quantiles)>0):

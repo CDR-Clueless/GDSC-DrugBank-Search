@@ -513,7 +513,7 @@ def main():
     ### Modality analysis plotting code
     # Generate histograms if they haven't been plotted yet
     if(not os.path.exists(os.path.join("Data", "Results", "Drug-gene correlation frequency histograms"))):
-        CorrelationPlotter(coreCount).plot_all()
+        CorrelationPlotter(coreCount).plot_all(stds = [])
     # Modality analysis
     az = ModalityAnalyzer()
     az.plot_cf()
@@ -530,7 +530,6 @@ def main():
     pubchemchembl.dropna(inplace = True)
     pubchemchembl.drop_duplicates("PubChem", inplace=True)
     #pubchemchembl = {pubchemchembl["PubChem"].values[i]: pubchemchembl["ChEMBL"].values[i] for i in range(len(pubchemchembl))}
-
 
 
     check = get_targets_all()

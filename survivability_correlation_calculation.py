@@ -30,7 +30,12 @@ DEFAULT_DRUG_COMB_FILE: str = os.path.join("Data", "Raw Data", "GDSCC")
 DEFAULT_OUTPUT_DIR: str = os.path.join("Data", "Results")
 
 def main():
-    gdscc()
+    drugData, files = load_gdscc(DEFAULT_DRUG_COMB_FILE, returnLoaded = True)
+    combos, lines = len(drugData["Combo Name"].unique()), len(drugData["Cell Line Name"].unique())
+    print(f"{combos} unique combinations along {lines} cell lines")
+    #print(drugData)
+    #gdscc()
+    return
 
 def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = False,
                cellLineTranslators: list = [DEFAULT_DRUG1_FILE, DEFAULT_DRUG2_FILE]):
