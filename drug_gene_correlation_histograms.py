@@ -28,8 +28,13 @@ from drug_search import make_dir
 class CorrelationPlotter(DataHandler):
     def __init__(self, coreCount: Optional[int]):
         # Call super init function and insert the relevant AllGenesByAllDrugs data into the instance
-        super().__init__((("AllByAll", os.path.join(CLEAN_DATA_DIR, "AllGenesByAllDrugs.tsv"))))
+        super().__init__((("AllByAll", os.path.join(CLEAN_DATA_DIR, "AllGenesByAllDrugs.tsv")),
+                          ("comboSquared", os.path.join("Data","Results","Survivability-Correlations","GDSCC-Combo eMax-AllDrugsByAllGenes.tsv")),
+                          ("leftSquared", os.path.join("Data","Results","Survivability-Correlations","GDSCC-Left Drug eMax-AllDrugsByAllGenes.tsv")),
+                          ("rightSquared", os.path.join("Data","Results","Survivability-Correlations","GDSCC-Right Drug eMax-AllDrugsByAllGenes.tsv"))))
         self.datasets["AllByAll"] = self.datasets["AllByAll"].rename(columns = {"Unnamed: 0": "Drug"})
+        for key in ["comboSquared", "leftSquared", "rightSquared"]:
+            self.datasets[key] = self.datasets[key].set_index("symbol")
         # Define number of available cores to utilise in multiprocessing
         if(coreCount is int):
             if(coreCount>0):
@@ -39,10 +44,12 @@ class CorrelationPlotter(DataHandler):
         else:
             self.coreCount = max(mp.cpu_count()-2, 1)
     
-    def plot_all(self, stds:list = [-3, -2, -1, 1, 2, 3], quantiles: list = []) -> None:
+    def plot_all(self, stds: list = [3], quantiles: list = []) -> None:
+        self.plot_squared_drug_correlations(stds, quantiles)
+        return
         self.plot_drug_correlations(stds, quantiles)
         self.plot_gene_correlations(stds, quantiles)
-        self.plot_sd_cumulative()
+        self.plot_sd_cumulative("both")
         return
     
     def __get_stats_markers(self, stds: list = [], quantiles: list = []) -> dict[str, list[float]]:
@@ -109,6 +116,122 @@ class CorrelationPlotter(DataHandler):
         plt.clf()
         plt.close()
         return
+
+    def plot_squared_drug_correlations(self, graphStds: list = [3], graphQuantiles: list = [], dataStds: list = [-3, -2, -1, 1, 2, 3], dataQuantiles: list = [0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]) -> None:
+        # Make sure all details from the graph list is in the data list
+        for entry in graphStds:
+            if(entry not in dataStds):
+                dataStds.append(entry)
+        for entry in graphQuantiles:
+            if(entry not in dataQuantiles):
+                dataQuantiles.append(entry)
+        # Get data
+        dfc, dfl, dfr = self.datasets["comboSquared"], self.datasets["leftSquared"], self.datasets["rightSquared"]
+        sns.set_theme()
+        results_dir = os.path.join("Data", "Results", "GDSCC drug-gene correlation frequency histograms")
+        make_dir(results_dir)
+        # Set up dictionary output for quantiles and SDs json
+        sres, resVals = {}, self.__get_stats_markers(dataStds, dataQuantiles)
+        # Go through rows (i.e. drugs) for drug score distribution analysis in parallel
+        with mp.Pool(self.coreCount) as p:
+            results = p.starmap(self.squared_drug_correlations_worker,
+                                [(drugs, dfc[drugs], dfl[drugs], dfr[drugs], results_dir, graphStds, graphQuantiles, resVals) for drugs in dfc.columns])
+        # Add all these parallel-calculated results to main results output
+        for result in results:
+            sres.update(result)
+        with open(os.path.join(results_dir, "stats.json"), "w") as f:
+            json.dump(sres, f, indent = 4)
+        return
+
+    def squared_drug_correlations_worker(self, drugs, dfc: pd.Series, dfl: pd.Series, dfr: pd.Series, results_dir: str, stds: list, quantiles: list, resVals: dict) -> dict:
+        # Create new DataFrame with all the DataFrames merged
+        df = pd.DataFrame(data = zip(dfc.values, dfl.values, dfr.values), columns = ["Combo", "Left", "Right"], index = dfc.index)
+        # Remove NaN values
+        df.dropna(axis = "index", inplace = True)
+        # Plot histograms and get histogram-plotting-related information (i.e. stats which are calculated in the histogram plotting step)
+        extra_data = self.save_squared_histogram(df, drugs, f"{drugs}-gene correlations", results_dir, stds, quantiles)
+        # Add some extra basic information, i.e. standard deviation, quantiles, and numbers of gene targets within given SD boundaries
+        newdict = {}
+        for key in ["Combo", "Left", "Right"]:
+            scores = np.array(df[key].dropna().values, dtype = float)
+            newentry = {"standard deviations": \
+                        {d: np.mean(scores)+(np.std(scores)*d) for d in resVals["devs"]},
+                        "quantiles": \
+                        {q: np.quantile(scores, q) for q in resVals["quantiles"]},
+                        "standard deviation counts": \
+                        self.__get_within_sds(scores, resVals["devs"])}
+            newdict[key] = deepcopy(newentry)
+            newdict[key].update(extra_data[key])
+        return {drugs: newdict}
+
+    def save_squared_histogram(self, df: pd.DataFrame, drugs: str, title: str, results_dir: str,
+                       stds: list = [], quantiles: list = [], plot_curve: bool = True,
+                       test_modality: bool = True) -> dict:
+        # Set up output dictionary if necessary
+        output = {col: {} for col in df.columns}
+        colours = {"Left": "blue", "Right": "orange", "Combo": "green"}
+        offset = {"Left": 0.05, "Right": -0.05, "Combo": 0.0}
+        # Loop through left drug, right drug and combination produce histograms
+        for col in ["Left", "Right", "Combo"]:
+            scores = np.array(df[col].dropna().values, dtype = float)
+            # Get counts and bins for histograms
+            counts, bins = np.histogram(scores, bins = np.arange(-1, 1, 0.04))
+            # Main histogram
+            plt.stairs(counts, bins, fill = False, color = colours[col], label = {"Left": drugs.split("#")[0], "Right": drugs.split("#")[-1],
+                                                                                  "Combo": "Both"}[col])
+            # Add standard deviation bars if appropriate
+            if(len(stds)>0):
+                avg, dev = np.mean(scores), np.std(scores)
+                for std in stds:
+                    plt.plot([avg+(dev*std)]*2, [0, max(counts)*1.01], linestyle = "--", color = "g")
+                    plt.text(avg+(dev*std), max(counts)*1.05 + offset[col], f"+{std} SDs", size = "xx-small")
+            # Add quantile markings if appropriate
+            if(len(quantiles)>0):
+                vals = np.quantile(scores, quantiles)
+                for quantile, val, x in zip(quantiles, vals, np.linspace(-1, 1, len(quantiles), endpoint=False)):
+                    plt.plot([val]*2, [0, max(scores)*1.01], linestyle = "--", color = "r")
+                    plt.text(x, max(scores)*1.05 + offset[col], f"Quantile {quantile} = {round(val, 3)}", size = "xx-small")
+            # Get modality details if appropriate
+            if((test_modality or plot_curve) and "log" not in title.lower()):
+                output[col]["modality details"] = self.__get_modality_entry(scores)
+                curve_type = output[col]["modality details"]["modality"]
+            # Add curve fit if appropriate
+            if(plot_curve and "log" not in title.lower()):
+                xs = [(bins[i]+bins[i+1])/2 for i in range(len(bins)-1)]
+                func = {"gaussian": gaussian, "bimodal": bimodal, "unimodal": gaussian, "unclear": gaussian}[curve_type]
+                ig = curve_guess(xs, counts, curve_type)
+                try:
+                    params, cov = curve_fit(func,
+                                            xdata = xs, 
+                                            ydata = counts,
+                                            p0 = ig, maxfev = 25000)
+                    curve_xs = np.linspace(xs[0], xs[-1], len(xs)*100)
+                    plt.plot(curve_xs, func(curve_xs, *params), color = colours[col])
+                    # Save parameters
+                    paramdict, covdict = {}, {}
+                    covarr = np.sqrt(np.diag(cov))
+                    for i in range(int(len(params)/3)):
+                        for param, j in zip(("A", "mu", "sigma"), (0, 1, 2)):
+                            paramdict[f"{param}{i}"] = params[j+(3*i)]
+                            covdict[f"{param}{i}"] = covarr[j+(3*i)]
+                    output[col]["curve parameters"] = deepcopy(paramdict)
+                    output[col]["curve errors standard deviation"] =  deepcopy(covdict)
+                except Exception as e:
+                    print(f"Error with {title}: {e}")
+                    paramdict, covdict = {}, {}
+                    for i in range({"gaussian": 1, "unimodal": 1, "unclear": 1, "bimodal": 2}[curve_type]):
+                        for param, j in zip(("A", "mu", "sigma"), (0, 1, 2)):
+                            paramdict[f"{param}{i}"] = "NaN"
+                            covdict[f"{param}{i}"] = "NaN"
+                    output[col]["curve parameters"] = deepcopy(paramdict)
+                    output[col]["curve errors standard deviation"] =  deepcopy(covdict)
+        plt.ylabel("Frequency")
+        plt.xlabel("Survivability Correlation")
+        plt.title(title)
+        plt.legend()
+        plt.savefig(os.path.join(results_dir, title+" histogram.png"))
+        plt.clf()
+        return output
 
     def plot_drug_correlations(self, graphStds: list = [3], graphQuantiles: list = [], dataStds: list = [-3, -2, -1, 1, 2, 3], dataQuantiles: list = [0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]) -> None:
         # Make sure all details from the graph list is in the data list
