@@ -45,11 +45,11 @@ class CorrelationPlotter(DataHandler):
             self.coreCount = max(mp.cpu_count()-2, 1)
     
     def plot_all(self, stds: list = [3], quantiles: list = []) -> None:
-        self.plot_squared_drug_correlations(stds, quantiles)
-        #self.plot_squared_gene_correlations(stds, quantiles)
-        self.plot_drug_correlations(stds, quantiles)
-        self.plot_gene_correlations(stds, quantiles)
-        self.plot_sd_cumulative("both")
+        #self.plot_squared_drug_correlations(stds, quantiles)
+        self.plot_squared_gene_correlations(stds, quantiles)
+        #self.plot_drug_correlations(stds, quantiles)
+        #self.plot_gene_correlations(stds, quantiles)
+        #self.plot_sd_cumulative("both")
         return
     
     def __get_stats_markers(self, stds: list = [], quantiles: list = []) -> dict[str, list[float]]:
@@ -149,7 +149,7 @@ class CorrelationPlotter(DataHandler):
         # Remove NaN values
         df.dropna(axis = "index", inplace = True)
         # Plot histograms and get histogram-plotting-related information (i.e. stats which are calculated in the histogram plotting step)
-        extra_data = self.save_squared_histogram(df, drugs, f"{drugs}-gene correlations", results_dir, stds, quantiles)
+        extra_data = self.save_squared_drug_histogram(df, drugs, f"{drugs}-gene correlations", results_dir, stds, quantiles, "drug")
         # Add some extra basic information, i.e. standard deviation, quantiles, and numbers of gene targets within given SD boundaries
         newdict = {}
         for key in ["Combo", "Left", "Right"]:
@@ -161,10 +161,66 @@ class CorrelationPlotter(DataHandler):
                         "standard deviation counts": \
                         self.__get_within_sds(scores, resVals["devs"])}
             newdict[key] = deepcopy(newentry)
-            newdict[key].update(extra_data[key])
+            newdict[key] = newdict[key] | extra_data[key]
         return {drugs: newdict}
+    
+    def plot_squared_gene_correlations(self, graphStds: list = [3], graphQuantiles: list = [], dataStds: list = [-3, -2, -1, 1, 2, 3], dataQuantiles: list = [0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]) -> None:
+        # Make sure all details from the graph list is in the data list
+        for entry in graphStds:
+            if(entry not in dataStds):
+                dataStds.append(entry)
+        for entry in graphQuantiles:
+            if(entry not in dataQuantiles):
+                dataQuantiles.append(entry)
+        # Get data
+        dfc, dfl, dfr = self.datasets["comboSquared"], self.datasets["leftSquared"], self.datasets["rightSquared"]
+        sns.set_theme()
+        # Go through columns - gene score distribution analysis
+        results_dir = os.path.join("Data", "Results", "GDSCC Gene-drug correlation frequency histograms")
+        make_dir(results_dir)
+        # Set up dictionary output for quantiles json
+        sres, resVals = {}, self.__get_stats_markers(dataStds, dataQuantiles)
+        with mp.Pool(self.coreCount) as p:
+            results = p.starmap(self.squared_gene_correlations_worker,
+                                [(gene, dfc.loc[[gene]], dfl.loc[[gene]], dfr.loc[[gene]], results_dir, graphStds, graphQuantiles, resVals) for gene in dfc.index.values])
+        #results = []
+        #for gene in dfc.index.values:
+        #    results.append(self.squared_gene_correlations_worker(gene, dfc.loc[[gene]], dfl.loc[[gene]], dfr.loc[[gene]], results_dir, graphStds, graphQuantiles, resVals))
+        #    break
+        # Add all these parallel-calculated results to main results output
+        for result in results:
+            sres.update(result)
+        with open(os.path.join(results_dir, "stats.json"), "w") as f:
+            json.dump(sres, f, indent = 4)
+        return
+    
+    def squared_gene_correlations_worker(self, gene, dfc: pd.Series, dfl: pd.Series, dfr: pd.Series, results_dir, stds, quantiles, resVals) -> dict:
+        # Combine combined, left and right drug results
+        df = pd.DataFrame(data = zip(dfc.values, dfl.values, dfr.values), columns = ["Combo", "Left", "Right"], index = dfc.index)
+        # Remove NaN values
+        df.dropna(axis = "index", inplace = True)
+        # Plot histograms and get histogram-plotting-related information (i.e. stats which are calculated in the histogram plotting step)
+        extra_data = self.save_squared_gene_histogram(df, f"{gene}-drug correlations", results_dir, stds, quantiles)
+        
+        # Concatenate left and right survivability correlations
+        ldrug = np.array(df["Left"].to_numpy()[0], dtype = float)
+        rdrug = np.array(df["Right"].to_numpy()[0], dtype = float)
+        singleDrug = np.concatenate((ldrug, rdrug), dtype = float).flatten()
+        multiDrug = np.array(df["Combo"].to_numpy()[0], dtype = float)
 
-    def save_squared_histogram(self, df: pd.DataFrame, drugs: str, title: str, results_dir: str,
+        # Add some extra basic information, i.e. standard deviation, quantiles, and numbers of gene targets within given SD boundaries
+        newdict = {}
+        for scores, dc in zip([singleDrug, multiDrug], ["Single drug", "Both drugs"]):
+            newentry = {"standard deviations": \
+                        {d: np.mean(scores)+(np.std(scores)*d) for d in resVals["devs"]},
+                        "quantiles": \
+                        {q: np.quantile(scores, q) for q in resVals["quantiles"]},
+                        "standard deviation counts": \
+                        self.__get_within_sds(scores, resVals["devs"])}
+            newdict[dc] = deepcopy(newentry) | extra_data[dc]
+        return {gene: newdict}
+
+    def save_squared_drug_histogram(self, df: pd.DataFrame, drugs: str, title: str, results_dir: str,
                        stds: list = [], quantiles: list = [], plot_curve: bool = True,
                        test_modality: bool = True) -> dict:
         # Set up output dictionary if necessary
@@ -225,6 +281,79 @@ class CorrelationPlotter(DataHandler):
                             covdict[f"{param}{i}"] = "NaN"
                     output[col]["curve parameters"] = deepcopy(paramdict)
                     output[col]["curve errors standard deviation"] =  deepcopy(covdict)
+        plt.ylabel("Frequency")
+        plt.xlabel("Survivability Correlation")
+        plt.title(title)
+        plt.legend()
+        plt.savefig(os.path.join(results_dir, title+" histogram.png"))
+        plt.clf()
+        return output
+    
+    def save_squared_gene_histogram(self, df: pd.DataFrame, title: str, results_dir: str,
+                       stds: list = [], quantiles: list = [], plot_curve: bool = True,
+                       test_modality: bool = True) -> dict:
+        # Concatenate left and right survivability correlations
+        ldrug = np.array(df["Left"].to_numpy()[0], dtype = float)
+        rdrug = np.array(df["Right"].to_numpy()[0], dtype = float)
+        singleDrug = np.concatenate((ldrug, rdrug), dtype = float).flatten()
+        multiDrug = np.array(df["Combo"].to_numpy()[0], dtype = float)
+        # Set up output dictionary if necessary
+        output = {col: {} for col in ["Single drug", "Both drugs"]}
+        colours = {"Single drug": "aqua", "Both drugs": "green"}
+        offset = {"Single drug": 0.05, "Both drugs": 0.0}
+        # Loop through single and multiple drug options and produce histograms accordingly
+        for scores, dc in zip([singleDrug, multiDrug], ["Single drug", "Both drugs"]):
+            scores = scores[~np.isnan(scores)]
+            # Get counts and bins for histograms
+            counts, bins = np.histogram(scores, bins = np.arange(-1, 1, 0.04))
+            # Main histogram
+            plt.stairs(counts, bins, fill = False, color = colours[dc], label = dc)
+            # Add standard deviation bars if appropriate
+            if(len(stds)>0):
+                avg, dev = np.mean(scores), np.std(scores)
+                for std in stds:
+                    plt.plot([avg+(dev*std)]*2, [0, max(counts)*1.01], linestyle = "--", color = "g")
+                    plt.text(avg+(dev*std), max(counts)*1.05 + offset[dc], f"+{std} SDs", size = "xx-small")
+            # Add quantile markings if appropriate
+            if(len(quantiles)>0):
+                vals = np.quantile(scores, quantiles)
+                for quantile, val, x in zip(quantiles, vals, np.linspace(-1, 1, len(quantiles), endpoint=False)):
+                    plt.plot([val]*2, [0, max(scores)*1.01], linestyle = "--", color = "r")
+                    plt.text(x, max(scores)*1.05 + offset[dc], f"Quantile {quantile} = {round(val, 3)}", size = "xx-small")
+            # Get modality details if appropriate
+            if((test_modality or plot_curve) and "log" not in title.lower() and len(scores)>2):
+                output[dc]["modality details"] = self.__get_modality_entry(scores)
+                curve_type = output[dc]["modality details"]["modality"]
+            # Add curve fit if appropriate
+            if(plot_curve and "log" not in title.lower() and len(scores)>2):
+                xs = [(bins[i]+bins[i+1])/2 for i in range(len(bins)-1)]
+                func = {"gaussian": gaussian, "bimodal": bimodal, "unimodal": gaussian, "unclear": gaussian}[curve_type]
+                ig = curve_guess(xs, counts, curve_type)
+                try:
+                    params, cov = curve_fit(func,
+                                            xdata = xs, 
+                                            ydata = counts,
+                                            p0 = ig, maxfev = 25000)
+                    curve_xs = np.linspace(xs[0], xs[-1], len(xs)*100)
+                    plt.plot(curve_xs, func(curve_xs, *params), color = colours[dc])
+                    # Save parameters
+                    paramdict, covdict = {}, {}
+                    covarr = np.sqrt(np.diag(cov))
+                    for i in range(int(len(params)/3)):
+                        for param, j in zip(("A", "mu", "sigma"), (0, 1, 2)):
+                            paramdict[f"{param}{i}"] = params[j+(3*i)]
+                            covdict[f"{param}{i}"] = covarr[j+(3*i)]
+                    output[dc]["curve parameters"] = deepcopy(paramdict)
+                    output[dc]["curve errors standard deviation"] =  deepcopy(covdict)
+                except Exception as e:
+                    print(f"Error with {title}: {e}")
+                    paramdict, covdict = {}, {}
+                    for i in range({"gaussian": 1, "unimodal": 1, "unclear": 1, "bimodal": 2}[curve_type]):
+                        for param, j in zip(("A", "mu", "sigma"), (0, 1, 2)):
+                            paramdict[f"{param}{i}"] = "NaN"
+                            covdict[f"{param}{i}"] = "NaN"
+                    output[dc]["curve parameters"] = deepcopy(paramdict)
+                    output[dc]["curve errors standard deviation"] =  deepcopy(covdict)
         plt.ylabel("Frequency")
         plt.xlabel("Survivability Correlation")
         plt.title(title)

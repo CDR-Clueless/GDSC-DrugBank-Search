@@ -515,6 +515,7 @@ def main():
     if(not os.path.exists(os.path.join("Data", "Results", "Drug-gene correlation frequency histograms")) or
        not os.path.exists(os.path.join("Data", "Results", "GDSCC drug-gene correlation frequency histograms"))):
         CorrelationPlotter(coreCount).plot_all(stds = [])
+    CorrelationPlotter(coreCount).plot_all(stds = [])
 
     # Modality analysis
     #az = ModalityAnalyzer()
