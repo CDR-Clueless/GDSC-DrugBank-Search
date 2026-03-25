@@ -452,6 +452,60 @@ class SquaredModalityAnalyzer(DataHandler):
             # Add this sorted entry
             self.datasets[internalname + " organised"] = {"unimodal": deepcopy(uni), "bimodal": deepcopy(bim), "unclear": deepcopy(unc)}
         return
+
+    # Get modality data from the 'stats.json' file in results plots
+    def __get_mod_data(self, mode: str, organised: bool = False) -> Optional[dict]:
+        # Get relevant data
+        if(mode=="drug"):
+            return self.datasets["drug modality summary" + {True:" organised", False:""}[organised]]
+        elif(mode=="gene"):
+            return self.datasets["gene modality summary" + {True:" organised", False:""}[organised]]
+        else:
+            print(f"Unrecognised mode type: {mode}. Please use 'drug' or 'gene' as the mode.")
+            return
+    
+    # Get arrays of survivability correlation values for targets of a each drug/gene for left, right and combination of drugs
+    def __get_survivability_arrays(self, mode: str) -> Optional[dict]:
+        if(mode=="drug"):
+            return {side.replace(" Drug",""): {drugs: self.datasets[side][drugs].values for drugs in self.datasets[side].columns} for side in ["Combo", "Left Drug", "Right Drug"]}
+        elif(mode=="gene"):
+            return {side.replace(" Drug",""): {gene: self.datasets[side].loc[[gene]].values for gene in self.datasets[side].index} for side in ["Combo", "Left Drug", "Right Drug"]}
+        else:
+            print(f"Unrecognised mode type: {mode}. Please use 'drug' or 'gene' as the mode.")
+            return
+    
+    # Get counts for targets above threshold values
+    def __get_counts(self, data: dict, survivability_arrays: dict) -> dict:
+        # Make dictionary for threshold values
+        thresh = {mtype: {side: {} for side in data[mtype].keys()} for mtype in data.keys()}
+        # Get threshold values and insert them into dictionaries
+        for mtype in data:
+            for side in data[mtype]:
+                # dg stands for drug-gene, as depending on the function mode this variable could be iterating over drugs or genes
+                for dg in data[mtype][side].keys():
+                    thresh[mtype][side][dg] = get_survivability_threshold(dg, data[mtype][side], survivability_arrays[side][dg])
+        
+        # Get rid of any NaN values
+        toremove = {mtype: {side: [] for side in thresh[mtype].keys()} for mtype in thresh.keys()}
+        for mtype in thresh:
+            for side in thresh[mtype]:
+                for dg in thresh[mtype][side]:
+                    if(thresh[mtype][side][dg]!=thresh[mtype][side][dg]):
+                        toremove[mtype][side].append(dg)
+        for mtype in toremove:
+            for side in toremove[mtype]:
+                for tr in toremove[mtype][side]:
+                    del thresh[mtype][side][tr]
+        
+        # Get number of targets above threshold values
+        counts = {mtype: {side: {} for side in thresh[mtype].keys()} for mtype in thresh.keys()}
+        for mtype in thresh:
+            for side in thresh[mtype]:
+                for dg in thresh[mtype][side]:
+                    arr = survivability_arrays[side][dg]
+                    counts[mtype][side][dg] = arr[arr>thresh[mtype][side][dg]].shape[0]
+        
+        return counts
     
     # Plot cumulative frequency graphs for each modality type, plotting medians and threshold values
     def plot_cf(self, mode: str = "drug", save_dir = os.path.join("Data", "Results", "squared modality graphs"),
@@ -466,12 +520,8 @@ class SquaredModalityAnalyzer(DataHandler):
             return
         
         # Get a dictionary containing all the drug/gene survivability values
-        if(mode=="drug"):
-            survivability_arrays = {side.replace(" Drug",""): {drugs: self.datasets[side][drugs].values for drugs in self.datasets[side].columns} for side in ["Combo", "Left Drug", "Right Drug"]}
-        elif(mode=="gene"):
-            survivability_arrays = {side.replace(" Drug",""): {gene: self.datasets[side].loc[[gene]].values for gene in self.datasets[side].index} for side in ["Combo", "Left Drug", "Right Drug"]}
-        else:
-            print(f"Unrecognised mode type: {mode}. Please use 'drug' or 'gene' as the mode.")
+        survivability_arrays = self.__get_survivability_arrays(mode)
+        if(survivability_arrays is None):
             return
 
         # Create dictionaries for results of medians and strong-correlation thresholds for different modality types
@@ -590,6 +640,68 @@ class SquaredModalityAnalyzer(DataHandler):
             ax1.set_title(f"{mod.capitalize()} survivability scores threshold values")
             ax1.legend()
             plt.savefig(os.path.join(save_dir, f"{mod.capitalize()} survivability correlation threshold values by modality CDF.png"))
+            plt.clf()
+            plt.close()
+        return
+    
+    # Plot waterfall graphs for each modality type, plotting number of targets for each drug
+    def plot_waterfall(self, mode: str = "drug", save_dir = os.path.join("Data", "Results", "squared modality graphs"),
+                       keep_unclear: bool = False):
+        mode = mode.lower().strip()
+        if(mode=="both"):
+            self.plot_waterfall("drug", save_dir, keep_unclear)
+            self.plot_waterfall("gene", save_dir, keep_unclear)
+            return
+        
+        # Get a dictionary containing all the drug/gene survivability values
+        survivability_arrays = self.__get_survivability_arrays(mode)
+        if(survivability_arrays is None):
+            return
+
+        # Get relevant data
+        data = self.__get_mod_data(mode, organised = True)
+        
+        # Remove 'unclear' as an option if desired
+        if(not keep_unclear and "unclear" in data.keys()):
+            del data["unclear"]
+
+        counts = self.__get_counts(data, survivability_arrays)
+        
+        # Sort into sorted arrays tuples ({modalityType: [(drug, count(lowest)), (drug2, count2), ..., (drugn, countn(highest))]})
+        for mtype in counts:
+            # Organise left and right drugs into single drugs
+            tr = {"Right-"+drugs: counts[mtype]["Right"][drugs] for drugs in counts[mtype]["Right"].keys()}
+            tl = {"Left-"+drugs: counts[mtype]["Left"][drugs] for drugs in counts[mtype]["Left"].keys()}
+            counts[mtype]["Single drug"] = deepcopy(tr | tl)
+            counts[mtype]["Both drugs"] = deepcopy(counts[mtype]["Combo"])
+            del counts[mtype]["Combo"]
+            del counts[mtype]["Left"]
+            del counts[mtype]["Right"]
+            # Get sorted lists of these drugs
+            for dc in ["Single drug", "Both drugs"]:
+                stlist = [(key, val) for val, key in sorted(zip(list(counts[mtype][dc].values()), list(counts[mtype][dc].keys())))]
+                counts[mtype][dc] = deepcopy(stlist)
+        
+        # Plot waterfall plots
+        mirror = {"drug": "gene", "gene": "drug"}[mode]
+        colours = {"Single drug": "aqua", "Both drugs": "green"}
+        for mtype in counts:
+            fig, ax = plt.subplots(figsize=(19.2, 14.4))
+            for dc in ["Single drug", "Both drugs"]:
+                # Get high-low ordered list of counts
+                stlist = counts[mtype][dc][::-1]
+                # Get 0-1 x-values and the appropriate bar widths for this graph
+                xs = np.array(range(len(stlist)), dtype = float) / len(stlist)-1
+                width = 1/(len(stlist)-1)
+                xs += (width/2)
+                ax.bar(xs, [stlist[i][1] for i in range(len(stlist))], label = dc, width = width, edgecolor = colours[dc], fill = False)
+            plt.title(f"{mtype} {mode.capitalize()}-{mirror} strong targets")
+            plt.xlabel(mode.capitalize())
+            plt.ylabel(f"Strong {mirror} target count")
+            plt.legend()
+            # Remove xticks
+            plt.tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
+            plt.savefig(os.path.join(save_dir, f"{mtype} {mode} target waterfall plot.png"))
             plt.clf()
             plt.close()
         return

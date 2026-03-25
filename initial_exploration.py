@@ -525,7 +525,8 @@ def main():
     
     # GDSCC modality analysis
     sm = SquaredModalityAnalyzer()
-    sm.plot_cf()
+    #sm.plot_cf()
+    sm.plot_waterfall()
     #rel = sm.datasets["drug modality summary organised"]
     #for modality in rel.keys():
     #    for side in rel[modality].keys():

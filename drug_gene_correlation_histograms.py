@@ -46,7 +46,7 @@ class CorrelationPlotter(DataHandler):
     
     def plot_all(self, stds: list = [3], quantiles: list = []) -> None:
         self.plot_squared_drug_correlations(stds, quantiles)
-        return
+        self.plot_squared_gene_correlations(stds, quantiles)
         self.plot_drug_correlations(stds, quantiles)
         self.plot_gene_correlations(stds, quantiles)
         self.plot_sd_cumulative("both")
