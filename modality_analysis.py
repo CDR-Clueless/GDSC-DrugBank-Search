@@ -111,7 +111,7 @@ class ModalityAnalyzer(DataHandler):
             # Note: the minimum is repeated at the start as this point forms the start of the graph (otherwise the minimimum x value would have a y of 0)
             # This used to be adding a 0 so the graph started at origin but this caused issues with x-axes starting below zero
             meds[key] = np.array([np.min(meds[key])] + sorted(meds[key]), dtype = float)
-            thresh[key] = np.array([np.min(meds[key])] + sorted(thresh[key]), dtype = float)
+            thresh[key] = np.array([np.min(thresh[key])] + sorted(thresh[key]), dtype = float)
             ysm[key] = np.array(range(meds[key].shape[0]))/float(meds[key].shape[0]-1)
             yst[key] = np.array(range(thresh[key].shape[0]))/float(thresh[key].shape[0]-1)
         
@@ -413,6 +413,185 @@ class ModalityAnalyzer(DataHandler):
         with open(os.path.join(os.path.dirname(save_dir), "correlationDrugs.txt"), "w") as f:
             f.write("\n".join(list(dbg.index)))
 
+        return
+
+class SquaredModalityAnalyzer(DataHandler):
+    def __init__(self, datasets: Union[list, tuple, None] = None):
+        super().__init__(datasets)
+        if("drug modality summary" not in self.datasets.keys()):
+            self.load_data("drug modality summary", os.path.join("Data", "Results", "GDSCC drug-gene correlation frequency histograms", "stats.json"))
+        #if("gene modality summary" not in self.datasets.keys()):
+            #self.load_data("gene modality summary", os.path.join("Data", "Results", "Gene-drug correlation frequency histograms", "stats.json"))
+        for side in ["Combo", "Left Drug", "Right Drug"]:
+            if(side not in self.datasets.keys()):
+                self.load_data(side, os.path.join("Data", "Results", "Survivability-Correlations", f"GDSCC-{side} eMax-AllDrugsByAllGenes.tsv"))
+                self.datasets[side].set_index("symbol", inplace = True)
+        # Sort internal datasets into unique modalities
+        self.__sort_modalities()
+        return
+
+    # Sort internal dataset into unimodal, unclear and bimodal dictionaries
+    def __sort_modalities(self):
+        for internalname in ["drug modality summary", "gene modality summary"]:
+            if(internalname not in self.datasets.keys()):
+                print(f"{internalname} not found in datasets; cannot sort modalities")
+                continue
+            uni, unc, bim = [deepcopy({"Combo": {}, "Left": {}, "Right": {}}) for _ in range(3)]
+            for drugCombo in self.datasets[internalname]:
+                for side in self.datasets[internalname][drugCombo]:
+                    deets = self.datasets[internalname][drugCombo][side]["modality details"]["modality"]
+                    newdata = self.datasets[internalname][drugCombo][side]
+                    if(deets=="unimodal"):
+                        uni[side][drugCombo] = deepcopy(newdata)
+                    elif(deets=="unclear"):
+                        unc[side][drugCombo] = deepcopy(newdata)
+                    elif(deets=="bimodal"):
+                        bim[side][drugCombo] = deepcopy(newdata)
+                    else:
+                        print(f"Could not sort unrecognised modality: {deets}")
+            # Add this sorted entry
+            self.datasets[internalname + " organised"] = {"unimodal": deepcopy(uni), "bimodal": deepcopy(bim), "unclear": deepcopy(unc)}
+        return
+    
+    # Plot cumulative frequency graphs for each modality type, plotting medians and threshold values
+    def plot_cf(self, mode: str = "drug", save_dir = os.path.join("Data", "Results", "squared modality graphs"),
+                keep_unclear: bool = False, overlay_histogram: bool = True, hist_width: float = 0.025):
+        # First, ensure the directory is valid
+        if(not os.path.exists(save_dir)):
+            os.mkdir(save_dir)
+        mode = mode.lower().strip()
+        if(mode=="both"):
+            self.plot_cf("drug", save_dir, keep_unclear, overlay_histogram)
+            self.plot_cf("gene", save_dir, keep_unclear, overlay_histogram)
+            return
+        
+        # Get a dictionary containing all the drug/gene survivability values
+        if(mode=="drug"):
+            survivability_arrays = {side.replace(" Drug",""): {drugs: self.datasets[side][drugs].values for drugs in self.datasets[side].columns} for side in ["Combo", "Left Drug", "Right Drug"]}
+        elif(mode=="gene"):
+            survivability_arrays = {side.replace(" Drug",""): {gene: self.datasets[side].loc[[gene]].values for gene in self.datasets[side].index} for side in ["Combo", "Left Drug", "Right Drug"]}
+        else:
+            print(f"Unrecognised mode type: {mode}. Please use 'drug' or 'gene' as the mode.")
+            return
+
+        # Create dictionaries for results of medians and strong-correlation thresholds for different modality types
+        meds, thresh = {}, {}
+        for side in ["Combo", "Left", "Right"]:
+            meds[side], thresh[side] = {}, {}
+            for mod in ["unimodal", "bimodal", "unclear"]:
+                meds[side][mod], thresh[side][mod] = [], []
+
+        # Get relevant data
+        if(mode=="drug"):
+            data = self.datasets["drug modality summary organised"]
+        else:
+            data = self.datasets["gene modality summary organised"]
+        
+        # Remove 'unclear' as an option if desired
+        if(not keep_unclear and "unclear" in data.keys()):
+            for side in meds:
+                del meds[side]["unclear"]
+                del thresh[side]["unclear"]
+            del data["unclear"]
+
+        # Insert relevant data into dictionaries - the median and threshold values
+        for mtype in data:
+            for side in data[mtype]:
+                # dg stands for drug-gene, as depending on the function mode this variable could be iterating over drugs or genes
+                for dg in data[mtype][side].keys():
+                    meds[side][mtype].append(np.quantile(survivability_arrays[side][dg][~np.isnan(survivability_arrays[side][dg])], 0.5))# float(data[mtype][dg]["quantiles"]["0.5"]))
+                    thresh[side][mtype].append(get_survivability_threshold(dg, data[mtype][side], survivability_arrays[side][dg]))
+        
+        # Combine the individual drugs into single arrays, convert the med and thresh lists into arrays, Get rid of any NaN values and sort them
+        meds["Single Drug"], thresh["Single Drug"] = {}, {}
+        for mtype in data:
+            meds["Combo"][mtype] = np.array(sorted(meds["Combo"][mtype]), dtype = float)
+            meds["Combo"][mtype] = meds["Combo"][mtype][~np.isnan(meds["Combo"][mtype])]
+            thresh["Combo"][mtype] = np.array(sorted(thresh["Combo"][mtype]), dtype = float)
+            thresh["Combo"][mtype] = thresh["Combo"][mtype][~np.isnan(thresh["Combo"][mtype])]
+            meds["Single Drug"][mtype] = np.array(sorted(meds["Left"][mtype] + meds["Right"][mtype]), dtype = float)
+            meds["Single Drug"][mtype] = meds["Single Drug"][mtype][~np.isnan(meds["Single Drug"][mtype])]
+            thresh["Single Drug"][mtype] = np.array(sorted(thresh["Left"][mtype] + thresh["Right"][mtype]), dtype = float)
+            thresh["Single Drug"][mtype] = thresh["Single Drug"][mtype][~np.isnan(thresh["Single Drug"][mtype])]
+        del meds["Left"]
+        del meds["Right"]
+        del thresh["Left"]
+        del thresh["Right"]
+        
+        # Format the values and into x and y cumulative frequency values
+        ysm, yst = [deepcopy({"Combo": {}, "Single Drug": {}}) for _ in range(2)]
+        for side in meds:
+            for mod in meds[side]:
+                # Note: the minimum is repeated at the start as this point forms the start of the graph (otherwise the minimimum x value would have a y of 0)
+                # This used to be adding a 0 so the graph started at origin but this caused issues with x-axes starting away from 0, especially starting at a negative
+                meds[side][mod] = np.concat(([np.min(meds[side][mod])], meds[side][mod]))
+                thresh[side][mod] = np.concat(([np.min(thresh[side][mod])], thresh[side][mod]))
+                ysm[side][mod] = np.array(range(meds[side][mod].shape[0]))/float(meds[side][mod].shape[0]-1)
+                yst[side][mod] = np.array(range(thresh[side][mod].shape[0]))/float(thresh[side][mod].shape[0]-1)
+        
+        ## Plot Cumulative frequency graphs
+        for mod in meds["Combo"]:
+            # Medians CF graph
+            fig, ax1 = plt.subplots()
+            # Get colours for different modalities
+            modCols = {"Single Drug": "aqua", "Combo": "lime"}
+            # Get the minimum and maximum bin values for histograms and create the bins from this
+            minmed, maxmed = np.inf, -np.inf
+            for side in meds:
+                minmed = min(minmed, np.min(meds[side][mod]))
+                maxmed = max(maxmed, np.max(meds[side][mod]))
+            minmed = math.floor(minmed/hist_width) * hist_width
+            maxmed = math.ceil(maxmed/hist_width) * hist_width
+            bins = np.arange(minmed, maxmed+hist_width, hist_width)
+
+            # Plot graphs
+            if(overlay_histogram):
+                ax2 = ax1.twinx()
+
+            for side in meds:
+                ax1.plot(meds[side][mod], ysm[side][mod], color = modCols[side], label = f"{side.replace('Combo','Both Drugs').capitalize()} used ({len(meds[side][mod])-1})")
+                # If a histogram overlay was desired, plot it
+                if(overlay_histogram):
+                    h, edges = np.histogram(meds[side][mod], bins)
+                    ax2.stairs(h, edges, color = modCols[side])
+            ax1.set_xlabel("Median survivability correlation")
+            ax1.set_ylabel("Cumulative frequency")
+            if(overlay_histogram):
+                ax2.set_ylabel("Histogram frequency")
+            ax1.set_title(f"{mod.capitalize()} survivability scores median values")
+            ax1.legend()
+            plt.savefig(os.path.join(save_dir, f"{mod.capitalize()} survivability correlation median values by modality CDF.png"))
+            plt.clf()
+            plt.close()
+
+            # Threshold CF graph
+            fig, ax1 = plt.subplots()
+            # Again, get maximum and minimum bin values
+            minmed, maxmed = np.inf, -np.inf
+            for side in thresh:
+                minmed = min(minmed, np.min(thresh[side][mod]))
+                maxmed = max(maxmed, np.max(thresh[side][mod]))
+            minmed = math.floor(minmed/hist_width) * hist_width
+            maxmed = math.ceil(maxmed/hist_width) * hist_width
+            bins = np.arange(minmed, maxmed+hist_width, hist_width)
+
+            # Plot graphs
+            if(overlay_histogram):
+                ax2 = ax1.twinx()
+            for side in thresh:
+                ax1.plot(thresh[side][mod], yst[side][mod], color = modCols[side], label = f"{side.replace('Combo','Both Drugs').capitalize()} used ({len(thresh[side][mod])-1})")
+                # If a histogram overlay was desired, plot it
+                if(overlay_histogram):
+                    h, edges = np.histogram(thresh[side][mod], bins)
+                    ax2.stairs(h, edges, color = modCols[side])
+            ax1.set_xlabel("'strong' survivability correlation threshold")
+            ax1.set_ylabel("Cumulative frequency")
+            ax2.set_ylabel("Histogram frequency")
+            ax1.set_title(f"{mod.capitalize()} survivability scores threshold values")
+            ax1.legend()
+            plt.savefig(os.path.join(save_dir, f"{mod.capitalize()} survivability correlation threshold values by modality CDF.png"))
+            plt.clf()
+            plt.close()
         return
 
 def get_survivability_threshold(dg: str, SurvivabilityDict: dict, survivability_array: Optional[np.ndarray] = None) -> float:

@@ -42,7 +42,7 @@ from data_handler import DataHandler
 from searcher import Searcher
 from drug_gene_correlation_histograms import CorrelationPlotter, curve_guess
 from drug_search import update_hgnc, get_data, get_targets_all
-from modality_analysis import ModalityAnalyzer, get_survivability_threshold
+from modality_analysis import ModalityAnalyzer, SquaredModalityAnalyzer, get_survivability_threshold
 from drugbank_handler import DrugbankHandler
 
 CLEANED_DATA_DIR: str = os.path.join("Data", "Laurence-Data")
@@ -515,12 +515,21 @@ def main():
     if(not os.path.exists(os.path.join("Data", "Results", "Drug-gene correlation frequency histograms")) or
        not os.path.exists(os.path.join("Data", "Results", "GDSCC drug-gene correlation frequency histograms"))):
         CorrelationPlotter(coreCount).plot_all(stds = [])
+
     # Modality analysis
-    az = ModalityAnalyzer()
-    az.plot_cf()
-    az.plot_high_survivors()
-    az.plot_waterfall()
-    az.plot_compare_targets()
+    #az = ModalityAnalyzer()
+    #az.plot_cf("both")
+    #az.plot_high_survivors()
+    #az.plot_waterfall()
+    #az.plot_compare_targets()
+    
+    # GDSCC modality analysis
+    sm = SquaredModalityAnalyzer()
+    sm.plot_cf()
+    #rel = sm.datasets["drug modality summary organised"]
+    #for modality in rel.keys():
+    #    for side in rel[modality].keys():
+    #        print(f"{modality} {side} drug count: {len(rel[modality][side])}")
     #"""
 
     """
