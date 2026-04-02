@@ -243,13 +243,3 @@ class CombinationAnalyser(DataHandler):
             plt.clf()
             plt.close()
         return
-
-def main():
-    analyser = CombinationAnalyser()
-    #result = analyser.bliss_independence()
-    # NOTE: NEED TO MAKE SURVIVABILIY THRESHOLD FUNCTION COMPATIBLE WITH COMBO DATA
-    analyser.bliss_sc_comparison()
-    return
-
-if(__name__=="__main__"):
-    main()

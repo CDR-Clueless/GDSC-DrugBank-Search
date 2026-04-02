@@ -44,6 +44,7 @@ from drug_gene_correlation_histograms import CorrelationPlotter, curve_guess
 from drug_search import update_hgnc, get_data, get_targets_all
 from modality_analysis import ModalityAnalyzer, SquaredModalityAnalyzer, get_survivability_threshold
 from drugbank_handler import DrugbankHandler
+from combination_analysis import CombinationAnalyser
 
 CLEANED_DATA_DIR: str = os.path.join("Data", "Laurence-Data")
 
@@ -104,7 +105,22 @@ def gaussian(x, A, mu, sigma):
 def bimodal(x, A1, mu1, sigma1, A2, mu2, sigma2):
     return gaussian(x, A1, mu1, sigma1) + gaussian(x, A2, mu2, sigma2)
 
-def calculate_target_path(g: ig.Graph, target: str, startPoints: list) -> dict:
+def calculate_target_paths(g: ig.Graph, target: str, startPoints: list) -> dict:
+    paths = {}
+    for sp in startPoints:
+        shortpath = g.get_shortest_paths(sp, to=target, weights=g.es["combined_score"], output="vpath")[0]
+        # Convert these into a list of nodes - by default it has start, [intermediates], stop, 
+        # So the last entry is removed as the stopping point (the target) is known and the same for all
+        pathnodes = [g.vs[v] for v in shortpath][:-1]
+        # Format this path into a more readable/usable form
+        paths[sp] = deepcopy({f"Path node {i}": {"name": pathnodes[i].attributes()["name"],
+                                                 "survivability": pathnodes[i].attributes()["survivability"]} 
+                                for i in range(len(pathnodes))})
+        # Record path length for easy access to distance between predicted target and actual target
+        paths[sp]["path length"] = len(pathnodes)
+    return paths
+
+def calculate_shortest_path(g: ig.Graph, target: str, startPoints: list) -> dict:
     shortest, shortestpath = np.inf, []
     for sp in startPoints:
         shortpath = g.get_shortest_paths(sp, to=target, weights=g.es["combined_score"], output="vpath")[0]
@@ -147,10 +163,10 @@ def calculate_drug_paths(drug: str, g_base: ig.Graph, tdpfp: str, drugGeneSurv: 
     if(coresPerProcess is None):
         results = []
         for target in targets:
-            results.append(calculate_target_path(deepcopy(g), target, startPoints))
+            results.append(calculate_target_paths(deepcopy(g), target, startPoints))
     else:
         with mp.Pool(coresPerProcess) as p:
-            results = p.starmap(calculate_target_path, [(deepcopy(g), target, startPoints) for target in targets], chunksize = int(len(targets)/coresPerProcess))
+            results = p.starmap(calculate_target_paths, [(deepcopy(g), target, startPoints) for target in targets], chunksize = int(len(targets)/coresPerProcess))
     for target, result in zip(targets, results):
         drugResults[target] = result
     with open(os.path.join(tdpfp, f"{drug}.json"), "w") as f:
@@ -509,7 +525,15 @@ def main():
     tosave.to_csv(os.path.join("Data", "Results", "Best Hundred Genes.tsv"), sep = "\t", lineterminator = "\n", index = False)
     #"""
 
+    """
+    # Analyse combination data
+    analyser = CombinationAnalyser()
+    #result = analyser.bliss_independence()
+    # NOTE: NEED TO MAKE SURVIVABILIY THRESHOLD FUNCTION COMPATIBLE WITH COMBO DATA
+    analyser.bliss_sc_comparison()
     #"""
+
+    """
     ### Modality analysis plotting code
     # Generate histograms if they haven't been plotted yet
     if(not os.path.exists(os.path.join("Data", "Results", "Drug-gene correlation frequency histograms")) or
@@ -825,7 +849,7 @@ def main():
         break
     """
 
-    """
+    #"""
     ### Target pathfinding code
 
     #CorrelationPlotter().plot_all()
@@ -859,8 +883,8 @@ def main():
     allbyall = allbyall.set_index("symbol")
 
     # DataFrame for the gene/protein targets of all drugs
-    #drugTargets = pd.read_csv(os.path.join(CLEANED_DATA_DIR, "TargetRanking.tsv"), sep = "\t")
-    #drugTargets = update_hgnc(drugTargets, hgnc, "TARGET")
+    drugTargets = pd.read_csv(os.path.join(CLEANED_DATA_DIR, "TargetRanking.tsv"), sep = "\t")
+    drugTargets = update_hgnc(drugTargets, hgnc, "TARGET")
 
     # Dictionary of results for drug-gene survivability distributions
     with open(os.path.join("Data", "Results", "Drug-gene correlation frequency histograms", "stats.json"), "r") as f:
@@ -894,8 +918,8 @@ def main():
         try:
             calculate_drug_paths(drug, g_global, tdpfp, drugGeneSurv, allbyall[drug],
                                 drugTargets.loc[drugTargets["DRUG"]==drug],
-                                #coresPerProcess = min(coreCount/2, len(drugTargets.loc[drugTargets["DRUG"]==drug]["TARGET"].dropna())))
-                                coresPerProcess=None)
+                                coresPerProcess = min(coreCount/2, len(drugTargets.loc[drugTargets["DRUG"]==drug]["TARGET"].dropna())))
+                                #coresPerProcess=None)
             if(os.path.exists(os.path.join(tdpfp, f"{drug}.json"))):
                 with open(drugPathRecordDir, "a+") as f:
                     f.write(f"{drug}\tSuccess\n")
