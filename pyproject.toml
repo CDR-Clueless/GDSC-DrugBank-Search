@@ -8,6 +8,7 @@ dependencies = [
     "beautifulsoup4>=4.14.2",
     "diptest>=0.10.0",
     "igraph>=1.0.0",
+    "latex>=0.7.0",
     "lxml>=6.0.2",
     "matplotlib>=3.10.7",
     "matplotlib-venn>=1.1.2",
