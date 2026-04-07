@@ -691,8 +691,8 @@ class SquaredModalityAnalyzer(DataHandler):
                 # Get high-low ordered list of counts
                 stlist = counts[mtype][dc][::-1]
                 # Get 0-1 x-values and the appropriate bar widths for this graph
-                xs = np.array(range(len(stlist)), dtype = float) / len(stlist)-1
-                width = 1/(len(stlist)-1)
+                xs = np.array(range(len(stlist)), dtype = float) / len(stlist)
+                width = 1/(len(stlist))
                 xs += (width/2)
                 ax.bar(xs, [stlist[i][1] for i in range(len(stlist))], label = dc, width = width, edgecolor = colours[dc], fill = False)
             plt.title(f"{mtype} {mode.capitalize()}-{mirror} strong targets")

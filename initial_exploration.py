@@ -644,6 +644,7 @@ def GDSCC_target_pathfinding(coreCount: Optional[int] = None):
         dfs[key].set_index("symbol")
         del dfs[key]["symbol"]
 
+    # NOTE: NEED TO WORK ON HERE; ADAPT THE NEW GDSC TARGET PATHFINDING CODE TO THIS!
     # DataFrame for the SCP gene/protein targets of all drugs
     drugTargets: dict = {}
     targetData = get_data()
@@ -779,7 +780,7 @@ def main():
     print(f"Using {coreCount} cores")
 
     #GDSCC_target_pathfinding(coreCount)
-    GDSC_target_pathfinding(coreCount)
+    #GDSC_target_pathfinding(coreCount)
 
     """
     ### Get the best hundred druggable genes
@@ -845,13 +846,13 @@ def main():
     analyser.bliss_sc_comparison()
     #"""
 
-    """
+    #"""
     ### Modality analysis plotting code
     # Generate histograms if they haven't been plotted yet
     if(not os.path.exists(os.path.join("Data", "Results", "Drug-gene correlation frequency histograms")) or
        not os.path.exists(os.path.join("Data", "Results", "GDSCC drug-gene correlation frequency histograms"))):
         CorrelationPlotter(coreCount).plot_all(stds = [])
-    CorrelationPlotter(coreCount).plot_all(stds = [])
+        CorrelationPlotter(coreCount).plot_all(stds = [])
 
     # Modality analysis
     #az = ModalityAnalyzer()
