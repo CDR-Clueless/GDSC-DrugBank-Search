@@ -780,7 +780,7 @@ def main():
     print(f"Using {coreCount} cores")
 
     #GDSCC_target_pathfinding(coreCount)
-    #GDSC_target_pathfinding(coreCount)
+    GDSC_target_pathfinding(coreCount)
 
     """
     ### Get the best hundred druggable genes
@@ -846,7 +846,7 @@ def main():
     analyser.bliss_sc_comparison()
     #"""
 
-    #"""
+    """
     ### Modality analysis plotting code
     # Generate histograms if they haven't been plotted yet
     if(not os.path.exists(os.path.join("Data", "Results", "Drug-gene correlation frequency histograms")) or
