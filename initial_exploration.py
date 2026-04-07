@@ -41,7 +41,7 @@ from typing import Optional, Tuple
 from data_handler import DataHandler
 from searcher import Searcher
 from drug_gene_correlation_histograms import CorrelationPlotter, curve_guess
-from drug_search import update_hgnc, get_data, get_targets_all
+from drug_search import update_hgnc, get_data, get_targets_all, get_targets
 from modality_analysis import ModalityAnalyzer, SquaredModalityAnalyzer, get_survivability_threshold
 from drugbank_handler import DrugbankHandler
 from combination_analysis import CombinationAnalyser
@@ -138,7 +138,7 @@ def calculate_shortest_path(g: ig.Graph, target: str, startPoints: list) -> dict
 def calculate_drug_paths(drug: str, g_base: ig.Graph, tdpfp: str, drugGeneSurv: dict, allbyallcol: pd.Series, drugTargetsRefined: pd.DataFrame,
                          coresPerProcess: Optional[int]):
     # If there are no targets or this drug's paths have already been calculated, skip
-    targets = drugTargetsRefined["TARGET"].values
+    targets = drugTargetsRefined["Target"].values
     if(len(targets)<1):
         return "No Targets"
     if(os.path.exists(os.path.join(tdpfp, f"{drug}.json"))):
@@ -456,6 +456,315 @@ def make_drugbank_pubchem_converter() -> None:
     df.to_csv(os.path.join("Data", "Results", "DrugBank-PubChem.tsv"), lineterminator="\n", sep = "\t")
     return
 
+def GDSC_target_pathfinding(coreCount: Optional[int] = None):
+    ## Import relevant datasets and amend them
+    # HGNC
+    hgnc = pd.read_table(DEFAULT_HUGO_FILE, low_memory=False).fillna('')
+    hgnc = hgnc[['symbol', 'ensembl_gene_id',
+                'prev_symbol', 'location', 'location_sortable']]
+    hgnc.set_index('symbol', inplace=True)
+
+    # STRING proteins
+    stinfo =  pd.read_table(DEFAULT_STRING_INFO_FILE,
+                            usecols=['#string_protein_id','preferred_name']).fillna('')
+    stinfo.rename(columns = {'#string_protein_id':'ID','preferred_name':'symbol'},inplace=True)
+    stinfo = update_hgnc(stinfo, hgnc)
+
+    stdict = dict(zip(stinfo.ID,stinfo.symbol))
+
+    # STRING network
+    stlink = pd.read_csv(DEFAULT_STRING_LINK_FILE,sep=' ')
+    stlink.combined_score = stlink.combined_score.astype(int)
+    # Change proteins in stlink from ID's to HGNC-checked names
+    stlink.protein1 = stlink.protein1.apply(lambda x: stdict[x])
+    stlink.protein2 = stlink.protein2.apply(lambda x: stdict[x])
+
+    # DrugxGene survivability scores
+    allbyall = pd.read_csv(DEFAULT_ALL_BY_ALL_FILE, sep = "\t")
+    allbyall = update_hgnc(allbyall, hgnc)
+    allbyall = allbyall.set_index("symbol")
+
+    # Dictionary for all KNOWN drug targets
+    drugTargets: dict = {drug: None for drug in allbyall.columns}
+    targetData = get_data()
+    # Go through possible drugs
+    for drug in allbyall.columns:
+        # Get known targets for this drug(s)
+        rawTargets = []
+        # Get targets for this drug
+        newTargets = get_targets(drug, data = targetData, hgncdata = hgnc)
+        # Make these target results into a single list of targets
+        for key in newTargets["DrugBank"]:
+            rawTargets.append(key)
+        for target in newTargets["GDSC"]:
+            rawTargets.append(target)
+        for target in newTargets["PubChem"]:
+            rawTargets.append(target)
+        # Refine these raw targets
+        targets: list = []
+        for target in rawTargets:
+            if(target is None):
+                continue
+            target: str = str(target)
+            if("," in target):
+                for subtarget in target.split(","):
+                    targets.append(subtarget.strip())
+            else:
+                targets.append(target.strip())
+
+        drugTargets[drug] = deepcopy(targets)
+    
+    # Dictionary of results for drug-gene survivability distributions
+    with open(os.path.join("Data", "Results", "Drug-gene correlation frequency histograms", "stats.json"), "r") as f:
+        drugGeneSurv: dict = json.load(f)
+    
+    # Get dictionary of SCP drug targets
+    drugSCPTs: dict = {drug: None for drug in allbyall.columns}
+    debugMin, debugMax, debugMean = np.inf, -np.inf, []
+    for drug in allbyall.columns:
+        thresh = get_survivability_threshold(drug, drugGeneSurv, survivability_array=np.array(allbyall[drug].values))
+        targets = allbyall.loc[allbyall[drug] >= thresh]
+        drugSCPTs[drug] = deepcopy(list(targets.index))
+        debugMin = min(debugMin, len(targets.index))
+        debugMax = max(debugMax, len(targets.index))
+        debugMean.append(len(targets.index))
+    debugMean = np.mean(debugMean)
+
+    print(f"Minimum number of SCPTs: {debugMin}\nMaximum number of SCPTs: {debugMax}\nMean number of SCPTs: {debugMean}")
+    
+    dfData = []
+    for drug in drugTargets:
+        if(drugTargets[drug] is not None):
+            #print(drugTargets[drug])
+            for target in drugTargets[drug]:
+                dfData.append(deepcopy((drug, target, drugSCPTs[drug])))
+    drugTargets = pd.DataFrame(dfData, columns = ["Drug", "Target", "SCP Targets"])        
+    #drugTargets = pd.read_csv(os.path.join(CLEANED_DATA_DIR, "TargetRanking.tsv"), sep = "\t")
+    drugTargets = update_hgnc(drugTargets, hgnc, "Target")
+
+    ## Prepare graphs
+    # Refine STRING links to those with a combined score >0.6
+    stlink[stlink.combined_score.gt(600)]
+    
+    # Convert the STRING connectivity information to a graph with igraph
+    print('Building human link graph ...')
+    g_global = ig.Graph.TupleList(stlink.itertuples(index=False), directed=True, weights=False, edge_attrs="combined_score")
+    print('Done !!')
+    # Make sure the graph is sufficiently connected for our purposes
+    if(not g_global.is_connected()):
+        print("STRING network graph is not fully connected; try lowering score requirement or removing unneeded cliques")
+        return
+    # Make path for temporary data storage if none exists
+    tdpfp: str = os.path.join("Data", "Results", "temp_drug_path")
+    if(os.path.exists(tdpfp)==False):
+        os.mkdir(tdpfp)
+    # Make/get record of drugs already checked so they can be skipped
+    drugPathRecordDir = os.path.join(tdpfp, "Drug path records.tsv")
+    if(not os.path.exists(drugPathRecordDir)):
+        with open(drugPathRecordDir, "w") as f:
+            f.write("Drug\tOutcome\n")
+    output_record = pd.read_csv(drugPathRecordDir, sep = "\t")
+    completed = output_record["Drug"].values
+    tocheck = [drug for drug in allbyall.columns if drug not in completed]
+    for drug in tqdm(tocheck, desc="Calculating target-strongSC drug paths"):
+        try:
+            calculate_drug_paths(drug, g_global, tdpfp, drugGeneSurv, allbyall[drug],
+                                drugTargets.loc[drugTargets["Drug"]==drug],
+                                coresPerProcess = min(coreCount/2, len(drugTargets.loc[drugTargets["Drug"]==drug]["Target"].dropna())))
+                                #coresPerProcess=None)
+            if(os.path.exists(os.path.join(tdpfp, f"{drug}.json"))):
+                with open(drugPathRecordDir, "a+") as f:
+                    f.write(f"{drug}\tSuccess\n")
+            else:
+                with open(drugPathRecordDir, "a+") as f:
+                    f.write(f"{drug}\tNo Targets\n")
+        except Exception as error:
+            # Ensure there's no tabs in the error message as this would mess with the tsv
+            error = str(error).replace("\t",":TAB:")
+            with open(drugPathRecordDir, "a+") as f:
+                f.write(f"{drug}\tError: {error}\n")
+
+    ## Multiprocessing variant of above for loop: size of graph (and maybe other variables?) crashes code
+    #with mp.Pool(max(int(coreCount/2), 1)) as p:
+    #    p.starmap(calculate_drug_paths, [(drug, deepcopy(g_global), tdpfp, drugGeneSurv, allbyall[drug], \
+    #                                     drugTargets.loc[drugTargets["DRUG"]==drug], int(coreCount/2)) \
+    #                                        for drug in allbyall.columns])#,
+                                         #chunksize=int(len(allbyall.columns)/int(coreCount/2)))
+    
+    ## Combine the per-drug jsons into a single, human-readable json and delete the originals
+    # Combine per-drug jsons
+    jsonContents = {}
+    for filename in os.listdir(tdpfp):
+        filedir = os.path.join(tdpfp, filename)
+        drug = filedir.replace(".json","")
+        with open(filedir, "r") as f:
+            drugDict = json.load(f)
+        jsonContents[drug] = deepcopy(drugDict)
+    # Save results to json
+    with open(os.path.join("Data", "Results", "drug paths.json"), "w") as f:
+        json.dump(jsonContents, f, indent = 4)
+    # Delete constituent parts
+    for filename in os.listdir(tdpfp):
+        filedir = os.path.join(tdpfp, filename)
+        os.remove(filedir)
+    os.rmdir(tdpfp)
+    
+    #USE HGNC ON DRUGBANK COMPARISON OUTPUT AND EXTEND SHORTEST PATHFINDING TO ALL TARGETS
+    #"""
+
+def GDSCC_target_pathfinding(coreCount: Optional[int] = None):
+    ## Import relevant datasets and amend them
+    # HGNC
+    hgnc = pd.read_table(DEFAULT_HUGO_FILE, low_memory=False).fillna('')
+    hgnc = hgnc[['symbol', 'ensembl_gene_id',
+                'prev_symbol', 'location', 'location_sortable']]
+    hgnc.set_index('symbol', inplace=True)
+
+    # STRING proteins
+    stinfo =  pd.read_table(DEFAULT_STRING_INFO_FILE,
+                            usecols=['#string_protein_id','preferred_name']).fillna('')
+    stinfo.rename(columns = {'#string_protein_id':'ID','preferred_name':'symbol'},inplace=True)
+    stinfo = update_hgnc(stinfo, hgnc)
+
+    stdict = dict(zip(stinfo.ID,stinfo.symbol))
+
+    # STRING network
+    stlink = pd.read_csv(DEFAULT_STRING_LINK_FILE,sep=' ')
+    stlink.combined_score = stlink.combined_score.astype(int)
+    # Change proteins in stlink from ID's to HGNC-checked names
+    stlink.protein1 = stlink.protein1.apply(lambda x: stdict[x])
+    stlink.protein2 = stlink.protein2.apply(lambda x: stdict[x])
+
+    # DrugxGene survivability scores
+    ca = CombinationAnalyser()
+    dfs = {key: ca.datasets[key] for key in ["Left Drug", "Right Drug", "Combo"]}
+    for key in dfs:
+        dfs[key]["symbol"] = dfs[key].index
+        dfs[key] = update_hgnc(dfs[key], hgnc)
+        dfs[key].set_index("symbol")
+        del dfs[key]["symbol"]
+
+    # DataFrame for the SCP gene/protein targets of all drugs
+    drugTargets: dict = {}
+    targetData = get_data()
+    for side in dfs.keys():
+        df = dfs[side]
+        # If we're on the both/combo side, skip, as this is just the left and right drugs
+        if(side=="Combo"):
+            continue
+        # Go through possible drugs
+        for drugs in df.columns:
+            if(drugs not in drugTargets):
+                drugTargets[drugs] = {}
+            both = drugs.split("###") 
+            if(side=="Left Drug"):
+                drugList = [both[0]]
+            elif(side=="Right Drug"):
+                drugList = [both[1]]
+            elif(side=="Combo"):
+                drugList = [both[0], both[1]]
+            # Get known targets for this drug(s)
+            targets = []
+            for drug in drugList:
+                # Get targets for this drug
+                newTargets = get_targets(drug, data = targetData, hgncdata = hgnc)
+                # Make these target results into a single list of targets
+                for key in newTargets["DrugBank"]:
+                    if(key not in targets):
+                        targets.append(key)
+                for target in newTargets["GDSC"]:
+                    if(target not in targets):
+                        targets.append(target)
+                for target in newTargets["PubChem"]:
+                    if(target not in targets):
+                        targets.append(target)
+            # Record these targets in the dictionary
+            drugTargets[drugs][side] = deepcopy(targets)
+    print(drugTargets)
+    return
+    drugTargets = pd.read_csv(os.path.join(CLEANED_DATA_DIR, "TargetRanking.tsv"), sep = "\t")
+    drugTargets = update_hgnc(drugTargets, hgnc, "TARGET")
+    print(drugTargets)
+
+    # Dictionary of results for drug-gene survivability distributions
+    with open(os.path.join("Data", "Results", "GDSCC drug-gene correlation frequency histograms", "stats.json"), "r") as f:
+        drugGeneSurvRaw: dict = json.load(f)
+    # Get reforganised drugGeneSurv from {drugCombo1: {Left: ..., Right: ..., ......}, drugCombo2: .....} to {Left: {drugCombo1: ..., drugCombo2: ... ...}, Right: ......}
+    drugGeneSurv = {side: {dc: drugGeneSurvRaw[dc][side] for dc in drugGeneSurvRaw.keys()} for side in drugGeneSurvRaw[list(drugGeneSurvRaw.keys())[0]].keys()}
+
+    ## Prepare graphs
+    # Refine STRING links to those with a combined score >0.6
+    stlink[stlink.combined_score.gt(600)]
+    
+    # Convert the STRING connectivity information to a graph with igraph
+    print('Building human link graph ...')
+    g_global = ig.Graph.TupleList(stlink.itertuples(index=False), directed=True, weights=False, edge_attrs="combined_score")
+    print('Done !!')
+    # Make sure the graph is sufficiently connected for our purposes
+    if(not g_global.is_connected()):
+        print("STRING network graph is not fully connected; try lowering score requirement or removing unneeded cliques")
+        return
+    for side in drugGeneSurv.keys():
+        # Make path for temporary data storage if none exists
+        tdpfp: str = os.path.join("Data", "Results", f"{side}-squared_temp_drug_path")
+        if(os.path.exists(tdpfp)==False):
+            os.mkdir(tdpfp)
+        # Get relevant DataFrame as 'allbyall'
+        allbyall: pd.DataFrame = dfs[side]
+        # Make/get record of drugs already checked so they can be skipped
+        drugPathRecordDir = os.path.join(tdpfp, "Drug path records.tsv")
+        if(not os.path.exists(drugPathRecordDir)):
+            with open(drugPathRecordDir, "w") as f:
+                f.write("Drug\tOutcome\n")
+        output_record = pd.read_csv(drugPathRecordDir, sep = "\t")
+        completed = output_record["Drug"].values
+        tocheck = [drug for drug in allbyall.columns if drug not in completed]
+        for drug in tqdm(tocheck, desc="Calculating target-strongSC drug paths"):
+            try:
+                calculate_drug_paths(drug, g_global, tdpfp, drugGeneSurv, allbyall[drug],
+                                    drugTargets.loc[drugTargets["DRUG"]==drug],
+                                    coresPerProcess = min(coreCount/2, len(drugTargets.loc[drugTargets["DRUG"]==drug]["TARGET"].dropna())))
+                                    #coresPerProcess=None)
+                if(os.path.exists(os.path.join(tdpfp, f"{drug}.json"))):
+                    with open(drugPathRecordDir, "a+") as f:
+                        f.write(f"{drug}\tSuccess\n")
+                else:
+                    with open(drugPathRecordDir, "a+") as f:
+                        f.write(f"{drug}\tNo Targets\n")
+            except Exception as error:
+                # Ensure there's no tabs in the error message as this would mess with the tsv
+                error = str(error).replace("\t",":TAB:")
+                with open(drugPathRecordDir, "a+") as f:
+                    f.write(f"{drug}\tError: {error}\n")
+
+        ## Multiprocessing variant of above for loop: size of graph (and maybe other variables?) crashes code
+        #with mp.Pool(max(int(coreCount/2), 1)) as p:
+        #    p.starmap(calculate_drug_paths, [(drug, deepcopy(g_global), tdpfp, drugGeneSurv, allbyall[drug], \
+        #                                     drugTargets.loc[drugTargets["DRUG"]==drug], int(coreCount/2)) \
+        #                                        for drug in allbyall.columns])#,
+                                            #chunksize=int(len(allbyall.columns)/int(coreCount/2)))
+        
+        ## Combine the per-drug jsons into a single, human-readable json and delete the originals
+        # Combine per-drug jsons
+        jsonContents = {}
+        for filename in os.listdir(tdpfp):
+            filedir = os.path.join(tdpfp, filename)
+            drug = filedir.replace(".json","")
+            with open(filedir, "r") as f:
+                drugDict = json.load(f)
+            jsonContents[drug] = deepcopy(drugDict)
+        # Save results to json
+        with open(os.path.join("Data", "Results", "drug paths.json"), "w") as f:
+            json.dump(jsonContents, f, indent = 4)
+        # Delete constituent parts
+        for filename in os.listdir(tdpfp):
+            filedir = os.path.join(tdpfp, filename)
+            os.remove(filedir)
+        os.rmdir(tdpfp)
+    
+    #USE HGNC ON DRUGBANK COMPARISON OUTPUT AND EXTEND SHORTEST PATHFINDING TO ALL TARGETS
+    #"""
+
 def main():
     ### Perform initial setup
     initial_setup()
@@ -464,10 +773,13 @@ def main():
         creds = json.load(f)
     coreCount = creds["core-count"]
     if(str(coreCount).strip().lower()=="auto"):
-        coreCount = max(mp.cpu_count()-2, 1)
+        coreCount: int = max(mp.cpu_count()-2, 1)
     else:
-        coreCount = max(int(coreCount), 1)
+        coreCount: int = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
+
+    #GDSCC_target_pathfinding(coreCount)
+    GDSC_target_pathfinding(coreCount)
 
     """
     ### Get the best hundred druggable genes
@@ -848,117 +1160,6 @@ def main():
         print(soup.prettify())
         break
     """
-
-    #"""
-    ### Target pathfinding code
-
-    #CorrelationPlotter().plot_all()
-   
-
-    ## Import relevant datasets and amend them
-    # HGNC
-    hgnc = pd.read_table(DEFAULT_HUGO_FILE, low_memory=False).fillna('')
-    hgnc = hgnc[['symbol', 'ensembl_gene_id',
-                'prev_symbol', 'location', 'location_sortable']]
-    hgnc.set_index('symbol', inplace=True)
-
-    # STRING proteins
-    stinfo =  pd.read_table(DEFAULT_STRING_INFO_FILE,
-                            usecols=['#string_protein_id','preferred_name']).fillna('')
-    stinfo.rename(columns = {'#string_protein_id':'ID','preferred_name':'symbol'},inplace=True)
-    stinfo = update_hgnc(stinfo, hgnc)
-
-    stdict = dict(zip(stinfo.ID,stinfo.symbol))
-
-    # STRING network
-    stlink = pd.read_csv(DEFAULT_STRING_LINK_FILE,sep=' ')
-    stlink.combined_score = stlink.combined_score.astype(int)
-    # Change proteins in stlink from ID's to HGNC-checked names
-    stlink.protein1 = stlink.protein1.apply(lambda x: stdict[x])
-    stlink.protein2 = stlink.protein2.apply(lambda x: stdict[x])
-
-    # DrugxGene survivability scores
-    allbyall = pd.read_csv(DEFAULT_ALL_BY_ALL_FILE, sep = "\t")
-    allbyall = update_hgnc(allbyall, hgnc)
-    allbyall = allbyall.set_index("symbol")
-
-    # DataFrame for the gene/protein targets of all drugs
-    drugTargets = pd.read_csv(os.path.join(CLEANED_DATA_DIR, "TargetRanking.tsv"), sep = "\t")
-    drugTargets = update_hgnc(drugTargets, hgnc, "TARGET")
-
-    # Dictionary of results for drug-gene survivability distributions
-    with open(os.path.join("Data", "Results", "Drug-gene correlation frequency histograms", "stats.json"), "r") as f:
-        drugGeneSurv: dict = json.load(f)
-
-    ## Prepare graphs
-    # Refine STRING links to those with a combined score >0.6
-    stlink[stlink.combined_score.gt(600)]
-    
-    # Convert the STRING connectivity information to a graph with igraph
-    print('Building human link graph ...')
-    g_global = ig.Graph.TupleList(stlink.itertuples(index=False), directed=True, weights=False, edge_attrs="combined_score")
-    print('Done !!')
-    # Make sure the graph is sufficiently connected for our purposes
-    if(not g_global.is_connected()):
-        print("STRING network graph is not fully connected; try lowering score requirement or removing unneeded cliques")
-        return
-    # Make path for temporary data storage if none exists
-    tdpfp: str = os.path.join("Data", "Results", "temp_drug_path")
-    if(os.path.exists(tdpfp)==False):
-        os.mkdir(tdpfp)
-    # Make/get record of drugs already checked so they can be skipped
-    drugPathRecordDir = os.path.join(tdpfp, "Drug path records.tsv")
-    if(not os.path.exists(drugPathRecordDir)):
-        with open(drugPathRecordDir, "w") as f:
-            f.write("Drug\tOutcome\n")
-    output_record = pd.read_csv(drugPathRecordDir, sep = "\t")
-    completed = output_record["Drug"].values
-    tocheck = [drug for drug in allbyall.columns if drug not in completed]
-    for drug in tqdm(tocheck, desc="Calculating target-strongSC drug paths"):
-        try:
-            calculate_drug_paths(drug, g_global, tdpfp, drugGeneSurv, allbyall[drug],
-                                drugTargets.loc[drugTargets["DRUG"]==drug],
-                                coresPerProcess = min(coreCount/2, len(drugTargets.loc[drugTargets["DRUG"]==drug]["TARGET"].dropna())))
-                                #coresPerProcess=None)
-            if(os.path.exists(os.path.join(tdpfp, f"{drug}.json"))):
-                with open(drugPathRecordDir, "a+") as f:
-                    f.write(f"{drug}\tSuccess\n")
-            else:
-                with open(drugPathRecordDir, "a+") as f:
-                    f.write(f"{drug}\tNo Targets\n")
-        except Exception as error:
-            # Ensure there's no tabs in the error message as this would mess with the tsv
-            error = str(error).replace("\t",":TAB:")
-            with open(drugPathRecordDir, "a+") as f:
-                f.write(f"{drug}\tError: {error}\n")
-
-    ## Multiprocessing variant of above for loop: size of graph (and maybe other variables?) crashes code
-    #with mp.Pool(max(int(coreCount/2), 1)) as p:
-    #    p.starmap(calculate_drug_paths, [(drug, deepcopy(g_global), tdpfp, drugGeneSurv, allbyall[drug], \
-    #                                     drugTargets.loc[drugTargets["DRUG"]==drug], int(coreCount/2)) \
-    #                                        for drug in allbyall.columns])#,
-                                         #chunksize=int(len(allbyall.columns)/int(coreCount/2)))
-    
-    ## Combine the per-drug jsons into a single, human-readable json and delete the originals
-    # Combine per-drug jsons
-    jsonContents = {}
-    for filename in os.listdir(tdpfp):
-        filedir = os.path.join(tdpfp, filename)
-        drug = filedir.replace(".json","")
-        with open(filedir, "r") as f:
-            drugDict = json.load(f)
-        jsonContents[drug] = deepcopy(drugDict)
-    # Save results to json
-    with open(os.path.join("Data", "Results", "drug paths.json"), "w") as f:
-        json.dump(jsonContents, f, indent = 4)
-    # Delete constituent parts
-    for filename in os.listdir(tdpfp):
-        filedir = os.path.join(tdpfp, filename)
-        os.remove(filedir)
-    os.rmdir(tdpfp)
-    
-    #USE HGNC ON DRUGBANK COMPARISON OUTPUT AND EXTEND SHORTEST PATHFINDING TO ALL TARGETS
-    #"""
     return
 
 if __name__ == "__main__":

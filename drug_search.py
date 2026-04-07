@@ -167,24 +167,44 @@ def get_targets(drug_selected: str, data: Optional[Union[list, tuple]] = None,
             if(os.path.exists(gdscoverview)==False):
                 print(f"GDSC Overview file not found. Attempting to download... to 'Data/Results/GDSCdrugs.tsv'")
                 try:
-                    request.urlretrieve("https://www.cancerrxgene.org/api/compounds?list=all&sEcho=1&iColumns=7&sColumns=&iDisplayStart=0&iDisplayLength=25&mDataProp_0=0&mDataProp_1=1&mDataProp_2=2&mDataProp_3=3&mDataProp_4=4&mDataProp_5=5&mDataProp_6=6&sSearch=&bRegex=false&sSearch_0=&bRegex_0=false&bSearchable_0=true&sSearch_1=&bRegex_1=false&bSearchable_1=true&sSearch_2=&bRegex_2=false&bSearchable_2=true&sSearch_3=&bRegex_3=false&bSearchable_3=true&sSearch_4=&bRegex_4=false&bSearchable_4=true&sSearch_5=&bRegex_5=false&bSearchable_5=true&sSearch_6=&bRegex_6=false&bSearchable_6=true&iSortCol_0=0&sSortDir_0=asc&iSortingCols=1&bSortable_0=true&bSortable_1=true&bSortable_2=true&bSortable_3=true&bSortable_4=true&bSortable_5=true&bSortable_6=true&export=tsv",
+                    GDSCDetailsLoc = "http://cmp.cog.sanger.ac.uk/download/screened_compounds_rel_8.5.csv"
+                    request.urlretrieve(GDSCDetailsLoc,
                     gdscoverview)
-                except:
-                    pass
+                    # Convert to a tsv if needed
+                    if(GDSCDetailsLoc.split(".")[-1].lower()=="csv"):
+                        df = pd.read_csv(gdscoverview, sep = ",")
+                        df.to_csv(gdscoverview, sep = "\t", lineterminator="\n", index = False)
+                        del df
+                        os.remove(gdscoverview.replace(".csv", ".tsv"))
+                except Exception as e:
+                    print(f"Failed downloading block: {e}")
         # Try to read in GDSC overview file
         if(os.path.exists(gdscoverview)):
             gdscoverview = pd.read_csv(gdscoverview, sep = "\t")
+            # Make sure the columns are stripped (no whitespaces/tabs before/after word)
+            gdscoverview.rename(columns = {col: col.replace("\"","").upper().strip() for col in gdscoverview.columns}, inplace=True)
+            # Get correct column names
+            targetCol, nameCol, pubChemCol = None, None, None
+            for col in gdscoverview.columns:
+                if("target" in col.lower() and "pathway" not in col.lower()):
+                    targetCol = col
+                elif("name" in col.lower()):
+                    nameCol = col
+                elif("pubchem" in col.lower()):
+                    pubChemCol = col
         else:
             print(f"Failed to load GDSC overview table; target results will be lacking")
     
     # Load targets and PubChem from GDSC overview file
     if(type(gdscoverview)==pd.DataFrame):
-        #gdscoverview[" Targets"].replace("", np.nan, inplace=True)
-        gdscoverview.replace({" Targets": {"": np.nan}}, inplace=True)
-        gdscoverview.dropna(subset=[" Targets"], inplace=True)
-        if(drug_selected in gdscoverview[" Name"].values):
-            output["GDSC"] = gdscoverview.loc[gdscoverview[" Name"]==drug_selected][" Targets"].values
-            output["PubChem"] = gdscoverview.loc[gdscoverview[" Name"]==drug_selected][" PubCHEM"].values
+        gdscoverview.replace({targetCol: {"": np.nan}}, inplace=True)
+        gdscoverview.dropna(subset=[targetCol], inplace=True)
+        if(drug_selected in gdscoverview[nameCol].values):
+            output["GDSC"] = gdscoverview.loc[gdscoverview[nameCol]==drug_selected][targetCol].values
+            if pubChemCol is not None:
+                output["PubChem"] = gdscoverview.loc[gdscoverview[nameCol]==drug_selected][pubChemCol].values
+            else:
+                output["PubChem"] = []
         else:
             output["GDSC"] = []
             output["PubChem"] = []
@@ -271,7 +291,13 @@ def update_hgnc(df: pd.DataFrame, hgncdata: pd.DataFrame, column: str = "symbol"
     bad_names = set(df[column]) & (set(df[column]) ^ set(hgncdata.index))
 
     for g in tqdm(bad_names, desc = "Replacing gene names using HUGO standardisation"):
-        g2 = hgncdata[hgncdata['prev_symbol'].str.contains(g, na=False)].reset_index()['symbol']
+        # Make sure g is a string
+        g = str(g)
+        try:
+            g2 = hgncdata[hgncdata['prev_symbol'].str.contains(g, na=False)].reset_index()['symbol']
+        except Exception as e:
+            print(f"Failed to parse name {g} in HGNC; {e}")
+            continue
         if len(g2) == 0 or (g2[0] not in hgncdata.index):
             pass
             #print(f'STRING Gene name {g} not found in HUGO - ignoring it')
