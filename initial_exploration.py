@@ -780,7 +780,7 @@ def main():
     print(f"Using {coreCount} cores")
 
     #GDSCC_target_pathfinding(coreCount)
-    GDSC_target_pathfinding(coreCount)
+    #GDSC_target_pathfinding(coreCount)
 
     """
     ### Get the best hundred druggable genes
@@ -838,11 +838,10 @@ def main():
     tosave.to_csv(os.path.join("Data", "Results", "Best Hundred Genes.tsv"), sep = "\t", lineterminator = "\n", index = False)
     #"""
 
-    """
+    #"""
     # Analyse combination data
     analyser = CombinationAnalyser()
-    #result = analyser.bliss_independence()
-    # NOTE: NEED TO MAKE SURVIVABILIY THRESHOLD FUNCTION COMPATIBLE WITH COMBO DATA
+    result = analyser.bliss_independence()
     analyser.bliss_sc_comparison()
     #"""
 

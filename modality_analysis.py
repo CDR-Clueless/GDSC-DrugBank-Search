@@ -706,13 +706,17 @@ class SquaredModalityAnalyzer(DataHandler):
             plt.close()
         return
 
-def get_survivability_threshold(dg: str, SurvivabilityDict: dict, survivability_array: Optional[np.ndarray] = None) -> float:
+def get_survivability_threshold(dg: str, SurvivabilityDict: dict, survivability_array: Optional[np.ndarray] = None,
+                                mode: str = "GDSC", side: Optional[str] = None) -> float:
     # First, clear any NaN values out of survivability array (assuming it's available)
     if(survivability_array is not None):
         survivability_array = survivability_array[~np.isnan(survivability_array)]
     # Try to use the available data to get the appropriate cutoff
     try:
         rel = SurvivabilityDict[dg]
+        # If we're dealing with GDSCC (Combinations) data, refine rel to the relevant side
+        if(mode=="GDSCC"):
+            rel = rel[side]
         # If the modality is unimodal or unclear, use 3 SDs above the mean as the threshold
         if(rel["modality details"]["modality"]!="bimodal"):
             thresh = float(rel["modality details"]["mean"]) + float(rel["standard deviations"]["3.0"])
@@ -726,6 +730,7 @@ def get_survivability_threshold(dg: str, SurvivabilityDict: dict, survivability_
         if(survivability_array is not None):
             # make sure there's at least SOMETHING above the threshold score, otherwise correct to 3SDs above mean
             # alternatively, correct to 3SDs if more than 10% of correlations are strong
+            # I.e. we want 0% < strong target genes% < 10%
             if(thresh>np.max(survivability_array) or (survivability_array[survivability_array>thresh]).shape[0]>survivability_array.shape[0]*0.1):
                 thresh = np.mean(survivability_array) + (3*np.std(survivability_array))
             # If the threshold is still too high, correct to the maximum score (i.e. gives a single target equal to the threshold score)

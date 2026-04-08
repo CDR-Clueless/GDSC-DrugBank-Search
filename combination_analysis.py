@@ -167,16 +167,18 @@ class CombinationAnalyser(DataHandler):
             for key in ["Combo", "Left Drug", "Right Drug"]:
                 results[key] = {}
                 data = self.datasets[key]
-                for col in data:
+                for col in data.columns:
                     # Clear out NaN values
                     survivability_array = np.array(data[col].values, dtype = float)
                     survivability_array = survivability_array[~np.isnan(survivability_array)]
                     if(mode=="threshold"):
-                        results[key][col] = get_survivability_threshold(col, self.datasets["drug modality summary"], survivability_array)
+                        results[key][col] = get_survivability_threshold(col, self.datasets["drug modality summary"], survivability_array,
+                                                                        mode = "GDSCC", side = key.replace(" Drug",""))
                     else:
                         results[key][col] = np.quantile(survivability_array, 0.5)
             if(mode=="median"):
-                print(results)
+                pass
+                #print(results)
             df = pd.DataFrame(data = results)
             df["CL"] = df["Combo"] > df["Left Drug"]
             df["RL"] = df["Combo"] > df["Right Drug"]
@@ -236,6 +238,7 @@ class CombinationAnalyser(DataHandler):
             else:
                 plt.ylabel("Survivability Correlation Median Value Comparison")
             # Save figure
+            print(f"Saving to {saveDir}")
             if(mode=="threshold"):
                 plt.savefig(os.path.join(saveDir, "SC Threshold-Bliss Independence Confusion Matrix.png"))
             else:
