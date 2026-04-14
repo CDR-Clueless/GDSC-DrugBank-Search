@@ -9,7 +9,7 @@ Created on Tue Apr 14 2026
 import os
 
 class Logger:
-    def __init__(self, directory: str):
+    def __init__(self, directory: str = "logCustom.txt"):
         self.directory = directory
     
     def add(self, string: str):

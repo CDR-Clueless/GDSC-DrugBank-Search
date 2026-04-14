@@ -53,22 +53,32 @@ def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = Fal
             newdf = pd.read_csv(os.path.join(folderLoc, filename), sep = sep, low_memory=False)
             if("anchor" in filename.lower()):
                 # Refine to relevant columns
-                newdf = newdf[["Anchor Name", "Library Name", "Cell Line name", "Bliss Emax", "Library Emax", "Combo Emax"]]
+                newdf = newdf[["Anchor Name", "Library Name", "Cell Line name", "Library Emax", "Combo Emax", "Anchor Conc"]]
                 # Capitalise drug names to improve how standard they are
                 newdf["Anchor Name"] = newdf["Anchor Name"].apply(lambda x: x.upper().strip())
                 newdf["Library Name"] = newdf["Library Name"].apply(lambda x: x.upper().strip())
                 # Combine Anchor and Library names into Combo name which is standardised by alphabet so duplicates can be removed later
                 rows = []
-                for i in range(len(newdf)):
-                    anchor, library = newdf["Anchor Name"].values[i], newdf["Library Name"].values[i]
-                    if(anchor>library):
-                        rows.append(deepcopy([f"{anchor}###{library}", newdf["Cell Line name"].values[i],
-                                              newdf["Bliss Emax"].values[i], newdf["Library Emax"].values[i],
-                                              newdf["Combo Emax"].values[i]]))
-                    else:
-                        rows.append(deepcopy([f"{library}###{anchor}", newdf["Cell Line name"].values[i],
-                                              newdf["Library Emax"].values[i], newdf["Bliss Emax"].values[i],
-                                              newdf["Combo Emax"].values[i]]))
+                for anchor in newdf["Anchor Name"].unique():
+                    anchored = newdf.loc[newdf["Anchor Name"]==anchor]
+                    for library in anchored["Library Name"].unique():
+                        tests = anchored.loc[anchored["Library Name"]==library]
+                        # For each Cell Line experiment, only keep the one with the highest anchor concentration
+                        for cl in tests["Cell Line name"].unique():
+                            rel = tests.loc[tests["Cell Line name"]==cl]
+                            bestConc = max(rel["Anchor Conc"].values)
+                            results = rel.loc[rel["Anchor Conc"]>=bestConc]
+                            for i in range(len(results)):
+                                anchor, library = results["Anchor Name"].values[i], results["Library Name"].values[i]
+                                # Note: NaN values are used for the anchor eMax's as the way this experiment works is keeping (sort of?) constant Anchor concentrations
+                                if(anchor>library):
+                                    rows.append(deepcopy([f"{anchor}###{library}", results["Cell Line name"].values[i],
+                                                        np.nan, results["Library Emax"].values[i],
+                                                        results["Combo Emax"].values[i]]))
+                                else:
+                                    rows.append(deepcopy([f"{library}###{anchor}", results["Cell Line name"].values[i],
+                                                        results["Library Emax"].values[i], np.nan,
+                                                        results["Combo Emax"].values[i]]))
                 # Add this data into the main DataFrame
                 df = pd.concat([df, pd.DataFrame(data = rows, columns = ["Combo Name", "Cell Line Name",
                                                                         "Left Drug eMax", "Right Drug eMax",
