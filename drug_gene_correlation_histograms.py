@@ -45,11 +45,11 @@ class CorrelationPlotter(DataHandler):
             self.coreCount = max(mp.cpu_count()-2, 1)
     
     def plot_all(self, stds: list = [3], quantiles: list = []) -> None:
-        #self.plot_squared_drug_correlations(stds, quantiles)
+        self.plot_squared_drug_correlations(stds, quantiles)
         self.plot_squared_gene_correlations(stds, quantiles)
-        #self.plot_drug_correlations(stds, quantiles)
-        #self.plot_gene_correlations(stds, quantiles)
-        #self.plot_sd_cumulative("both")
+        self.plot_drug_correlations(stds, quantiles)
+        self.plot_gene_correlations(stds, quantiles)
+        self.plot_sd_cumulative("both")
         return
     
     def __get_stats_markers(self, stds: list = [], quantiles: list = []) -> dict[str, list[float]]:

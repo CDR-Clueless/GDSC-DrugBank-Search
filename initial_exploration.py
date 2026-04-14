@@ -53,9 +53,6 @@ DEFAULT_ALL_BY_ALL_FILE: str = os.path.join(CLEANED_DATA_DIR, "AllDrugsByAllGene
 DEFAULT_STRING_INFO_FILE: str = os.path.join(CLEANED_DATA_DIR, "9606.protein.info.v12.0.txt")
 DEFAULT_STRING_LINK_FILE: str = os.path.join(CLEANED_DATA_DIR, "9606.protein.links.v12.0.ssv")
 
-#TARGET_DRUG: str = "965-D2"
-#START_POINT_CUTOFF: float = 0.197
-
 def initial_setup(cosdir: str = os.path.join("Data", "Raw Data", "COSMIC")) -> None:
     """
     
@@ -514,6 +511,14 @@ def GDSC_target_pathfinding(coreCount: Optional[int] = None):
 
         drugTargets[drug] = deepcopy(targets)
     
+    noTargets = []
+    for drug in drugTargets:
+        if(len(drugTargets[drug])<1):
+            noTargets.append(drug)
+    print(f"Drugs with no known official targets: {noTargets}")
+    # NOTE: THIS NEEDS MORE WORK!
+    return
+    
     # Dictionary of results for drug-gene survivability distributions
     with open(os.path.join("Data", "Results", "Drug-gene correlation frequency histograms", "stats.json"), "r") as f:
         drugGeneSurv: dict = json.load(f)
@@ -682,6 +687,7 @@ def GDSCC_target_pathfinding(coreCount: Optional[int] = None):
             # Record these targets in the dictionary
             drugTargets[drugs][side] = deepcopy(targets)
     print(drugTargets)
+    # NOTE: NEED WORK HERE!!!
     return
     drugTargets = pd.read_csv(os.path.join(CLEANED_DATA_DIR, "TargetRanking.tsv"), sep = "\t")
     drugTargets = update_hgnc(drugTargets, hgnc, "TARGET")
@@ -838,7 +844,7 @@ def main():
     tosave.to_csv(os.path.join("Data", "Results", "Best Hundred Genes.tsv"), sep = "\t", lineterminator = "\n", index = False)
     #"""
 
-    #"""
+    """
     # Analyse combination data
     analyser = CombinationAnalyser()
     result = analyser.bliss_independence()
