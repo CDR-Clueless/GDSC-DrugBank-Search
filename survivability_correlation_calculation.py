@@ -30,11 +30,11 @@ DEFAULT_DRUG_COMB_FILE: str = os.path.join("Data", "Raw Data", "GDSCC")
 DEFAULT_OUTPUT_DIR: str = os.path.join("Data", "Results")
 
 def main():
-    drugData, files = load_gdscc(DEFAULT_DRUG_COMB_FILE, returnLoaded = True)
-    combos, lines = len(drugData["Combo Name"].unique()), len(drugData["Cell Line Name"].unique())
-    print(f"{combos} unique combinations along {lines} cell lines")
+    #drugData, files = load_gdscc(DEFAULT_DRUG_COMB_FILE, returnLoaded = True)
+    #combos, lines = len(drugData["Combo Name"].unique()), len(drugData["Cell Line Name"].unique())
+    #print(f"{combos} unique combinations along {lines} cell lines")
     #print(drugData)
-    #gdscc()
+    gdscc()
     return
 
 def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = False,
@@ -111,7 +111,7 @@ def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = Fal
     return df
 
 def gdscc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
-         gdsccLoc: Optional[str] = None):
+         gdsccLoc: Optional[str] = None, cpu_count: int = max(1, mp.cpu_count()-2)):
     
     # Compile dictionary of relevant file locations
     fileLocs = {}
@@ -121,9 +121,6 @@ def gdscc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, ce
             fileLocs[name] = alternative
         else:
             fileLocs[name] = [DEFAULT_CRISPR_FILE, DEFAULT_HUGO_FILE, DEFAULT_CELL_INFO_FILE, DEFAULT_DRUG_COMB_FILE][i]
-    
-    # Get number of CPU's to use for multiprocessing
-    cpu_count = max(1, mp.cpu_count()-2)
 
     # Get known CRISPR cell line-gene dependencies (row index = model ID/cell line ID, column = Gene)
     crisprDeps = pd.read_csv(DEFAULT_CRISPR_FILE).fillna(0.0)
@@ -131,7 +128,7 @@ def gdscc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, ce
     crisprDeps.rename(columns = {'Unnamed: 0':'ModelID'},inplace=True)
     crisprDeps.set_index('ModelID', inplace=True)
     
-    # edit header names to remove spaces etc.
+    # Edit header names to remove spaces etc.
     gg = dict(zip(list(crisprDeps.columns), [i.strip().split()[0]
               for i in list(crisprDeps.columns)]))
     crisprDeps.rename(columns=gg, inplace=True)
@@ -163,41 +160,66 @@ def gdscc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, ce
     # Load in GDSCC data
     drugData, files = load_gdscc(fileLocs["gdscc"], returnLoaded = True)
 
-    # Initilise drug by gene data
-    dList = sorted(set(drugData["Combo Name"]))
+    # Get list of combination names
+    comboList = sorted(set(drugData["Combo Name"]))
     
-    allbyall = pd.DataFrame(columns=["symbol"]+dList)
-    allbyall["symbol"] = list(crisprDeps.columns)
-    #allbyall = allbyall.fillna(0.0)
-    allbyall.set_index("symbol", inplace=True)
+    ## Create DataFrames for each individual drug from drugData (drugData is used for calculating Combo SC values; the DataFrame below is used for calculating individual drugs)
+    # Get 2 DataFrames: 1 for drugs on the left of the # and 1 for drugs on the right
+    l, r = deepcopy(drugData), deepcopy(drugData)
+    # Change to the appropriate name
+    l["Name"] = [n.split("#")[0] for n in l["Combo Name"]]
+    r["Name"] = [n.split("#")[-1] for n in r["Combo Name"]]
+    # Get the appropriate eMax value for each DataFrame
+    l["eMax"] = l["Left Drug eMax"]
+    r["eMax"] = r["Right Drug eMax"]
+    # Delete extraneous/misleading columns
+    for col in ["Combo Name", "Left Drug eMax", "Right Drug eMax", "Combo eMax"]:
+        del l[col]
+        del r[col]
+    # Merge DataFrames and remove duplicate experiments
+    singleDrugData: pd.DataFrame = pd.concat([l, r], ignore_index=True)
+    singleDrugData.reset_index()
+    singleDrugData.drop_duplicates(inplace=True)
+    singleDrugList = sorted(set(singleDrugData["Name"]))
+
+    #allbyall = pd.DataFrame(columns=["symbol"]+comboList)
+    #allbyall["symbol"] = list(crisprDeps.columns)
+    ##allbyall = allbyall.fillna(0.0)
+    #allbyall.set_index("symbol", inplace=True)
+
+    # Modify combination drug data so it can be fed into same function as single drug data
+    drugData.rename({"Combo Name": "Name", "Combo eMax": "eMax"}, axis = 1, inplace = True)
+    del drugData["Left Drug eMax"]
+    del drugData["Right Drug eMax"]
 
     # Record time before parallel running
     t_base = time.time()
 
     # Break the list of drugs/compounds into a smaller lists which are passed to a parallel function to calculate them
-    batch_dlist = split_list(dList,cpu_count)
+    batch_comboList = split_list(comboList, cpu_count)
+    batch_singleList = split_list(singleDrugList, cpu_count)
 
-    # Go through the Left, Right and Combo eMax columns
-    for emax in ["Combo eMax", "Left Drug eMax", "Right Drug eMax"]:
+    # Calcuate the allbyall DataFrames for the single and individual drug sets
+    for df, batchList, drugType in zip([drugData, singleDrugData], [batch_comboList, batch_singleList], ["Combo", "Single"]):
         # Create directory for temporary parallel calculation storage
-        tempDir = os.path.join(DEFAULT_OUTPUT_DIR, f"temp_starmap_store-GDSCC-{emax}")
+        tempDir = os.path.join(DEFAULT_OUTPUT_DIR, f"temp_starmap_store-GDSCC-{drugType}")
         if(not os.path.exists(tempDir)):
             os.mkdir(tempDir)
         # Get results
         nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
-                [(i,batch_dlist[i],crisprDeps,[drugData], "Combo Name", "ModelID", emax, True, tempDir)
+                [(i,batchList[i],crisprDeps,[df], "Name", "ModelID", "eMax", True, tempDir)
                 for i in range(cpu_count)]).get()
         
-        print(f'All by All for {emax} eMax took {((time.time())-t_base)/60.0:.4} min')
+        print(f'All by All for {drugType} eMax took {((time.time())-t_base)/60.0:.4} min')
         
         allbyall = pd.concat(nested_dfs,axis=1)   
         
         print('Writing Drugs x Genes file)')
-        allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{emax}-AllDrugsByAllGenes.tsv"), sep='\t', index=True, header=True)
+        allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{drugType}-AllDrugsByAllGenes.tsv"), sep='\t', index=True, header=True)
         print('Writing Genes x Drugs file)')
         allbyall = allbyall.T
         allbyall.index.names = ["drugCombination"]
-        allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{emax}-AllGenesByAllDrugs.tsv"), sep='\t', index=True, header=True)
+        allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{drugType}-AllGenesByAllDrugs.tsv"), sep='\t', index=True, header=True)
         # Delete the temporary data storage
         for filename in os.listdir(tempDir):
             os.remove(os.path.join(tempDir, filename))
@@ -319,7 +341,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
 
     # loop through all indexes, i.e. drugs/compounds, calculating r for all genes
     for d in tqdm(il, desc=f"Thread {it} progress"):
-        # Load the calculation for this data if it has already been calculated
+        ## Load the calculation for this data if it has already been calculated
         if(starfiledirBase is None):
             starfiledir = os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store",
                 f"starmapcorrelations-drugColumn_{drugColumn}-cellLineColumn_{cellLineColumn}-responseColumn_{responseColumn}-drug_{d}")
@@ -347,7 +369,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
            else:
                 result[d] = deepcopy([np.nan]*len(result[d]))
 
-        # If there is no file, calculate the correlations for this drug
+        ## If there is no file, calculate the correlations for this drug
         print(f'Thread {it} Calculating correlations for {d}',flush=True)
 
         # Get all available cell lines
