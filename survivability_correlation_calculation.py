@@ -20,6 +20,8 @@ import multiprocessing as mp
 
 from typing import Union, Tuple, Optional
 
+from logger import Logger
+
 CLEANED_DATA_DIR: str = os.path.join("Data", "Laurence-Data")
 DEFAULT_CRISPR_FILE: str = os.path.join(CLEANED_DATA_DIR,"CRISPRGeneDependency.csv")
 DEFAULT_HUGO_FILE: str = os.path.join(CLEANED_DATA_DIR, "hgnc_complete_set.tsv")
@@ -111,7 +113,8 @@ def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = Fal
     return df
 
 def gdscc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
-         gdsccLoc: Optional[str] = None, cpu_count: int = max(1, mp.cpu_count()-2)):
+         gdsccLoc: Optional[str] = None, cpu_count: int = max(1, mp.cpu_count()-2),
+         logFile: Logger = os.path.join("Data", "Results", "GDSCC SC calculation output.txt")):
     
     # Compile dictionary of relevant file locations
     fileLocs = {}
@@ -199,6 +202,9 @@ def gdscc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, ce
     batch_comboList = split_list(comboList, cpu_count)
     batch_singleList = split_list(singleDrugList, cpu_count)
 
+    countCombo, countSingle = len(comboList), len(singleDrugList)
+    logFile.add(f"Calculating Survivability Correlation values for {countCombo} Combinations made from {countSingle} individual Drugs")
+
     # Calcuate the allbyall DataFrames for the single and individual drug sets
     for df, batchList, drugType in zip([drugData, singleDrugData], [batch_comboList, batch_singleList], ["Combo", "Single"]):
         # Create directory for temporary parallel calculation storage
@@ -210,13 +216,15 @@ def gdscc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, ce
                 [(i,batchList[i],crisprDeps,[df], "Name", "ModelID", "eMax", True, tempDir)
                 for i in range(cpu_count)]).get()
         
-        print(f'All by All for {drugType} eMax took {((time.time())-t_base)/60.0:.4} min')
+        logFile.add(f'All by All for {drugType} eMax took {((time.time())-t_base)/60.0:.4} min')
         
-        allbyall = pd.concat(nested_dfs,axis=1)   
+        allbyall = pd.concat(nested_dfs,axis=1)
+
+        logFile.add(f"Finished Creating allbyall file for {drugType}; {allbyall.shape[0]} rows by {allbyall.shape[1]} columns")
         
-        print('Writing Drugs x Genes file)')
+        logFile.add('Writing Drugs x Genes file)')
         allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{drugType}-AllDrugsByAllGenes.tsv"), sep='\t', index=True, header=True)
-        print('Writing Genes x Drugs file)')
+        logFile.add('Writing Genes x Drugs file)')
         allbyall = allbyall.T
         allbyall.index.names = ["drugCombination"]
         allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{drugType}-AllGenesByAllDrugs.tsv"), sep='\t', index=True, header=True)
