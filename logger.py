@@ -15,10 +15,10 @@ class Logger:
     def add(self, string: str):
         if(os.path.exists(self.directory)==False):
             with open(self.directory, "w") as f:
-                f.write(text)
+                f.write(string)
             return
         with open(self.directory, "r") as f:
-            text = f.read()
+            text: str = f.read()
         if(text.split("\n")[-1]>0):
             text += "\n"
         text += string
