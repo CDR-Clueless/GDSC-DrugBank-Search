@@ -561,9 +561,15 @@ def split_list(l: list, parts: int) -> list:
     Returns:
         list: _description_
     """
+    # Number of parts to break this into; if we want to split it into more parts than there are, we'll need to add blank lists
     n = min(parts, max(len(l),1))
     k, m = divmod(len(l), n)
-    return [l[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n)]
+    output = [l[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n)]
+    # Add extra empty lists if needed
+    while(n<parts):
+        output.append([])
+        n += 1
+    return output
 
 if(__name__=="__main__"):
     main()
