@@ -124,7 +124,7 @@ def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = Fal
 
 def gdscc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
          gdsccLoc: Optional[str] = None, cpu_count: int = max(1, mp.cpu_count()-2),
-         logFile: Logger = os.path.join("Data", "Results", "GDSCC SC calculation output.txt")):
+         logFile: Logger = Logger(os.path.join("Data", "Results", "GDSCC SC calculation output.txt"))):
     
     # Compile dictionary of relevant file locations
     fileLocs = {}
