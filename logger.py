@@ -19,7 +19,7 @@ class Logger:
             return
         with open(self.directory, "r") as f:
             text: str = f.read()
-        if(text.split("\n")[-1]>0):
+        if(len(text.split("\n")[-1])>0):
             text += "\n"
         text += string
         with open(self.directory, "w") as f:
