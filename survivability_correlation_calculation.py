@@ -122,9 +122,13 @@ def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = Fal
         return df, loaded_files
     return df
 
-def gdscc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
+def gdscc(responseColumn: str = "eMax",
+          crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
          gdsccLoc: Optional[str] = None, cpu_count: int = max(1, mp.cpu_count()-2),
          logFile: Logger = Logger(os.path.join("Data", "Results", "GDSCC SC calculation output.txt"))):
+    
+    # Clear logFile
+    logFile.clear()
     
     # Compile dictionary of relevant file locations
     fileLocs = {}
@@ -223,7 +227,7 @@ def gdscc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, ce
             os.mkdir(tempDir)
         # Get results
         nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
-                [(i,batchList[i],crisprDeps,[df], "Name", "ModelID", "eMax", True, tempDir)
+                [(i,batchList[i],crisprDeps,[df], "Name", "ModelID", responseColumn, True, tempDir)
                 for i in range(cpu_count)]).get()
         
         logFile.add(f'All by All for {drugType} eMax took {((time.time())-t_base)/60.0:.4} min')
@@ -232,12 +236,15 @@ def gdscc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, ce
 
         logFile.add(f"Finished Creating allbyall file for {drugType}; {allbyall.shape[0]} rows by {allbyall.shape[1]} columns")
         
-        logFile.add('Writing Drugs x Genes file)')
-        allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{drugType}-AllDrugsByAllGenes.tsv"), sep='\t', index=True, header=True)
-        logFile.add('Writing Genes x Drugs file)')
+        dbgFile = os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{drugType}-{responseColumn}-AllDrugsByAllGenes.tsv")
+        logFile.add(f"Writing Drugs x Genes file to {dbgFile}")
+        allbyall.to_csv(dbgFile, sep='\t', index=True, header=True)
+        
         allbyall = allbyall.T
         allbyall.index.names = ["drugCombination"]
-        allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{drugType}-AllGenesByAllDrugs.tsv"), sep='\t', index=True, header=True)
+        gbdFile = os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{drugType}-{responseColumn}-AllGenesByAllDrugs.tsv")
+        logFile.add(f"Writing Genes x Drugs file to {gbdFile}")
+        allbyall.to_csv(gbdFile, sep='\t', index=True, header=True)
         # Delete the temporary data storage
         for filename in os.listdir(tempDir):
             os.remove(os.path.join(tempDir, filename))
