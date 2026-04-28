@@ -41,7 +41,8 @@ def main():
 
 def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = False,
                cellLineTranslators: list = [DEFAULT_DRUG1_FILE, DEFAULT_DRUG2_FILE]):
-    df = pd.DataFrame(data = None, columns = ["Combo Name", "Cell Line Name", "Left Drug eMax", "Right Drug eMax", "Combo eMax"])
+    df = pd.DataFrame(data = None, columns = ["Combo Name", "Cell Line Name", "Left Drug eMax", "Right Drug eMax", "Combo eMax",
+                                              ])
     loaded_files = []
     # Go through available files in the directory
     for filename in os.listdir(folderLoc):
@@ -209,6 +210,14 @@ def gdscc(responseColumn: str = "eMax",
     del drugData["Left Drug eMax"]
     del drugData["Right Drug eMax"]
 
+    # Remove all NaN rows in the DataFrames
+    lOrig, rOrig, drugDataOrig = l.shape, r.shape, drugData.shape
+    l.dropna(inplace=True)
+    r.dropna(inplace=True)
+    drugData.dropna(inplace=True)
+    lNew, rNew, drugDataNew = l.shape, r.shape, drugData.shape
+    logFile.add(f"Original DataFrame shapes:\n  l: {lOrig}\n  r: {rOrig}\n  c: {drugDataOrig}\nDropNaN'd DataFrame shapes:\n  l: {lNew}\n  r: {rNew}\n  c: {drugDataNew}")
+
     # Record time before parallel running
     t_base = time.time()
 
@@ -249,6 +258,7 @@ def gdscc(responseColumn: str = "eMax",
         for filename in os.listdir(tempDir):
             os.remove(os.path.join(tempDir, filename))
         os.rmdir(tempDir)
+    print(f"Finished calculating GDSCC correlations")
 
 def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
          gdsc1Loc: Optional[str] = None, gdsc2Loc: Optional[str] = None):
