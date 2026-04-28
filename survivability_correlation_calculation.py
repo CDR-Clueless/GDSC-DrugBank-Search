@@ -36,7 +36,8 @@ def main():
     #combos, lines = len(drugData["Combo Name"].unique()), len(drugData["Cell Line Name"].unique())
     #print(f"{combos} unique combinations along {lines} cell lines")
     #print(drugData)
-    gdscc()
+    gdsc()
+    #gdscc()
     return
 
 def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = False,
@@ -126,7 +127,7 @@ def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = Fal
 def gdscc(responseColumn: str = "eMax",
           crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
          gdsccLoc: Optional[str] = None, cpu_count: int = max(1, mp.cpu_count()-2),
-         logFile: Logger = Logger(os.path.join("Data", "Results", "GDSCC SC calculation output.txt"))):
+         logFile: Logger = Logger(os.path.join("Data", "Results", "GDSCC-SC-calculation-output.txt"))):
     
     # Clear logFile
     logFile.clear()
@@ -187,11 +188,11 @@ def gdscc(responseColumn: str = "eMax",
     # Change to the appropriate name
     l["Name"] = [n.split("#")[0] for n in l["Combo Name"]]
     r["Name"] = [n.split("#")[-1] for n in r["Combo Name"]]
-    # Get the appropriate eMax value for each DataFrame
-    l["eMax"] = l["Left Drug eMax"]
-    r["eMax"] = r["Right Drug eMax"]
+    # Get the appropriate response column value for each DataFrame
+    l[responseColumn] = l[f"Left Drug {responseColumn}"]
+    r[responseColumn] = r[f"Right Drug {responseColumn}"]
     # Delete extraneous/misleading columns
-    for col in ["Combo Name", "Left Drug eMax", "Right Drug eMax", "Combo eMax"]:
+    for col in ["Combo Name", f"Left Drug {responseColumn}", f"Right Drug {responseColumn}", f"Combo {responseColumn}"]:
         del l[col]
         del r[col]
     # Merge DataFrames and remove duplicate experiments
@@ -206,20 +207,20 @@ def gdscc(responseColumn: str = "eMax",
     #allbyall.set_index("symbol", inplace=True)
 
     # Modify combination drug data so it can be fed into same function as single drug data
-    drugData.rename({"Combo Name": "Name", "Combo eMax": "eMax"}, axis = 1, inplace = True)
-    del drugData["Left Drug eMax"]
-    del drugData["Right Drug eMax"]
+    drugData.rename({"Combo Name": "Name", f"Combo {responseColumn}": responseColumn}, axis = 1, inplace = True)
+    del drugData[f"Left Drug {responseColumn}"]
+    del drugData[f"Right Drug {responseColumn}"]
 
     # Remove all NaN rows in the DataFrames
     lOrig, rOrig, drugDataOrig = l.shape, r.shape, drugData.shape
-    l.dropna(inplace=True)
-    r.dropna(inplace=True)
-    drugData.dropna(inplace=True)
+    l.dropna(inplace=True, subset = ["Name", responseColumn])
+    r.dropna(inplace=True, subset = ["Name", responseColumn])
+    drugData.dropna(inplace=True, subset = ["Name", responseColumn])
     lNew, rNew, drugDataNew = l.shape, r.shape, drugData.shape
     logFile.add(f"Original DataFrame shapes:\n  l: {lOrig}\n  r: {rOrig}\n  c: {drugDataOrig}\nDropNaN'd DataFrame shapes:\n  l: {lNew}\n  r: {rNew}\n  c: {drugDataNew}")
 
     # Record time before parallel running
-    t_base = time.time()
+    t_base, t_prev = time.time(), time.time()
 
     # Break the list of drugs/compounds into a smaller lists which are passed to a parallel function to calculate them
     batch_comboList = split_list(comboList, cpu_count)
@@ -239,7 +240,7 @@ def gdscc(responseColumn: str = "eMax",
                 [(i,batchList[i],crisprDeps,[df], "Name", "ModelID", responseColumn, True, tempDir)
                 for i in range(cpu_count)]).get()
         
-        logFile.add(f'All by All for {drugType} eMax took {((time.time())-t_base)/60.0:.4} min')
+        logFile.add(f'All by All for {drugType} {responseColumn} took {((time.time())-t_prev)/60.0:.4} min')
         
         allbyall = pd.concat(nested_dfs,axis=1)
 
@@ -258,11 +259,15 @@ def gdscc(responseColumn: str = "eMax",
         for filename in os.listdir(tempDir):
             os.remove(os.path.join(tempDir, filename))
         os.rmdir(tempDir)
-    print(f"Finished calculating GDSCC correlations")
+        t_prev = time.time()
+    logFile.add("Finished calculating GDSCC correlations")
 
 def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
-         gdsc1Loc: Optional[str] = None, gdsc2Loc: Optional[str] = None):
+         gdsc1Loc: Optional[str] = None, gdsc2Loc: Optional[str] = None,
+         logFile: Logger = Logger(os.path.join("Data", "Results", "GDSC-SC-calculation-output.txt"))):
     
+    logFile.clear()
+    logFile.add("GDSC Function starts")
     # Compile dictionary of relevant file locations
     fileLocs = {}
     for i, name in enumerate(["crispr", "hugo", "cellinfo", "gdsc1", "gdsc2"]):
@@ -294,7 +299,7 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     
     # Correct legacy gene names in crisprDeps using HUGO table
     old_names = set(crisprDeps.columns) & (set(hgnc.index) ^ set(crisprDeps.columns))
-    print(f'Updating {len(old_names)} archaic gene names in dependency data')
+    logFile.add(f'Updating {len(old_names)} archaic gene names in dependency data')
     for g_old in old_names:
         g_new = hgnc[hgnc['prev_symbol'].str.contains(g_old)].reset_index()['symbol']
         if len(g_new) == 0 or (g_new[0] not in hgnc.index):
@@ -320,10 +325,11 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     # Initilise drug by gene data
     dList = sorted(set(drug1["DRUG_NAME"]) | set(drug2["DRUG_NAME"]))
     
-    allbyall = pd.DataFrame(columns=["symbol"]+dList)
-    allbyall["symbol"] = list(crisprDeps.columns)
-    allbyall = allbyall.fillna(0.0)
-    allbyall.set_index("symbol", inplace=True)
+    #allbyall = pd.DataFrame(columns=["symbol"]+dList)
+    #allbyall["symbol"] = list(crisprDeps.columns)
+    #allbyall = allbyall.fillna(0.0)
+    #allbyall.set_index("symbol", inplace=True)
+
 
     # Set up directory to store temporary calculations from parallel functions
     if(os.path.exists(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))==False):
@@ -333,18 +339,20 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     t_base = time.time()
 
     # Break the list of drugs/compounds into a smaller lists which are passed to a parallel function to calculate them
-    batch_dlist = split_list(dList,cpu_count)  
+    batch_dlist = split_list(dList,cpu_count)
+    logFile.add("Running GDSC Parallel code")
     nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
-            [(i,batch_dlist[i],crisprDeps,[drug2,drug1])
+            [(i,batch_dlist[i],crisprDeps,[drug2,drug1],
+              "DRUG_NAME", "ModelID", ["pKi", "LN_IC50"], True, None, logFile)
              for i in range(cpu_count)]).get()
     
-    print(f'All by All took {((time.time())-t_base)/60.0:.4} min')
+    logFile.add(f'All by All took {((time.time())-t_base)/60.0:.4} min')
     
     allbyall = pd.concat(nested_dfs,axis=1)   
     
-    print('Writing Drugs x Genes file)')
+    logFile.add('Writing Drugs x Genes file)')
     allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, 'AllDrugsByAllGenes.tsv'), sep='\t', index=True, header=True)
-    print('Writing Genes x Drugs file)')
+    logFile.add('Writing Genes x Drugs file)')
     allbyall = allbyall.T
     allbyall.index.names = ["Drug"]
     allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, 'AllGenesByAllDrugs.tsv'), sep='\t', index=True, header=True)
@@ -356,8 +364,8 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     return
 
 def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrames: list[pd.DataFrame],
-                           drugColumn: str = "DRUG_NAME", cellLineColumn: str = "ModelID", responseColumn: str = "pKi",
-                           priorityList: bool = True, starfiledirBase: Optional[str] = None):
+                           drugColumn: str = "DRUG_NAME", cellLineColumn: str = "ModelID", responseColumns: list|str = "pKi",
+                           priorityList: bool = True, starfiledirBase: Optional[str] = None, logFile: Optional[Logger] = None):
     """Altered version of ChunkDrugGene to calculate survival correlations for GDSC1/2 and GDSCC
 
     Args:
@@ -368,6 +376,15 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
         priorityList (bool): Whether the drugFrames list is ordered in terms of importance
             ([most important, mid importance, least importance]) - if True, the highest-importance non-NaN correlation score is used. If False, the highest non-NaN correlation score is used
     """
+
+    if(type(responseColumns)!=str):
+        for responseColumn in responseColumns:
+            chunkDrugGeneFormatted(it, il, CRISPRdeps, drugFrames, drugColumn, cellLineColumn, responseColumn, priorityList, starfiledirBase)
+    else:
+        responseColumn: str = responseColumns
+    
+    if(logFile is not None):
+        logFile.add(f"Thread {it} calculating correlation coefficient for {responseColumn}")
 
     result = pd.DataFrame(columns=['symbol']+il)
     result.symbol = list(CRISPRdeps.columns)
