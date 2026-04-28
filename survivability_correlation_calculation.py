@@ -336,35 +336,40 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
         os.mkdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))
 
     # Record time before parallel running
-    t_base = time.time()
+    t_base, t_prev = time.time(), time.time()
 
     # Break the list of drugs/compounds into a smaller lists which are passed to a parallel function to calculate them
     batch_dlist = split_list(dList,cpu_count)
     logFile.add("Running GDSC Parallel code")
-    nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
-            [(i,batch_dlist[i],crisprDeps,[drug2,drug1],
-              "DRUG_NAME", "ModelID", ["pKi", "LN_IC50"], True, None, logFile)
-             for i in range(cpu_count)]).get()
+    for responseColumn in ["pKi", "LN_IC50"]:
+        logFile.add(f"All by all running for {responseColumn}")
+        nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
+                [(i,batch_dlist[i],crisprDeps,[drug2,drug1],
+                "DRUG_NAME", "ModelID", responseColumn, True, None, logFile)
+                for i in range(cpu_count)]).get()
+        
+        logFile.add(f'{responseColumn} All by All took {((time.time())-t_prev)/60.0:.4} min')
+        
+        allbyall = pd.concat(nested_dfs,axis=1)   
+        
+        logFile.add('Writing Drugs x Genes file)')
+        allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"AllDrugsByAllGenes.tsv"), sep='\t', index=True, header=True)
+        logFile.add('Writing Genes x Drugs file)')
+        allbyall = allbyall.T
+        allbyall.index.names = ["Drug"]
+        allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"AllGenesByAllDrugs.tsv"), sep='\t', index=True, header=True)
+        # Delete the temporary data store
+        for filename in os.listdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store")):
+            os.remove(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store", filename))
+        os.rmdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))
+        t_prev = time.time()
     
-    logFile.add(f'All by All took {((time.time())-t_base)/60.0:.4} min')
-    
-    allbyall = pd.concat(nested_dfs,axis=1)   
-    
-    logFile.add('Writing Drugs x Genes file)')
-    allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, 'AllDrugsByAllGenes.tsv'), sep='\t', index=True, header=True)
-    logFile.add('Writing Genes x Drugs file)')
-    allbyall = allbyall.T
-    allbyall.index.names = ["Drug"]
-    allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, 'AllGenesByAllDrugs.tsv'), sep='\t', index=True, header=True)
-    # Delete the temporary data store
-    for filename in os.listdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store")):
-        os.remove(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store", filename))
-    os.rmdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))
+    logFile.add(f"GDSC Calculation finished. Total time taken {((time.time())-t_prev)/60.0:.4} minutes")
     
     return
 
 def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrames: list[pd.DataFrame],
-                           drugColumn: str = "DRUG_NAME", cellLineColumn: str = "ModelID", responseColumns: list|str = "pKi",
+                           drugColumn: str = "DRUG_NAME", cellLineColumn: str = "ModelID", responseColumn: str = "pKi",
                            priorityList: bool = True, starfiledirBase: Optional[str] = None, logFile: Optional[Logger] = None):
     """Altered version of ChunkDrugGene to calculate survival correlations for GDSC1/2 and GDSCC
 
@@ -376,12 +381,6 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
         priorityList (bool): Whether the drugFrames list is ordered in terms of importance
             ([most important, mid importance, least importance]) - if True, the highest-importance non-NaN correlation score is used. If False, the highest non-NaN correlation score is used
     """
-
-    if(type(responseColumns)!=str):
-        for responseColumn in responseColumns:
-            chunkDrugGeneFormatted(it, il, CRISPRdeps, drugFrames, drugColumn, cellLineColumn, responseColumn, priorityList, starfiledirBase)
-    else:
-        responseColumn: str = responseColumns
     
     if(logFile is not None):
         logFile.add(f"Thread {it} calculating correlation coefficient for {responseColumn}")
