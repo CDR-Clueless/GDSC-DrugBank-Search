@@ -353,11 +353,11 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
         allbyall = pd.concat(nested_dfs,axis=1)   
         
         logFile.add('Writing Drugs x Genes file)')
-        allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"AllDrugsByAllGenes.tsv"), sep='\t', index=True, header=True)
+        allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"{responseColumn}-AllDrugsByAllGenes.tsv"), sep='\t', index=True, header=True)
         logFile.add('Writing Genes x Drugs file)')
         allbyall = allbyall.T
         allbyall.index.names = ["Drug"]
-        allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"AllGenesByAllDrugs.tsv"), sep='\t', index=True, header=True)
+        allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"{responseColumn}-AllGenesByAllDrugs.tsv"), sep='\t', index=True, header=True)
         # Delete the temporary data store
         for filename in os.listdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store")):
             os.remove(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store", filename))
