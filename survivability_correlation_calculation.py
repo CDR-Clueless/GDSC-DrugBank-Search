@@ -330,27 +330,30 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     #allbyall = allbyall.fillna(0.0)
     #allbyall.set_index("symbol", inplace=True)
 
-
-    # Set up directory to store temporary calculations from parallel functions
-    if(os.path.exists(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))==False):
-        os.mkdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))
-
     # Record time before parallel running
     t_base, t_prev = time.time(), time.time()
 
     # Break the list of drugs/compounds into a smaller lists which are passed to a parallel function to calculate them
     batch_dlist = split_list(dList,cpu_count)
     logFile.add("Running GDSC Parallel code")
-    for responseColumn in ["pKi", "LN_IC50"]:
+    for responseColumn in ["LN_IC50", "pKi"]:
+        # Set up directory to store temporary calculations from parallel functions
+        if(os.path.exists(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))==False):
+            os.mkdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))
+        
+        # Log start of process
         logFile.add(f"All by all running for {responseColumn}")
+
+        # Run parallel SC calculation function
         nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
                 [(i,batch_dlist[i],crisprDeps,[drug2,drug1],
                 "DRUG_NAME", "ModelID", responseColumn, True, None, logFile)
                 for i in range(cpu_count)]).get()
         
-        logFile.add(f'{responseColumn} All by All took {((time.time())-t_prev)/60.0:.4} min')
+        logFile.add(f'{responseColumn} All by All took {((time.time())-t_prev)/60.0:.4} min ({((time.time())-t_prev)/3600.0:.1f} hrs)')
         
-        allbyall = pd.concat(nested_dfs,axis=1)   
+        # Concatenate all SC values
+        allbyall = pd.concat(nested_dfs,axis=1)
         
         logFile.add('Writing Drugs x Genes file)')
         allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"{responseColumn}-AllDrugsByAllGenes.tsv"), sep='\t', index=True, header=True)
@@ -358,10 +361,13 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
         allbyall = allbyall.T
         allbyall.index.names = ["Drug"]
         allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"{responseColumn}-AllGenesByAllDrugs.tsv"), sep='\t', index=True, header=True)
-        # Delete the temporary data store
+
+        # Delete the temporary data store now that it's finished with
         for filename in os.listdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store")):
             os.remove(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store", filename))
         os.rmdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))
+
+        # Update time recording variable
         t_prev = time.time()
     
     logFile.add(f"GDSC Calculation finished. Total time taken {((time.time())-t_prev)/60.0:.4} minutes")
