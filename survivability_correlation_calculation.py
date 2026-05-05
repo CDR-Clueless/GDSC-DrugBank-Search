@@ -37,12 +37,20 @@ def main():
     #print(f"{combos} unique combinations along {lines} cell lines")
     #print(drugData)
     #gdsc()
-    gdscc()
+    gdscc(responseColumn="eMax")
+    gdscc(responseColumn="IC50")
     return
 
 def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = False,
+               responseColumn: str = "eMax",
                cellLineTranslators: list = [DEFAULT_DRUG1_FILE, DEFAULT_DRUG2_FILE]):
-    df = pd.DataFrame(data = None, columns = ["Combo Name", "Cell Line Name", "Left Drug eMax", "Right Drug eMax", "Combo eMax",
+    
+    # Format response column to be capitalised
+    matrixResponseColumn = {"EMAX": "MaxE", "IC50": "IC50_ln"}[responseColumn.upper()]
+    anchorResponseColumn = {"EMAX": "Emax", "IC50": "IC50"}[responseColumn.upper()]
+    
+    df = pd.DataFrame(data = None, columns = ["Combo Name", "Cell Line Name",
+                                              f"Left Drug {responseColumn}", f"Right Drug {responseColumn}", f"Combo {responseColumn}",
                                               ])
     loaded_files = []
     # Go through available files in the directory
@@ -55,7 +63,7 @@ def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = Fal
             newdf = pd.read_csv(os.path.join(folderLoc, filename), sep = sep, low_memory=False)
             if("anchor" in filename.lower()):
                 # Refine to relevant columns
-                newdf = newdf[["Anchor Name", "Library Name", "Cell Line name", "Library Emax", "Combo Emax", "Anchor Conc"]]
+                newdf = newdf[["Anchor Name", "Library Name", "Cell Line name", f"Library {anchorResponseColumn}", f"Combo {anchorResponseColumn}", "Anchor Conc"]]
                 # Capitalise drug names to improve how standard they are
                 newdf["Anchor Name"] = newdf["Anchor Name"].apply(lambda x: x.upper().strip())
                 newdf["Library Name"] = newdf["Library Name"].apply(lambda x: x.upper().strip())
@@ -72,40 +80,49 @@ def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = Fal
                             results = rel.loc[rel["Anchor Conc"]>=bestConc]
                             for i in range(len(results)):
                                 anchor, library = results["Anchor Name"].values[i], results["Library Name"].values[i]
-                                # Note: NaN values are used for the anchor eMax's as the way this experiment works is keeping (sort of?) constant Anchor concentrations
+                                # Get response values
+                                anchorResponseSingle = results[f"Library {anchorResponseColumn}"].values[i]
+                                anchorResponseCombo = results[f"Combo {anchorResponseColumn}"].values[i]
+                                if(anchorResponseColumn == "IC50"):
+                                    anchorResponseSingle = np.log(anchorResponseSingle)
+                                    anchorResponseCombo = np.log(anchorResponseCombo)
+                                # Add to results
+                                # Note: NaN values are used for the anchor responses as the way this experiment works is keeping (sort of?) constant Anchor concentrations
                                 if(anchor>library):
                                     rows.append(deepcopy([f"{anchor}###{library}", results["Cell Line name"].values[i],
-                                                        np.nan, results["Library Emax"].values[i],
-                                                        results["Combo Emax"].values[i]]))
+                                                        np.nan, anchorResponseSingle,
+                                                        anchorResponseCombo]))
                                 else:
                                     rows.append(deepcopy([f"{library}###{anchor}", results["Cell Line name"].values[i],
-                                                        results["Library Emax"].values[i], np.nan,
-                                                        results["Combo Emax"].values[i]]))
+                                                        anchorResponseSingle, np.nan,
+                                                        anchorResponseSingle]))
                 # Add this data into the main DataFrame
                 df = pd.concat([df, pd.DataFrame(data = rows, columns = ["Combo Name", "Cell Line Name",
-                                                                        "Left Drug eMax", "Right Drug eMax",
-                                                                        "Combo eMax"])], ignore_index=True)
+                                                                        f"Left Drug {responseColumn}", f"Right Drug {responseColumn}",
+                                                                        f"Combo {responseColumn}"])], ignore_index=True)
                 loaded_files.append(filename)
             elif("matrix" in filename.lower()):
                 # Refine to relevant columns
-                newdf = newdf[["lib1_name", "lib2_name", "CELL_LINE_NAME", "lib1_MaxE", "lib2_MaxE", "combo_MaxE"]]
+                newdf = newdf[["lib1_name", "lib2_name", "CELL_LINE_NAME",
+                               f"lib1_{matrixResponseColumn}", f"lib2_{matrixResponseColumn}", f"combo_{matrixResponseColumn}"]]
                 # Capitalise drug names to improve standardisation
                 newdf["lib1_name"] = newdf["lib1_name"].apply(lambda x: x.upper().strip())
                 newdf["lib2_name"] = newdf["lib2_name"].apply(lambda x: x.upper().strip())
                 # Combine library names into combo name which is standardised by alphabet so duplicates can be removed later
                 rows = []
                 for i in range(len(newdf)):
-                    l1, l2, cln, l1emax, l2emax, cemax = [newdf[c].values[i] for c in 
+                    l1, l2, cln, l1response, l2response, cresponse = [newdf[c].values[i] for c in 
                                                           ["lib1_name", "lib2_name", "CELL_LINE_NAME",
-                                                           "lib1_MaxE", "lib2_MaxE", "combo_MaxE"]]
+                                                           f"lib1_{matrixResponseColumn}", f"lib2_{matrixResponseColumn}",
+                                                           f"combo_{matrixResponseColumn}"]]
                     if(l1>l2):
-                        rows.append(deepcopy([f"{l1}###{l2}", cln, l1emax, l2emax, cemax]))
+                        rows.append(deepcopy([f"{l1}###{l2}", cln, l1response, l2response, cresponse]))
                     else:
-                        rows.append(deepcopy([f"{l2}###{l1}", cln, l2emax, l1emax, cemax]))
+                        rows.append(deepcopy([f"{l2}###{l1}", cln, l2response, l1response, cresponse]))
                 # Add this to the main DataFrame
                 df = pd.concat([df, pd.DataFrame(data = rows, columns = ["Combo Name", "Cell Line Name",
-                                                                        "Left Drug eMax", "Right Drug eMax",
-                                                                        "Combo eMax"])], ignore_index=True)
+                                                                        f"Left Drug {responseColumn}", f"Right Drug {responseColumn}",
+                                                                        f"Combo {responseColumn}"])], ignore_index=True)
                 loaded_files.append(filename)
     ## Now, translate the Cell Line Names into 'ModelID' which is more standardised and crosses with the CRISPR data
     translatorDict = {}
@@ -127,8 +144,11 @@ def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = Fal
 def gdscc(responseColumn: str = "eMax",
           crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
          gdsccLoc: Optional[str] = None, cpu_count: int = max(1, mp.cpu_count()-2),
-         logFile: Logger = Logger(os.path.join("Data", "Results", "GDSCC-SC-calculation-output.txt"))):
+         logFile: Logger = Logger(os.path.join("Data", "Results", "GDSCC-RESPONSECOLUMN-SC-calculation-output.txt"))):
     
+    # Amend LogFile directory
+    if("RESPONSECOLUMN" in logFile.directory):
+        logFile.directory = logFile.directory.replace("RESPONSECOLUMN", responseColumn)
     # Clear logFile
     logFile.clear()
     
@@ -177,7 +197,7 @@ def gdscc(responseColumn: str = "eMax",
     cancer_types = set(clInfo['OncotreeLineage'])
 
     # Load in GDSCC data
-    drugData, files = load_gdscc(fileLocs["gdscc"], returnLoaded = True)
+    drugData, files = load_gdscc(fileLocs["gdscc"], returnLoaded = True, responseColumn = responseColumn)
 
     # Get list of combination names
     comboList = sorted(set(drugData["Combo Name"]))
