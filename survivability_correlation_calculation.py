@@ -36,8 +36,8 @@ def main():
     #combos, lines = len(drugData["Combo Name"].unique()), len(drugData["Cell Line Name"].unique())
     #print(f"{combos} unique combinations along {lines} cell lines")
     #print(drugData)
-    gdsc()
-    #gdscc()
+    #gdsc()
+    gdscc()
     return
 
 def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = False,
@@ -227,7 +227,7 @@ def gdscc(responseColumn: str = "eMax",
     batch_singleList = split_list(singleDrugList, cpu_count)
 
     countCombo, countSingle = len(comboList), len(singleDrugList)
-    logFile.add(f"Calculating Survivability Correlation values for {countCombo} Combinations made from {countSingle} individual Drugs")
+    logFile.add(f"Calculating Survivability Correlation values for {countCombo} Combinations made from {countSingle} individual Drugs with {cpu_count} threads")
 
     # Calcuate the allbyall DataFrames for the single and individual drug sets
     for df, batchList, drugType in zip([drugData, singleDrugData], [batch_comboList, batch_singleList], ["Combo", "Single"]):
@@ -342,7 +342,7 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
             os.mkdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))
         
         # Log start of process
-        logFile.add(f"All by all running for {responseColumn}")
+        logFile.add(f"All by all running for {responseColumn} with {cpu_count} threads")
 
         # Run parallel SC calculation function
         nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
@@ -389,7 +389,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
     """
     
     if(logFile is not None):
-        logFile.add(f"Thread {it} calculating correlation coefficient for {responseColumn}")
+        pass
 
     result = pd.DataFrame(columns=['symbol']+il)
     result.symbol = list(CRISPRdeps.columns)
