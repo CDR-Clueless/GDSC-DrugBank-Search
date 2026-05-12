@@ -1,0 +1,64 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Page-1" id="7qh0EGRejFlSEzv1NLV5">
+    <mxGraphModel dx="1344" dy="920" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="5R0ELd8paBoLpBUa2R1k-9" edge="1" parent="1" source="5R0ELd8paBoLpBUa2R1k-1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="5R0ELd8paBoLpBUa2R1k-6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="5R0ELd8paBoLpBUa2R1k-1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="&lt;div&gt;DepMap Cell Line Data&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="120" x="70" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="5R0ELd8paBoLpBUa2R1k-18" edge="1" parent="1" source="5R0ELd8paBoLpBUa2R1k-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="5R0ELd8paBoLpBUa2R1k-16">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="5R0ELd8paBoLpBUa2R1k-19" edge="1" parent="1" source="5R0ELd8paBoLpBUa2R1k-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="5R0ELd8paBoLpBUa2R1k-15">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="5R0ELd8paBoLpBUa2R1k-3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="GDSCC Drug Response Data" vertex="1">
+          <mxGeometry height="60" width="120" x="425" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="5R0ELd8paBoLpBUa2R1k-11" edge="1" parent="1" source="5R0ELd8paBoLpBUa2R1k-6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.25;entryY=0;entryDx=0;entryDy=0;" target="5R0ELd8paBoLpBUa2R1k-8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="5R0ELd8paBoLpBUa2R1k-6" parent="1" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;" value="&lt;div&gt;HUGO Gene name standardisation&lt;/div&gt;" vertex="1">
+          <mxGeometry height="80" width="120" x="70" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="5R0ELd8paBoLpBUa2R1k-8" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="&lt;div&gt;Refine DepMap to relevant cell lines&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;Pick out Drug response data (IC50, pKi, or eMax)&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;Calculate Correlation coefficients&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;Save output&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;Combine all correlation coefficients into final matrix&lt;/div&gt;" vertex="1">
+          <mxGeometry height="210" width="280" x="70" y="600" as="geometry" />
+        </mxCell>
+        <mxCell id="5R0ELd8paBoLpBUa2R1k-14" edge="1" parent="1" source="5R0ELd8paBoLpBUa2R1k-13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="5R0ELd8paBoLpBUa2R1k-8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="5R0ELd8paBoLpBUa2R1k-13" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Cell Line Data" vertex="1">
+          <mxGeometry height="60" width="120" x="150" y="445" as="geometry" />
+        </mxCell>
+        <mxCell id="5R0ELd8paBoLpBUa2R1k-23" edge="1" parent="1" source="5R0ELd8paBoLpBUa2R1k-15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="5R0ELd8paBoLpBUa2R1k-20">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="5R0ELd8paBoLpBUa2R1k-15" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Matrix Data" vertex="1">
+          <mxGeometry height="60" width="120" x="545" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="5R0ELd8paBoLpBUa2R1k-22" edge="1" parent="1" source="5R0ELd8paBoLpBUa2R1k-16" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="5R0ELd8paBoLpBUa2R1k-21">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="5R0ELd8paBoLpBUa2R1k-16" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Anchor Data" vertex="1">
+          <mxGeometry height="60" width="120" x="305" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="5R0ELd8paBoLpBUa2R1k-25" edge="1" parent="1" source="5R0ELd8paBoLpBUa2R1k-20" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" target="5R0ELd8paBoLpBUa2R1k-8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="5R0ELd8paBoLpBUa2R1k-20" parent="1" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;" value="&lt;div&gt;Refine to relevant data (Drug name + Cell Line Name + response data)&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;Drug Name Capitalization&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;Split into Drug A effect, Drug B effect and Combination effect DataFrames&lt;/div&gt;" vertex="1">
+          <mxGeometry height="150" width="277.5" x="346.25" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="5R0ELd8paBoLpBUa2R1k-24" edge="1" parent="1" source="5R0ELd8paBoLpBUa2R1k-21" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="5R0ELd8paBoLpBUa2R1k-20">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="5R0ELd8paBoLpBUa2R1k-21" parent="1" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;" value="&lt;div&gt;Refine to results for highest anchor concentrations&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;Fill Anchor response data as NaNs&lt;/div&gt;" vertex="1">
+          <mxGeometry height="110" width="175" x="277.5" y="230" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

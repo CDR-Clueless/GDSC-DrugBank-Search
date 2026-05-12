@@ -53,6 +53,9 @@ DEFAULT_ALL_BY_ALL_FILE: str = os.path.join(CLEANED_DATA_DIR, "AllDrugsByAllGene
 DEFAULT_STRING_INFO_FILE: str = os.path.join(CLEANED_DATA_DIR, "9606.protein.info.v12.0.txt")
 DEFAULT_STRING_LINK_FILE: str = os.path.join(CLEANED_DATA_DIR, "9606.protein.links.v12.0.ssv")
 
+DEFAULT_CRISPR_FILE: str = os.path.join(CLEANED_DATA_DIR,"CRISPRGeneDependency.csv")
+DEFAULT_CELL_INFO_FILE: str = os.path.join(CLEANED_DATA_DIR, "Model.csv")
+
 def initial_setup(cosdir: str = os.path.join("Data", "Raw Data", "COSMIC")) -> None:
     """
     
@@ -784,6 +787,29 @@ def main():
     else:
         coreCount: int = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
+
+    crispr = pd.read_csv(DEFAULT_CRISPR_FILE)
+    crispr.set_index("Unnamed: 0", inplace = True)
+    testc, testi = crispr.columns[0], crispr.index[0]
+    for test in [crispr[testc].values, crispr.loc[testi].values[1:]]:
+        test = test[~np.isnan(test)]
+        cmax, cmin, cmed = np.max(test), np.min(test), np.median(test)
+        print(f"Minimum: {cmin}; Maximum: {cmax}; Median: {cmed}")
+    return
+
+    """# Checking GDSCC sample counts
+    rDir = os.path.join("Data", "Results")
+    multi = pd.read_csv(os.path.join(rDir, "GDSCC-Combo-eMax-AllDrugsByAllGenes.tsv"), sep = "\t")
+    single = pd.read_csv(os.path.join(rDir, "GDSCC-Single-eMax-AllDrugsByAllGenes.tsv"), sep = "\t")
+
+    print(multi.shape)
+    print(single.shape)
+
+    #"""
+
+    #test: SquaredModalityAnalyzer = SquaredModalityAnalyzer()
+
+    #print(test.datasets["Left Drug"])
 
     #GDSCC_target_pathfinding(coreCount)
     #GDSC_target_pathfinding(coreCount)
