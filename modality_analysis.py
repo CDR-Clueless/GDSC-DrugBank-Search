@@ -21,18 +21,22 @@ from drug_search import update_hgnc_single
 CLEAN_DATA_DIR: str = os.path.join("Data", "Laurence-Data")
 
 class ModalityAnalyzer(DataHandler):
-    def __init__(self, datasets: Union[list, tuple, None] = None):
+    def __init__(self, datasets: Union[list, tuple, None] = None, responseColumn: str = "LN_IC50"):
         super().__init__(datasets)
         if("drug modality summary" not in self.datasets.keys()):
-            self.load_data("drug modality summary", os.path.join("Data", "Results", "Drug-gene correlation frequency histograms", "stats.json"))
+            self.load_data("drug modality summary", os.path.join("Data", "Results", f"{responseColumn}-Drug-gene correlation frequency histograms", "stats.json"))
         if("gene modality summary" not in self.datasets.keys()):
-            self.load_data("gene modality summary", os.path.join("Data", "Results", "Gene-drug correlation frequency histograms", "stats.json"))
+            self.load_data("gene modality summary", os.path.join("Data", "Results", f"{responseColumn}-Gene-drug correlation frequency histograms", "stats.json"))
         if("dxg" not in self.datasets.keys()):
-            self.load_data("AllByAll", os.path.join(CLEAN_DATA_DIR, "AllGenesByAllDrugs.tsv"))
+            self.load_data("AllByAll", os.path.join("Data", "Results", f"{responseColumn}-AllGenesByAllDrugs.tsv"))
             self.datasets["AllByAll"] = self.datasets["AllByAll"].rename(columns = {"Unnamed: 0": "Drug"})
             self.datasets["AllByAll"] = self.datasets["AllByAll"].set_index("Drug")
         # Sort internal datasets into unique modalities
         self.__sort_modalities()
+        # Define folder to put results into
+        self.outputDir = os.path.join("Data", "Results", f"{responseColumn} Modality Analysis")
+        if(not os.path.exists(self.outputDir)):
+            os.mkdir(self.outputDir)
         return
     
     # Sort internal dataset into unimodal, unclear and bimodal dictionaries
@@ -54,8 +58,10 @@ class ModalityAnalyzer(DataHandler):
         return
     
     # Plot cumulative frequency graphs for each modality type, plotting medians and threshold values
-    def plot_cf(self, mode: str = "drug", save_dir = os.path.join("Data", "Results", "modality graphs"),
+    def plot_cf(self, mode: str = "drug", save_dir: Optional[str] = None,
                 keep_unclear: bool = False, overlay_histogram: bool = True, hist_width: float = 0.025):
+        if(save_dir is None):
+            save_dir = self.outputDir
         # First, ensure the directory is valid
         if(not os.path.exists(save_dir)):
             os.mkdir(save_dir)
@@ -172,7 +178,9 @@ class ModalityAnalyzer(DataHandler):
         plt.close()
         return
     
-    def plot_high_survivors(self, mode: str = "drug", save_dir: str = os.path.join("Data", "Results", "modality graphs")):
+    def plot_high_survivors(self, mode: str = "drug", save_dir: Optional[str] = None):
+        if(save_dir is None):
+            save_dir = self.outputDir
         mode = mode.lower().strip()
         if(mode=="both"):
             self.plot_high_survivors("drug", save_dir)
@@ -310,8 +318,9 @@ class ModalityAnalyzer(DataHandler):
 
     
     # Plot waterfall graphs for each modality type, plotting number of targets for each drug
-    def plot_waterfall(self, mode: str = "drug", save_dir = os.path.join("Data", "Results", "modality graphs"),
-                       keep_unclear: bool = False):
+    def plot_waterfall(self, mode: str = "drug", save_dir: Optional[str] = None, keep_unclear: bool = False):
+        if(save_dir is None):
+            save_dir = self.outputDir
         mode = mode.lower().strip()
         if(mode=="both"):
             self.plot_waterfall("drug", save_dir, keep_unclear)
@@ -351,8 +360,9 @@ class ModalityAnalyzer(DataHandler):
             plt.close()
         return
     
-    def plot_compare_targets(self, mode: str = "drug", save_dir = os.path.join("Data", "Results", "modality graphs"),
-                       keep_unclear: bool = False) -> None:
+    def plot_compare_targets(self, mode: str = "drug", save_dir: Optional[str] = None, keep_unclear: bool = False) -> None:
+        if(save_dir is None):
+            save_dir = self.outputDir
         mode = mode.lower().strip()
         if(mode=="both"):
             self.plot_compare_targets("drug", save_dir, keep_unclear)

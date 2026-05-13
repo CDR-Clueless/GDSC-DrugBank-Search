@@ -29,16 +29,18 @@ DEFAULT_CELL_INFO_FILE: str = os.path.join(CLEANED_DATA_DIR, "Model.csv")
 DEFAULT_DRUG1_FILE: str = os.path.join(CLEANED_DATA_DIR, 'GDSC1_drug_results_target_cleaned7.tsv')
 DEFAULT_DRUG2_FILE: str = os.path.join(CLEANED_DATA_DIR, 'GDSC2_drug_results_target_cleaned7.tsv')
 DEFAULT_DRUG_COMB_FILE: str = os.path.join("Data", "Raw Data", "GDSCC")
-DEFAULT_OUTPUT_DIR: str = os.path.join("Data", "Results")
+DEFAULT_OUTPUT_DIR: str = os.path.join("Data", "Results", "Survivability-Correlations")
 
 def main():
+    if(not os.path.exists(DEFAULT_OUTPUT_DIR)):
+        os.mkdir(DEFAULT_OUTPUT_DIR)
     #drugData, files = load_gdscc(DEFAULT_DRUG_COMB_FILE, returnLoaded = True)
     #combos, lines = len(drugData["Combo Name"].unique()), len(drugData["Cell Line Name"].unique())
     #print(f"{combos} unique combinations along {lines} cell lines")
     #print(drugData)
     #gdsc()
     gdscc(responseColumn="eMax")
-    gdscc(responseColumn="IC50")
+    gdscc(responseColumn="LN_IC50")
     return
 
 def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = False,
@@ -46,8 +48,8 @@ def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = Fal
                cellLineTranslators: list = [DEFAULT_DRUG1_FILE, DEFAULT_DRUG2_FILE]):
     
     # Format response column to be capitalised
-    matrixResponseColumn = {"EMAX": "MaxE", "IC50": "IC50_ln"}[responseColumn.upper()]
-    anchorResponseColumn = {"EMAX": "Emax", "IC50": "IC50"}[responseColumn.upper()]
+    matrixResponseColumn = {"EMAX": "MaxE", "IC50": "IC50_ln", "LN_IC50": "IC50_ln"}[responseColumn.upper()]
+    anchorResponseColumn = {"EMAX": "Emax", "IC50": "IC50", "LN_IC50": "IC50"}[responseColumn.upper()]
     
     df = pd.DataFrame(data = None, columns = ["Combo Name", "Cell Line Name",
                                               f"Left Drug {responseColumn}", f"Right Drug {responseColumn}", f"Combo {responseColumn}",

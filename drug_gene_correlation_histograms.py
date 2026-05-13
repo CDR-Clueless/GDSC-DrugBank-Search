@@ -26,15 +26,18 @@ from data_handler import DataHandler
 from drug_search import make_dir
 
 class CorrelationPlotter(DataHandler):
-    def __init__(self, coreCount: Optional[int]):
+    def __init__(self, coreCount: Optional[int], allByAll: str = os.path.join(CLEAN_DATA_DIR, "AllGenesByAllDrugs.tsv")):
         # Call super init function and insert the relevant AllGenesByAllDrugs data into the instance
-        super().__init__((("AllByAll", os.path.join(CLEAN_DATA_DIR, "AllGenesByAllDrugs.tsv")),
+        super().__init__((("AllByAll", allByAll),
                           ("comboSquared", os.path.join("Data","Results","Survivability-Correlations","GDSCC-Combo eMax-AllDrugsByAllGenes.tsv")),
                           ("leftSquared", os.path.join("Data","Results","Survivability-Correlations","GDSCC-Left Drug eMax-AllDrugsByAllGenes.tsv")),
                           ("rightSquared", os.path.join("Data","Results","Survivability-Correlations","GDSCC-Right Drug eMax-AllDrugsByAllGenes.tsv"))))
+        # Make sure the columns are named correctly and indexes are set
         self.datasets["AllByAll"] = self.datasets["AllByAll"].rename(columns = {"Unnamed: 0": "Drug"})
         for key in ["comboSquared", "leftSquared", "rightSquared"]:
             self.datasets[key] = self.datasets[key].set_index("symbol")
+        # Define output path
+        self.datasets["outputBase"] = os.path.join("Data", "Results", allByAll.split(os.sep)[-1].replace("AllGenesByAllDrugs.tsv",""))
         # Define number of available cores to utilise in multiprocessing
         if(coreCount is int):
             if(coreCount>0):
@@ -373,7 +376,7 @@ class CorrelationPlotter(DataHandler):
         # Get data
         gxd = self.datasets["AllByAll"]
         sns.set_theme()
-        results_dir = os.path.join("Data", "Results", "Drug-gene correlation frequency histograms")
+        results_dir = self.datasets["outputBase"] + "Drug-gene correlation frequency histograms"
         make_dir(results_dir)
         # Set up dictionary output for quantiles and SDs json
         sres, resVals = {}, self.__get_stats_markers(dataStds, dataQuantiles)
@@ -409,7 +412,7 @@ class CorrelationPlotter(DataHandler):
         gxd = self.datasets["AllByAll"]
         sns.set_theme()
         # Go through columns - gene score distribution analysis
-        results_dir = os.path.join("Data", "Results", "Gene-drug correlation frequency histograms")
+        results_dir = self.datasets["outputBase"] + "Gene-drug correlation frequency histograms"
         make_dir(results_dir)
         # Set up dictionary output for quantiles json
         sres, resVals = {}, self.__get_stats_markers(dataStds, dataQuantiles)

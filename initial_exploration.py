@@ -775,6 +775,32 @@ def GDSCC_target_pathfinding(coreCount: Optional[int] = None):
     #USE HGNC ON DRUGBANK COMPARISON OUTPUT AND EXTEND SHORTEST PATHFINDING TO ALL TARGETS
     #"""
 
+def crisprNormalisation_check(crisprFile: str = DEFAULT_CRISPR_FILE) -> None:
+    """Check how exactly CRISPR dependencies are normalised
+
+    Args:
+        crisprFile (str, optional): Directory for CRISPR dependency file. Defaults to DEFAULT_CRISPR_FILE.
+    """
+    crispr = pd.read_csv(DEFAULT_CRISPR_FILE)
+    crispr.set_index("Unnamed: 0", inplace = True)
+    testc, testi = crispr.columns[0], crispr.index[0]
+    for i, test in enumerate([crispr[testc].values, crispr.loc[testi].values[1:]]):
+        version = {0: "gene", 1: "cell line"}[i]
+        test = test[~np.isnan(test)]
+        cmax, cmin, cmed = np.max(test), np.min(test), np.median(test)
+        print(f"{version}: Minimum: {cmin}; Maximum: {cmax}; Median: {cmed}")
+    return
+
+def GDSCC_sampleCount():
+    """Check the sample count of GDSCC data
+    """
+    rDir = os.path.join("Data", "Results")
+    multi = pd.read_csv(os.path.join(rDir, "GDSCC-Combo-eMax-AllDrugsByAllGenes.tsv"), sep = "\t")
+    single = pd.read_csv(os.path.join(rDir, "GDSCC-Single-eMax-AllDrugsByAllGenes.tsv"), sep = "\t")
+
+    print(multi.shape)
+    print(single.shape)
+
 def main():
     ### Perform initial setup
     initial_setup()
@@ -787,25 +813,6 @@ def main():
     else:
         coreCount: int = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
-
-    crispr = pd.read_csv(DEFAULT_CRISPR_FILE)
-    crispr.set_index("Unnamed: 0", inplace = True)
-    testc, testi = crispr.columns[0], crispr.index[0]
-    for test in [crispr[testc].values, crispr.loc[testi].values[1:]]:
-        test = test[~np.isnan(test)]
-        cmax, cmin, cmed = np.max(test), np.min(test), np.median(test)
-        print(f"Minimum: {cmin}; Maximum: {cmax}; Median: {cmed}")
-    return
-
-    """# Checking GDSCC sample counts
-    rDir = os.path.join("Data", "Results")
-    multi = pd.read_csv(os.path.join(rDir, "GDSCC-Combo-eMax-AllDrugsByAllGenes.tsv"), sep = "\t")
-    single = pd.read_csv(os.path.join(rDir, "GDSCC-Single-eMax-AllDrugsByAllGenes.tsv"), sep = "\t")
-
-    print(multi.shape)
-    print(single.shape)
-
-    #"""
 
     #test: SquaredModalityAnalyzer = SquaredModalityAnalyzer()
 
@@ -877,29 +884,29 @@ def main():
     analyser.bliss_sc_comparison()
     #"""
 
-    """
+    #"""
     ### Modality analysis plotting code
     # Generate histograms if they haven't been plotted yet
-    if(not os.path.exists(os.path.join("Data", "Results", "Drug-gene correlation frequency histograms")) or
-       not os.path.exists(os.path.join("Data", "Results", "GDSCC drug-gene correlation frequency histograms"))):
-        CorrelationPlotter(coreCount).plot_all(stds = [])
-        CorrelationPlotter(coreCount).plot_all(stds = [])
+    for response in ["LN_IC50", "pKi"]:
+        if(not os.path.exists(os.path.join("Data", "Results", f"{response}-Drug-gene correlation frequency histograms"))):
+            CorrelationPlotter(coreCount, allByAll = os.path.join("Data", "Results", f"{response}-AllGenesByAllDrugs.tsv")).plot_all()
 
-    # Modality analysis
-    #az = ModalityAnalyzer()
-    #az.plot_cf("both")
-    #az.plot_high_survivors()
-    #az.plot_waterfall()
-    #az.plot_compare_targets()
+        # Modality analysis
+        az = ModalityAnalyzer(responseColumn=response)
+        az.plot_cf("both")
+        az.plot_high_survivors()
+        az.plot_waterfall()
+        az.plot_compare_targets()
     
     # GDSCC modality analysis
-    sm = SquaredModalityAnalyzer()
-    #sm.plot_cf()
-    sm.plot_waterfall()
-    #rel = sm.datasets["drug modality summary organised"]
-    #for modality in rel.keys():
-    #    for side in rel[modality].keys():
-    #        print(f"{modality} {side} drug count: {len(rel[modality][side])}")
+    for response in ["LN_IC50", "eMax"]:
+        sm = SquaredModalityAnalyzer()
+        #sm.plot_cf()
+        sm.plot_waterfall()
+        #rel = sm.datasets["drug modality summary organised"]
+        #for modality in rel.keys():
+        #    for side in rel[modality].keys():
+        #        print(f"{modality} {side} drug count: {len(rel[modality][side])}")
     #"""
 
     """
