@@ -39,8 +39,8 @@ def main():
     #print(f"{combos} unique combinations along {lines} cell lines")
     #print(drugData)
     #gdsc()
-    gdscc(responseColumn="eMax")
     gdscc(responseColumn="LN_IC50")
+    gdscc(responseColumn="eMax")
     return
 
 def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = False,
@@ -104,9 +104,16 @@ def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = Fal
                                                                         f"Combo {responseColumn}"])], ignore_index=True)
                 loaded_files.append(filename)
             elif("matrix" in filename.lower()):
-                # Refine to relevant columns
-                newdf = newdf[["lib1_name", "lib2_name", "CELL_LINE_NAME",
-                               f"lib1_{matrixResponseColumn}", f"lib2_{matrixResponseColumn}", f"combo_{matrixResponseColumn}"]]
+                # Refine to relevant columns.
+                ## Note: the IC50_ln separation is used here because IC50 values are available for each individual drug in the GDSCC matrices, but not for the combination
+                # IC50 tests here are purely of use to compare single GDSCC drugs with other results (i.e. their GDSC counterparts or eMax-derived correlations)
+                if(matrixResponseColumn=="IC50_ln"):
+                    newdf = newdf[["lib1_name", "lib2_name", "CELL_LINE_NAME",
+                               f"lib1_{matrixResponseColumn}", f"lib2_{matrixResponseColumn}"]]
+                    newdf[f"combo_{matrixResponseColumn}"] = [np.nan] * len(newdf)
+                else:
+                    newdf = newdf[["lib1_name", "lib2_name", "CELL_LINE_NAME",
+                                f"lib1_{matrixResponseColumn}", f"lib2_{matrixResponseColumn}", f"combo_{matrixResponseColumn}"]]
                 # Capitalise drug names to improve standardisation
                 newdf["lib1_name"] = newdf["lib1_name"].apply(lambda x: x.upper().strip())
                 newdf["lib2_name"] = newdf["lib2_name"].apply(lambda x: x.upper().strip())
