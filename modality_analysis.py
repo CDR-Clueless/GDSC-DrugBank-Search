@@ -178,7 +178,8 @@ class ModalityAnalyzer(DataHandler):
         plt.close()
         return
     
-    def plot_high_survivors(self, mode: str = "drug", save_dir: Optional[str] = None):
+    def plot_high_survivors(self, mode: str = "drug", save_dir: Optional[str] = None,
+                            printBimodal: bool = True):
         if(save_dir is None):
             save_dir = self.outputDir
         mode = mode.lower().strip()
@@ -202,8 +203,14 @@ class ModalityAnalyzer(DataHandler):
         else:
             data = self.datasets["gene modality summary"]
         
-        # Insert threshold values into dictionaries for easier access
+        ## Insert threshold values into dictionaries for easier access
         for mtype in data:
+            # If desired, add all bimodal drug distribution entries to an output document
+            if(mode=="drug" and mtype=="bimodal" and printBimodal):
+                with open(os.path.join(save_dir, "bimodal-drugs.txt"), "w") as f:
+                    f.write("\n".join([drug for drug in data[mtype].keys()]))
+                print(f"List of bimodal drugs saved to {save_dir}")
+            # Iterate over all available drugs/genes in this modality
             # dg stands for drug-gene, as depending on the function mode this variable could be iterating over drugs or genes
             for dg in data[mtype].keys():
                 thresholds[mtype][dg] = get_survivability_threshold(dg, data[mtype], survivability_arrays[dg])

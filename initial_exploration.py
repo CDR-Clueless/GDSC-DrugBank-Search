@@ -45,6 +45,7 @@ from drug_search import update_hgnc, get_data, get_targets_all, get_targets
 from modality_analysis import ModalityAnalyzer, SquaredModalityAnalyzer, get_survivability_threshold
 from drugbank_handler import DrugbankHandler
 from combination_analysis import CombinationAnalyser
+from cross_response_analysis import GDSC_CrossResponse
 
 CLEANED_DATA_DIR: str = os.path.join("Data", "Laurence-Data")
 
@@ -821,6 +822,9 @@ def main():
     #GDSCC_target_pathfinding(coreCount)
     #GDSC_target_pathfinding(coreCount)
 
+    #test = GDSC_CrossResponse()
+    #test.cross_compare()
+
     """
     ### Get the best hundred druggable genes
     df = pd.read_csv(os.path.join(CLEANED_DATA_DIR, "AllDrugsByAllGenes.tsv"), sep = "\t")
@@ -899,10 +903,10 @@ def main():
         az.plot_compare_targets()
     
     # GDSCC modality analysis
-    for response in ["LN_IC50", "eMax"]:
+    #for response in ["LN_IC50", "eMax"]:
         sm = SquaredModalityAnalyzer()
         #sm.plot_cf()
-        sm.plot_waterfall()
+        #sm.plot_waterfall()
         #rel = sm.datasets["drug modality summary organised"]
         #for modality in rel.keys():
         #    for side in rel[modality].keys():
