@@ -815,13 +815,24 @@ def main():
         coreCount: int = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
 
-    #test: SquaredModalityAnalyzer = SquaredModalityAnalyzer()
 
-    #print(test.datasets["Left Drug"])
+    """
+    # Visualising pKi vs ic50 data
+    pki = pd.read_csv(os.path.join("Data", "Results", "pKi-AllDrugsByAllGenes.tsv"), sep = "\t")
+    ic50 = pd.read_csv(os.path.join("Data", "Results", "LN_IC50-AllDrugsByAllGenes.tsv"), sep = "\t")
 
-    #GDSCC_target_pathfinding(coreCount)
-    #GDSC_target_pathfinding(coreCount)
+    testColumn = "123138"
 
+    pCounts, pBins = np.histogram(pki[testColumn].values, np.linspace(-1, 1, 41, endpoint=True))
+    iCounts, iBins = np.histogram(ic50[testColumn].values, np.linspace(-1, 1, 41, endpoint=True))
+
+    plt.stairs(pCounts, pBins, label = "pKi")
+    plt.stairs(iCounts, iBins, label = "IC50")
+    plt.show()
+    """
+
+    """
+    # Cross-coparison code to compare SC scores derived from different responses
     gdscTest = CrossResponse()
     gdscTest.cross_compare()
 
@@ -830,6 +841,7 @@ def main():
 
     cT = CrossResponse("GDSC-IC50", "GDSCC-IC50")
     cT.cross_compare()
+    #"""
 
     """
     ### Get the best hundred druggable genes

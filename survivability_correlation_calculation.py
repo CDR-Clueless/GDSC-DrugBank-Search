@@ -39,17 +39,23 @@ def main():
     #print(f"{combos} unique combinations along {lines} cell lines")
     #print(drugData)
     #gdsc()
-    gdscc(responseColumn="LN_IC50")
-    gdscc(responseColumn="eMax")
+    gdscc(responseColumn="LN_IC50", desiredFiles=["matrix"])
+    gdscc(responseColumn="eMax", desiredFiles=["matrix"])
+    gdscc(responseColumn="LN_IC50", desiredFiles=["anchor"])
+    gdscc(responseColumn="eMax", desiredFiles=["anchor"])
     return
 
 def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = False,
                responseColumn: str = "eMax",
-               cellLineTranslators: list = [DEFAULT_DRUG1_FILE, DEFAULT_DRUG2_FILE]):
+               cellLineTranslators: list = [DEFAULT_DRUG1_FILE, DEFAULT_DRUG2_FILE],
+               onlyLoad: list = ["anchor", "matrix"]):
     
     # Format response column to be capitalised
     matrixResponseColumn = {"EMAX": "MaxE", "IC50": "IC50_ln", "LN_IC50": "IC50_ln"}[responseColumn.upper()]
     anchorResponseColumn = {"EMAX": "Emax", "IC50": "IC50", "LN_IC50": "IC50"}[responseColumn.upper()]
+
+    # Format desired data sources to be lower case
+    onlyLoad: list = [x.lower() for x in onlyLoad]
     
     df = pd.DataFrame(data = None, columns = ["Combo Name", "Cell Line Name",
                                               f"Left Drug {responseColumn}", f"Right Drug {responseColumn}", f"Combo {responseColumn}",
@@ -64,6 +70,9 @@ def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = Fal
             # Load the data into a consistent, more standardised format
             newdf = pd.read_csv(os.path.join(folderLoc, filename), sep = sep, low_memory=False)
             if("anchor" in filename.lower()):
+                # If anchor data is not desired, skip this file
+                if("anchor" not in onlyLoad):
+                    continue
                 # Refine to relevant columns
                 newdf = newdf[["Anchor Name", "Library Name", "Cell Line name", f"Library {anchorResponseColumn}", f"Combo {anchorResponseColumn}", "Anchor Conc"]]
                 # Capitalise drug names to improve how standard they are
@@ -104,6 +113,9 @@ def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = Fal
                                                                         f"Combo {responseColumn}"])], ignore_index=True)
                 loaded_files.append(filename)
             elif("matrix" in filename.lower()):
+                # If matrix data is not desired, skip this file
+                if("matrix" not in onlyLoad):
+                    continue
                 # Refine to relevant columns.
                 ## Note: the IC50_ln separation is used here because IC50 values are available for each individual drug in the GDSCC matrices, but not for the combination
                 # IC50 tests here are purely of use to compare single GDSCC drugs with other results (i.e. their GDSC counterparts or eMax-derived correlations)
@@ -153,7 +165,8 @@ def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = Fal
 def gdscc(responseColumn: str = "eMax",
           crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
          gdsccLoc: Optional[str] = None, cpu_count: int = max(1, mp.cpu_count()-2),
-         logFile: Logger = Logger(os.path.join("Data", "Results", "GDSCC-RESPONSECOLUMN-SC-calculation-output.txt"))):
+         logFile: Logger = Logger(os.path.join("Data", "Results", "GDSCC-RESPONSECOLUMN-SC-calculation-output.txt")),
+         desiredFiles: list = ["anchor", "matrix"]):
     
     # Amend LogFile directory
     if("RESPONSECOLUMN" in logFile.directory):
@@ -206,7 +219,8 @@ def gdscc(responseColumn: str = "eMax",
     cancer_types = set(clInfo['OncotreeLineage'])
 
     # Load in GDSCC data
-    drugData, files = load_gdscc(fileLocs["gdscc"], returnLoaded = True, responseColumn = responseColumn)
+    drugData, files = load_gdscc(fileLocs["gdscc"], returnLoaded = True, responseColumn = responseColumn,
+                                 onlyLoad = desiredFiles)
 
     # Get list of combination names
     comboList = sorted(set(drugData["Combo Name"]))
@@ -255,8 +269,18 @@ def gdscc(responseColumn: str = "eMax",
     batch_comboList = split_list(comboList, cpu_count)
     batch_singleList = split_list(singleDrugList, cpu_count)
 
+    # Set up logging
+    if("matrix" not in desiredFiles):
+        desired: str = " using only anchor data"
+        fileDesired: str = "-anchor"
+    elif("anchor" not in desiredFiles):
+        desired: str = " using only matrix data"
+        fileDesired: str = "-matrix"
+    else:
+        desired: str = ""
+        fileDesired: str = ""
     countCombo, countSingle = len(comboList), len(singleDrugList)
-    logFile.add(f"Calculating Survivability Correlation values for {countCombo} Combinations made from {countSingle} individual Drugs with {cpu_count} threads")
+    logFile.add(f"Calculating Survivability Correlation values for {countCombo} Combinations made from {countSingle} individual Drugs{desired} with {cpu_count} threads")
 
     # Calcuate the allbyall DataFrames for the single and individual drug sets
     for df, batchList, drugType in zip([drugData, singleDrugData], [batch_comboList, batch_singleList], ["Combo", "Single"]):
@@ -269,19 +293,19 @@ def gdscc(responseColumn: str = "eMax",
                 [(i,batchList[i],crisprDeps,[df], "Name", "ModelID", responseColumn, True, tempDir)
                 for i in range(cpu_count)]).get()
         
-        logFile.add(f'All by All for {drugType} {responseColumn} took {((time.time())-t_prev)/60.0:.4} min')
+        logFile.add(f'All by All for {drugType} {responseColumn}{desired} took {((time.time())-t_prev)/60.0:.4} min')
         
         allbyall = pd.concat(nested_dfs,axis=1)
 
         logFile.add(f"Finished Creating allbyall file for {drugType}; {allbyall.shape[0]} rows by {allbyall.shape[1]} columns")
         
-        dbgFile = os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{drugType}-{responseColumn}-AllDrugsByAllGenes.tsv")
+        dbgFile = os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{drugType}-{responseColumn}{fileDesired}-AllDrugsByAllGenes.tsv")
         logFile.add(f"Writing Drugs x Genes file to {dbgFile}")
         allbyall.to_csv(dbgFile, sep='\t', index=True, header=True)
         
         allbyall = allbyall.T
         allbyall.index.names = ["drugCombination"]
-        gbdFile = os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{drugType}-{responseColumn}-AllGenesByAllDrugs.tsv")
+        gbdFile = os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{drugType}-{responseColumn}{fileDesired}-AllGenesByAllDrugs.tsv")
         logFile.add(f"Writing Genes x Drugs file to {gbdFile}")
         allbyall.to_csv(gbdFile, sep='\t', index=True, header=True)
         # Delete the temporary data storage
