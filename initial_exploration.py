@@ -45,7 +45,7 @@ from drug_search import update_hgnc, get_data, get_targets_all, get_targets
 from modality_analysis import ModalityAnalyzer, SquaredModalityAnalyzer, get_survivability_threshold
 from drugbank_handler import DrugbankHandler
 from combination_analysis import CombinationAnalyser
-from cross_response_analysis import GDSC_CrossResponse
+from cross_response_analysis import CrossResponse
 
 CLEANED_DATA_DIR: str = os.path.join("Data", "Laurence-Data")
 
@@ -822,8 +822,14 @@ def main():
     #GDSCC_target_pathfinding(coreCount)
     #GDSC_target_pathfinding(coreCount)
 
-    #test = GDSC_CrossResponse()
-    #test.cross_compare()
+    gdscTest = CrossResponse()
+    gdscTest.cross_compare()
+
+    gdsccTest = CrossResponse("GDSCC-eMax", "GDSCC-IC50")
+    gdsccTest.cross_compare()
+
+    cT = CrossResponse("GDSC-IC50", "GDSCC-IC50")
+    cT.cross_compare()
 
     """
     ### Get the best hundred druggable genes
@@ -888,7 +894,7 @@ def main():
     analyser.bliss_sc_comparison()
     #"""
 
-    #"""
+    """
     ### Modality analysis plotting code
     # Generate histograms if they haven't been plotted yet
     for response in ["LN_IC50", "pKi"]:
