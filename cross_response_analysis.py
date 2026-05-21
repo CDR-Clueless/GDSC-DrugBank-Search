@@ -22,31 +22,35 @@ GDSCC_DEFAULT_EMAX_FILE: str = os.path.join("Data", "Results", "Survivability-Co
 
 
 class CrossResponse:
-    def __init__(self, response1_raw: str = "GDSC-pKi", response2_raw: str = "GDSC-IC50") -> None:
+    def __init__(self, response1Name: str = "GDSC-pKi", response2Name: str = "GDSC-IC50",
+                 response1File: Optional[str] = None, response2File: Optional[str] = None) -> None:
         """Import response1 and response2 data
 
         Args:
-            response1 (str, optional): _description_. Defaults to GDSC pKi data.
-            response2 (str, optional): _description_. Defaults to GDSC IC50 data.
+            response1 (str, optional): String containing '{data source}-{response name}'. Defaults to GDSC-pKi, i.e. GDSC pKi data.
+            response2 (str, optional): String containing '{data source}-{response name}'. Defaults to GDSC-IC50, i.e. GDSC IC50 data.
         """
-        # Translate input variables into data paths
-        response1, response2 = response1_raw.lower().replace(" ",""), response2_raw.lower().replace(" ","")
+        ## Translate input variables into data paths if no data files were provided
         responseLocs = {"gdsc": {"pki": GDSC_DEFAULT_PKI_FILE, "ic50": GDSC_DEFAULT_IC50_FILE},
                        "gdscc": {"emax": GDSCC_DEFAULT_EMAX_FILE, "ic50": GDSCC_DEFAULT_IC50_FILE}}
-        response1Loc = responseLocs[response1.split("-")[0]][response1.split("-")[-1]]
-        response2Loc = responseLocs[response2.split("-")[0]][response2.split("-")[-1]]
+        if(response1File is None):
+            response1 = response1Name.lower().replace(" ","")
+            response1File = responseLocs[response1.split("-")[0]][response1.split("-")[-1]]
+        if(response2File is None):
+            response2 = response2Name.lower().replace(" ","")
+            response2File = responseLocs[response2.split("-")[0]][response2.split("-")[-1]]
         # Load in Data
-        self.response1 = pd.read_csv(response1Loc, sep = "\t")
+        self.response1 = pd.read_csv(response1File, sep = "\t")
         self.response1.set_index("symbol", inplace=True)
-        self.response2 = pd.read_csv(response2Loc, sep = "\t")
+        self.response2 = pd.read_csv(response2File, sep = "\t")
         self.response2.set_index("symbol", inplace=True)
         # Save data sources for graph titles
-        self.response1Name: str = response1_raw.split("-")[-1]
-        self.response2Name: str = response2_raw.split("-")[-1]
-        if(response1_raw.split("-")[0].lower()!=response2_raw.split("-")[0].lower()):
-            self.responseSource: str = response1_raw.split("-")[0]+"-"+response2_raw.split("-")[0]
+        self.response1Name: str = response1Name.split("-")[-1]
+        self.response2Name: str = response2Name.split("-")[-1]
+        if(response1Name.split("-")[0].lower()!=response2Name.split("-")[0].lower()):
+            self.responseSource: str = response1Name.split("-")[0]+"-"+response2Name.split("-")[0]
         else:
-            self.responseSource: str = response1_raw.split("-")[0]
+            self.responseSource: str = response1Name.split("-")[0]
         return
     
     def cross_compare(self, method: str = "pearson", saveDir: Optional[str] = None) -> None:
