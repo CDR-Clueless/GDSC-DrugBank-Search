@@ -14,6 +14,8 @@ import numpy as np
 import pandas as pd
 from scipy.stats import pearsonr
 
+import json
+
 from tqdm import tqdm
 
 import multiprocessing as mp
@@ -30,6 +32,13 @@ DEFAULT_DRUG1_FILE: str = os.path.join(CLEANED_DATA_DIR, 'GDSC1_drug_results_tar
 DEFAULT_DRUG2_FILE: str = os.path.join(CLEANED_DATA_DIR, 'GDSC2_drug_results_target_cleaned7.tsv')
 DEFAULT_DRUG_COMB_FILE: str = os.path.join("Data", "Raw Data", "GDSCC")
 DEFAULT_OUTPUT_DIR: str = os.path.join("Data", "Results", "Survivability-Correlations")
+
+# Decide whether this should be a debug mode
+if(not os.path.exists(os.path.join("Local", "localVars.json"))):
+    DEBUG_MODE: bool = False
+else:
+    with open(os.path.join("Local", "localVars.json"), "rb") as f:
+        DEBUG_MODE: bool = json.load(f)["DEBUG_MODE"]
 
 def main():
     if(not os.path.exists(DEFAULT_OUTPUT_DIR)):
@@ -53,6 +62,7 @@ def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = Fal
     # Format response column to be capitalised
     matrixResponseColumn = {"EMAX": "MaxE", "IC50": "IC50_ln", "LN_IC50": "IC50_ln"}[responseColumn.upper()]
     anchorResponseColumn = {"EMAX": "Emax", "IC50": "IC50", "LN_IC50": "IC50"}[responseColumn.upper()]
+    responseColumn: str = {"emax": "eMax", "ic50": "pIC50", "pic50": "pIC50"}[responseColumn.lower()]
 
     # Format desired data sources to be lower case
     onlyLoad: list = [x.lower() for x in onlyLoad]
@@ -94,9 +104,9 @@ def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = Fal
                                 # Get response values
                                 anchorResponseSingle = results[f"Library {anchorResponseColumn}"].values[i]
                                 anchorResponseCombo = results[f"Combo {anchorResponseColumn}"].values[i]
-                                if(anchorResponseColumn == "IC50"):
-                                    anchorResponseSingle = np.log(anchorResponseSingle)
-                                    anchorResponseCombo = np.log(anchorResponseCombo)
+                                if(responseColumn.lower()=="pic50"):
+                                    anchorResponseSingle *= -1
+                                    anchorResponseCombo *= -1
                                 # Add to results
                                 # Note: NaN values are used for the anchor responses as the way this experiment works is keeping (sort of?) constant Anchor concentrations
                                 if(anchor>library):
@@ -136,6 +146,11 @@ def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = Fal
                                                           ["lib1_name", "lib2_name", "CELL_LINE_NAME",
                                                            f"lib1_{matrixResponseColumn}", f"lib2_{matrixResponseColumn}",
                                                            f"combo_{matrixResponseColumn}"]]
+                    # Multiple IC50 by -1 to ensure it's pIC50
+                    if(responseColumn=="pIC50"):
+                        l1response *= -1
+                        l2response *= -1
+                        lcresponse *= -1
                     if(l1>l2):
                         rows.append(deepcopy([f"{l1}###{l2}", cln, l1response, l2response, cresponse]))
                     else:
@@ -166,7 +181,8 @@ def gdscc(responseColumn: str = "eMax",
           crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
          gdsccLoc: Optional[str] = None, cpu_count: int = max(1, mp.cpu_count()-2),
          logFile: Logger = Logger(os.path.join("Data", "Results", "GDSCC-RESPONSECOLUMN-SC-calculation-output.txt")),
-         desiredFiles: list = ["anchor", "matrix"]):
+         desiredFiles: list = ["anchor", "matrix"],
+         DEBUG_MODE: bool = False):
     
     # Amend LogFile directory
     if("RESPONSECOLUMN" in logFile.directory):
@@ -266,8 +282,19 @@ def gdscc(responseColumn: str = "eMax",
     t_base, t_prev = time.time(), time.time()
 
     # Break the list of drugs/compounds into a smaller lists which are passed to a parallel function to calculate them
-    batch_comboList = split_list(comboList, cpu_count)
-    batch_singleList = split_list(singleDrugList, cpu_count)
+    if(not DEBUG_MODE):
+        batch_comboList = split_list(comboList, cpu_count)
+        batch_singleList = split_list(singleDrugList, cpu_count)
+    # If in debug mode, only get a few drugs
+    else:
+        batch_comboList = comboList[:10]
+        # Get the singles out of these combinations
+        batch_singleList = []
+        for combo in comboList:
+            a, b = combo.split("###")
+            for single in [a, b]:
+                if(single not in batch_singleList):
+                    batch_singleList.append(single)
 
     # Set up logging
     if("matrix" not in desiredFiles):
@@ -279,6 +306,9 @@ def gdscc(responseColumn: str = "eMax",
     else:
         desired: str = ""
         fileDesired: str = ""
+    if(DEBUG_MODE):
+        desired += "-DEBUG-"
+        fileDesired += "-DEBUG-"
     countCombo, countSingle = len(comboList), len(singleDrugList)
     logFile.add(f"Calculating Survivability Correlation values for {countCombo} Combinations made from {countSingle} individual Drugs{desired} with {cpu_count} threads")
 
