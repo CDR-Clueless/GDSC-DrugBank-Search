@@ -47,11 +47,11 @@ def main():
     #combos, lines = len(drugData["Combo Name"].unique()), len(drugData["Cell Line Name"].unique())
     #print(f"{combos} unique combinations along {lines} cell lines")
     #print(drugData)
-    #gdsc()
-    gdscc(responseColumn="LN_IC50", desiredFiles=["matrix"])
-    gdscc(responseColumn="eMax", desiredFiles=["matrix"])
-    gdscc(responseColumn="LN_IC50", desiredFiles=["anchor"])
-    gdscc(responseColumn="eMax", desiredFiles=["anchor"])
+    gdsc()
+    #gdscc(responseColumn="LN_IC50", desiredFiles=["matrix"])
+    #gdscc(responseColumn="eMax", desiredFiles=["matrix"])
+    #gdscc(responseColumn="LN_IC50", desiredFiles=["anchor"])
+    #gdscc(responseColumn="eMax", desiredFiles=["anchor"])
     return
 
 def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = False,
@@ -182,11 +182,13 @@ def gdscc(responseColumn: str = "eMax",
          gdsccLoc: Optional[str] = None, cpu_count: int = max(1, mp.cpu_count()-2),
          logFile: Logger = Logger(os.path.join("Data", "Results", "GDSCC-RESPONSECOLUMN-SC-calculation-output.txt")),
          desiredFiles: list = ["anchor", "matrix"],
-         DEBUG_MODE: bool = False):
+         dMode: bool = DEBUG_MODE):
     
     # Amend LogFile directory
     if("RESPONSECOLUMN" in logFile.directory):
         logFile.directory = logFile.directory.replace("RESPONSECOLUMN", responseColumn)
+    if(dMode):
+        logFile.directory = logFile.directory[:-4]+"-DEBUG-"+logFile.directory[-4:]
     # Clear logFile
     logFile.clear()
     
@@ -282,12 +284,12 @@ def gdscc(responseColumn: str = "eMax",
     t_base, t_prev = time.time(), time.time()
 
     # Break the list of drugs/compounds into a smaller lists which are passed to a parallel function to calculate them
-    if(not DEBUG_MODE):
+    if(not dMode):
         batch_comboList = split_list(comboList, cpu_count)
         batch_singleList = split_list(singleDrugList, cpu_count)
     # If in debug mode, only get a few drugs
     else:
-        batch_comboList = comboList[:10]
+        batch_comboList = comboList[:cpu_count]
         # Get the singles out of these combinations
         batch_singleList = []
         for combo in comboList:
@@ -306,12 +308,18 @@ def gdscc(responseColumn: str = "eMax",
     else:
         desired: str = ""
         fileDesired: str = ""
-    if(DEBUG_MODE):
+    if(dMode):
         desired += "-DEBUG-"
         fileDesired += "-DEBUG-"
     countCombo, countSingle = len(comboList), len(singleDrugList)
     logFile.add(f"Calculating Survivability Correlation values for {countCombo} Combinations made from {countSingle} individual Drugs{desired} with {cpu_count} threads")
 
+    # If using IC50 data, use pIC50 as the reported response (as this is what's calculated in chunkDrugGeneFormatted)
+    reportedResponse: str
+    if("IC50" in responseColumn.upper()):
+        reportedResponse = "pIC50"
+    else:
+        reportedResponse = responseColumn
     # Calcuate the allbyall DataFrames for the single and individual drug sets
     for df, batchList, drugType in zip([drugData, singleDrugData], [batch_comboList, batch_singleList], ["Combo", "Single"]):
         # Create directory for temporary parallel calculation storage
@@ -320,22 +328,22 @@ def gdscc(responseColumn: str = "eMax",
             os.mkdir(tempDir)
         # Get results
         nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
-                [(i,batchList[i],crisprDeps,[df], "Name", "ModelID", responseColumn, True, tempDir)
+                [(i,batchList[i],crisprDeps,[df], "Name", "ModelID", responseColumn, True, tempDir, logFile, dMode)
                 for i in range(cpu_count)]).get()
         
-        logFile.add(f'All by All for {drugType} {responseColumn}{desired} took {((time.time())-t_prev)/60.0:.4} min')
+        logFile.add(f'All by All for {drugType} {reportedResponse}{desired} took {((time.time())-t_prev)/60.0:.4} min')
         
         allbyall = pd.concat(nested_dfs,axis=1)
 
         logFile.add(f"Finished Creating allbyall file for {drugType}; {allbyall.shape[0]} rows by {allbyall.shape[1]} columns")
         
-        dbgFile = os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{drugType}-{responseColumn}{fileDesired}-AllDrugsByAllGenes.tsv")
+        dbgFile = os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{drugType}-{reportedResponse}{fileDesired}-AllDrugsByAllGenes.tsv")
         logFile.add(f"Writing Drugs x Genes file to {dbgFile}")
         allbyall.to_csv(dbgFile, sep='\t', index=True, header=True)
         
         allbyall = allbyall.T
         allbyall.index.names = ["drugCombination"]
-        gbdFile = os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{drugType}-{responseColumn}{fileDesired}-AllGenesByAllDrugs.tsv")
+        gbdFile = os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{drugType}-{reportedResponse}{fileDesired}-AllGenesByAllDrugs.tsv")
         logFile.add(f"Writing Genes x Drugs file to {gbdFile}")
         allbyall.to_csv(gbdFile, sep='\t', index=True, header=True)
         # Delete the temporary data storage
@@ -347,8 +355,14 @@ def gdscc(responseColumn: str = "eMax",
 
 def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
          gdsc1Loc: Optional[str] = None, gdsc2Loc: Optional[str] = None,
-         logFile: Logger = Logger(os.path.join("Data", "Results", "GDSC-SC-calculation-output.txt"))):
+         logFile: Logger = Logger(os.path.join("Data", "Results", "GDSC-SC-calculation-output.txt")),
+         dMode: bool = DEBUG_MODE):
     
+    # First, update logFile path if in debug mode
+    if(dMode):
+        logFile.directory = logFile.directory[:-4]+"-DEBUG"+logFile.directory[-4:]
+    
+    # Clear LogFile and add initial line
     logFile.clear()
     logFile.add("GDSC Function starts")
     # Compile dictionary of relevant file locations
@@ -364,7 +378,7 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     cpu_count = max(1, mp.cpu_count()-2)
 
     # Get known CRISPR cell line-gene dependencies (row index = model ID/cell line ID, column = Gene)
-    crisprDeps = pd.read_csv(DEFAULT_CRISPR_FILE).fillna(0.0)
+    crisprDeps = pd.read_csv(fileLocs["crispr"]).fillna(0.0)
 
     crisprDeps.rename(columns = {'Unnamed: 0':'ModelID'},inplace=True)
     crisprDeps.set_index('ModelID', inplace=True)
@@ -375,7 +389,7 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     crisprDeps.rename(columns=gg, inplace=True)
 
     # Get HUGO standardised gene name information
-    hgnc = pd.read_table(DEFAULT_HUGO_FILE, low_memory=False).fillna('')
+    hgnc = pd.read_table(fileLocs["hugo"], low_memory=False).fillna('')
     hgnc = hgnc[['symbol', 'ensembl_gene_id',
                  'prev_symbol', 'location', 'location_sortable']]
     hgnc.set_index('symbol', inplace=True)
@@ -391,7 +405,7 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
             crisprDeps.rename(columns={g_old: g_new[0]}, inplace=True)
     
     # Load in cell line information - useful for linking cell line names/IDs/etc. from other DataFrames to other information from other DataFrames
-    clInfo = pd.read_csv(DEFAULT_CELL_INFO_FILE, low_memory=False).fillna('')
+    clInfo = pd.read_csv(fileLocs["cellinfo"], low_memory=False).fillna('')
     clInfo['OncotreeLineage'] = [x.upper() for x in clInfo['OncotreeLineage']]
     clInfo["OncotreePrimaryDisease"] = clInfo["OncotreePrimaryDisease"].str.replace(' ','_')
 
@@ -399,10 +413,10 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     cancer_types = set(clInfo['OncotreeLineage'])
 
     # Load in GDSC data
-    drug1 = pd.read_table(DEFAULT_DRUG1_FILE, low_memory=False).fillna('')
+    drug1 = pd.read_table(fileLocs["gdsc1"], low_memory=False).fillna('')
     drug1["DRUG_NAME"] = drug1["DRUG_NAME"].apply(lambda x:x.upper())
     
-    drug2 = pd.read_table(DEFAULT_DRUG2_FILE, low_memory=False).fillna('')
+    drug2 = pd.read_table(fileLocs["gdsc2"], low_memory=False).fillna('')
     drug2["DRUG_NAME"] = drug2["DRUG_NAME"].apply(lambda x:x.upper())
 
     # Initilise drug by gene data
@@ -417,49 +431,56 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     t_base, t_prev = time.time(), time.time()
 
     # Break the list of drugs/compounds into a smaller lists which are passed to a parallel function to calculate them
-    batch_dlist = split_list(dList,cpu_count)
+    # NOTE: If debugging, only get a small number of drugs instead
+    if(not dMode):
+        batch_dlist = split_list(dList,cpu_count)
+        debugFile: str = ""
+    else:
+        batch_dlist = [[dList[i]] for i in range(cpu_count)]
+        debugFile: str = "-DEBUG"
+        print("Running in Debug mode")
     logFile.add("Running GDSC Parallel code")
-    for responseColumn in ["LN_IC50", "pKi"]:
-        # Set up directory to store temporary calculations from parallel functions
-        if(os.path.exists(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))==False):
-            os.mkdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))
-        
-        # Log start of process
-        logFile.add(f"All by all running for {responseColumn} with {cpu_count} threads")
+    # Set up directory to store temporary calculations from parallel functions
+    if(os.path.exists(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))==False):
+        os.mkdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))
+    
+    # Log start of process
+    logFile.add(f"All by all running for pIC50 with {cpu_count} threads")
 
-        # Run parallel SC calculation function
-        nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
-                [(i,batch_dlist[i],crisprDeps,[drug2,drug1],
-                "DRUG_NAME", "ModelID", responseColumn, True, None, logFile)
-                for i in range(cpu_count)]).get()
-        
-        logFile.add(f'{responseColumn} All by All took {((time.time())-t_prev)/60.0:.4} min ({((time.time())-t_prev)/3600.0:.1f} hrs)')
-        
-        # Concatenate all SC values
-        allbyall = pd.concat(nested_dfs,axis=1)
-        
-        logFile.add('Writing Drugs x Genes file)')
-        allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"{responseColumn}-AllDrugsByAllGenes.tsv"), sep='\t', index=True, header=True)
-        logFile.add('Writing Genes x Drugs file)')
-        allbyall = allbyall.T
-        allbyall.index.names = ["Drug"]
-        allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"{responseColumn}-AllGenesByAllDrugs.tsv"), sep='\t', index=True, header=True)
+    # Run parallel SC calculation function
+    nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
+            [(i,batch_dlist[i],crisprDeps,[drug2,drug1],
+            "DRUG_NAME", "ModelID", "LN_IC50", True, None, logFile, dMode)
+            for i in range(cpu_count)]).get()
+    
+    logFile.add(f'pIC50 All by All took {((time.time())-t_prev)/60.0:.4} min ({((time.time())-t_prev)/3600.0:.1f} hrs)')
+    
+    # Concatenate all SC values
+    allbyall = pd.concat(nested_dfs,axis=1)
+    
+    logFile.add('Writing Drugs x Genes file)')
+    allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"pIC50{debugFile}-AllDrugsByAllGenes.tsv"), sep='\t', index=True, header=True)
+    logFile.add('Writing Genes x Drugs file)')
+    allbyall = allbyall.T
+    allbyall.index.names = ["Drug"]
+    allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"pIC50{debugFile}-AllGenesByAllDrugs.tsv"), sep='\t', index=True, header=True)
 
-        # Delete the temporary data store now that it's finished with
-        for filename in os.listdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store")):
-            os.remove(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store", filename))
-        os.rmdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))
+    # Delete the temporary data store now that it's finished with
+    for filename in os.listdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store")):
+        os.remove(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store", filename))
+    os.rmdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))
 
-        # Update time recording variable
-        t_prev = time.time()
+    # Update time recording variable
+    t_prev = time.time()
     
     logFile.add(f"GDSC Calculation finished. Total time taken {((time.time())-t_prev)/60.0:.4} minutes")
     
     return
 
 def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrames: list[pd.DataFrame],
-                           drugColumn: str = "DRUG_NAME", cellLineColumn: str = "ModelID", responseColumn: str = "pKi",
-                           priorityList: bool = True, starfiledirBase: Optional[str] = None, logFile: Optional[Logger] = None):
+                           drugColumn: str = "DRUG_NAME", cellLineColumn: str = "ModelID", responseColumn: str = "LN_IC50",
+                           priorityList: bool = True, starfiledirBase: Optional[str] = None, logFile: Optional[Logger] = None,
+                           dMode: bool = False):
     """Altered version of ChunkDrugGene to calculate survival correlations for GDSC1/2 and GDSCC
 
     Args:
@@ -508,6 +529,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
            # If the results are blank, fill this with np.nan values
            else:
                 result[d] = deepcopy([np.nan]*len(result[d]))
+                continue
 
         ## If there is no file, calculate the correlations for this drug
         print(f'Thread {it} Calculating correlations for {d}',flush=True)
@@ -517,7 +539,11 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
         #print(cs)
         
         # Go through all genes from CRISPR dependencies DataFrame
-        for i, gn in enumerate(CRISPRdeps.columns):
+        genes = CRISPRdeps.columns
+        # If in Debug mode, only do this for the first 20 genes
+        if(dMode):
+            genes = genes[:20]
+        for i, gn in enumerate(genes):
             
             # get dependencies (deps) for all available cell lines, as well as a list of cell lines which
             # were found within the deps DataFrame
@@ -552,8 +578,12 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                     pps.append(None)
                     continue
                 
+                # Get the two different responses - which is the Cell Line dependencies and the responseColumn (eMax, IC50 etc.) data
                 x = np.array(response[gn])
                 y = response[responseColumn]
+                # If dealing with IC50 data, multiply is by -1 to transform it from LN(IC50) to pIC50 (pIC50 = -LN(IC50))
+                if("IC50" in responseColumn.upper()):
+                    y *= -1
 
                 pr, pp = pearsonr(x, y)
                 prs.append(pr)

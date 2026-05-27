@@ -815,6 +815,30 @@ def main():
         coreCount: int = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
 
+    m1 = pd.read_csv(os.path.join("Data", "Raw Data", "GDSCC", "gdsc-010_matrix_results.csv"))
+    sm = pd.read_csv(os.path.join("Data", "Raw Data", "GDSCC", "sandpiper-01_matrix_results.csv"))
+
+    print(m1.columns)
+    print([c for c in m1.columns if c not in sm.columns])
+    print([c for c in sm.columns if c not in m1.columns])
+
+    return
+
+    # GDSCC Anchor projects
+    ba = pd.read_csv(os.path.join("Data", "Raw Data", "GDSCC", "anchor_breast_combo.csv"), low_memory=False)
+    ca, pa = pd.read_csv(os.path.join("Data", "Raw Data", "GDSCC", "anchor_colon_combo.csv"), low_memory=False), pd.read_csv(os.path.join("Data", "Raw Data", "GDSCC", "anchor_pancreas_combo.csv"), low_memory=False)
+    print(ba.columns)
+    print(ba["Cancer Type"].unique())
+
+    return
+
+    # GDSC1/2
+    g1 = pd.read_excel(os.path.join("Data", "Raw Data", "GDSC1_fitted_dose_response_27Oct23.xlsx"))
+    g2 = pd.read_excel(os.path.join("Data", "Raw Data", "GDSC2_fitted_dose_response_27Oct23.xlsx"))
+
+    print(g1["WEBRELEASE"].unique())
+    print(g2["WEBRELEASE"].unique())
+    print(g1.columns)
 
     """
     # Visualising pKi vs ic50 data
