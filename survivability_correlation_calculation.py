@@ -48,10 +48,10 @@ def main():
     #print(f"{combos} unique combinations along {lines} cell lines")
     #print(drugData)
     gdsc()
-    #gdscc(responseColumn="LN_IC50", desiredFiles=["matrix"])
-    #gdscc(responseColumn="eMax", desiredFiles=["matrix"])
-    #gdscc(responseColumn="LN_IC50", desiredFiles=["anchor"])
-    #gdscc(responseColumn="eMax", desiredFiles=["anchor"])
+
+    #for responseColumn in ["LN_IC50", "eMax"]:
+    #    for fileSource in ["anchor", "matrix"]:
+    #        gdscc(responseColumn=responseColumn, desiredFiles=fileSource)
     return
 
 def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = False,
