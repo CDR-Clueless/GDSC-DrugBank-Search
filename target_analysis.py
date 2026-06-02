@@ -69,7 +69,7 @@ def main(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logF
     genes = genes["symbol"].values
     # Reduce gene count to first 10 if in debug mode
     if(DEBUG_MODE):
-        genes = genes[:200]
+        genes = genes[:10]
 
     # STRING proteins
     logFile.add("Importing STRING data")
@@ -100,78 +100,99 @@ def main(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logF
         return
     # Get list of gene names in string - dictionary is used rather than list for O(1) retrieval times
     genesString: dict = {x["name"]: True for x in g_global.vs}
-    # Make/get record of genes already checked so they can be skipped
-    # Dictionary is used rather than list for O(1) lookup times in later code
-    genesChecked: dict = {}
+    # Make database for outputs
     if(not os.path.exists(os.path.join(saveDir, "Gene-Paths"))):
         os.mkdir(os.path.join(saveDir, "Gene-Paths"))
-    for filename in os.path.join(saveDir, "Gene-Paths"):
-        genesChecked[filename.split("_")[0]] = True
 
-    tocheck = [gene for gene in genes if gene not in genesChecked]
+    # Get appproximation of number of combinations if all genes are valid
+    approxcombs: int = 0
+    for count in range(len(genes)+1):
+        approxcombs += count
 
-    batchList: list = split_list(tocheck, coreCount)
-
-    logFile.add(f"Calculating shortest paths for {len(tocheck)} genes between {len(genes)} total genes")
-
-    mp.Pool(coreCount).starmap_async(pathCheckWorker,
-                    [(i, batchList[i], genes, os.path.join(saveDir, "Gene-Paths"), g_global, genesString, logFile)
-                    for i in range(coreCount)]).get()
+    logFile.add(f"Building list of combinations to find pathways between (approximately {approxcombs} combinations to calculate)")
+    t_base = time.time()
+    # Construct a list of combinations of genes to check
+    combs = []
+    badGenes: dict = {}
+    for i, geneBase in enumerate(genes):
+        # Ensure gene is valid
+        if(geneBase not in genesString):
+            badGenes[geneBase] = True
+            continue
+        for geneEnd in genes[i:]:
+            # Ensure gene is valid
+            if(geneBase not in genesString):
+                badGenes[geneBase] = True
+                continue
+            combs.append(deepcopy((geneBase, geneEnd)))
     
-    timeTaken = time.time()-t_start
-    logFile.add(f"All gene paths calculated between {len(genes)} genes ({int(np.power(len(genes), 2))} combinations); took {timeTaken/60:.2f} minutes, i.e. {timeTaken/3600:.2f} hours")
+    logFile.add(f"The following genes were found in GDSC which are not within the STRING database: {','.join(badGenes.keys())}")
+    logFile.add(f"Calculating shortest paths for {len(combs)} combinations of valid genes")
+    
+    # Split up list of combinations into (roughly) equally-sized sub-lists which will all be passed to parallel workers
+    batchList: list = split_list(combs, coreCount)
 
+    # Pass these combinations of genes to parallel workers to get (collectively) all pathways
+    mp.Pool(coreCount).starmap_async(pathCheckWorker,
+                [(i, batchList[i], g_global, os.path.join(saveDir, "Gene-Paths"))
+                for i in range(coreCount)]).get()
+    
+    t_taken = time.time() - t_base
+    logFile.add(f"Saved {len(combs)} calculated pathways between {len(genes)-len(badGenes)} valid genes; took {t_taken/60:.2f} minutes, i.e. {t_taken/3600:.1f} hours")
+    return
+    
+    results = resultsList[0]
+    for result in resultsList[1:]:
+        results = results | result
+    
+    with open(os.path.join(saveDir, "Gene-Paths", f"{geneBase}_Paths.json"), "w") as f:
+        json.dump(results, f)
+    
+    t_taken = time.time() - t_base()
+    logFile.add(f"Saved {len(tocheck[i:])} calculated pathways for gene {geneBase}; took {t_taken/60:.2f} minutes, total time elapsed {t_taken/3600:.1f} hours")
     return
 
-def pathCheckWorker(threadSimple: int, toCheck: list, genes: list, saveDir: str, graphSTRING: ig.Graph, genesSTRING: dict, logFile: Logger):
-    logFile.add(f"Thread {threadSimple} initialised")
-    t_parallelStart = time.time()
-    for geneBase in toCheck:
-        # Check this is a valid gene
-        if(geneBase not in genesSTRING):
-            logFile.add(f"Thread {threadSimple} encountered gene {geneBase} not found in STRING database")
-            continue
-        paths = {}
-        for geneTarget in genes:
-            # Check this is a valid gene
-            if(geneTarget not in genesSTRING):
-                logFile.add(f"Thread {threadSimple} encountered gene {geneBase} not found in STRING database")
-                continue
-            # Check if this path has already been calculated; if so use it to fill in this inverse path
-            if(os.path.exists(os.path.join(saveDir, f"{geneTarget}_Paths.json"))):
-                with open(os.path.join(saveDir, f"{geneTarget}_Paths.json"), "r") as f:
-                    targetPaths = json.load(f)
-                # Get relevant path
-                relPath = targetPaths[geneBase]
-                # Set up dictionary
-                # Path nodes are added in this way so the output JSON will have the nodes in the correct order
-                pathnodes: dict = {"path length": relPath["path length"]}
-                for i in range(relPath["path length"]+1):
-                    pathnodes[f"Path node {i}"] = ""
-                # Go through other nodes and add them to this path inverted (so we're calculating the path B -> A from path A -> B)
-                for key in relPath:
-                    # Get what node number this is in the original path
-                    if("node" in key):
-                        nodeNo = int(key.split(" ")[-1])
-                        # Otherwise, invert the node number (i.e. path length minus this node's number)
-                        newNum = int(relPath["path length"]) - nodeNo
-                        pathnodes[f"Path node {newNum}"] = {"name": relPath[key]["name"]}
-            else:
-                # If this path has not already been calculated, do so
-                shortpath = graphSTRING.get_shortest_paths(geneBase, to=geneTarget, weights=graphSTRING.es["combined_score"], output="vpath")[0]
-                # Convert these into a list of nodes - by default it has start, [intermediates], stop as the results
-                # So the first and last entry COULD BE removed for space efficiency as the starting and stopping points are known
-                pathnodes_raw = [graphSTRING.vs[v] for v in shortpath]
-                # Format this path into a more readable/usable form
-                pathnodes: dict = {"path length": len(pathnodes_raw) - 1}
-                for i in range(len(pathnodes_raw)):
-                    pathnodes[f"Path node {i}"] = {"name": pathnodes_raw[i].attributes()["name"]}
-            paths[geneTarget] = deepcopy(pathnodes)
-        with open(os.path.join(saveDir, f"{geneBase}_Paths.json"), "w") as f:
-            json.dump(paths, f, indent = 4)
-        logFile.add(f"Thread {threadSimple} finished gene {geneBase}")
-    timeTaken = time.time()-t_parallelStart
-    logFile.add(f"Thread {threadSimple} finished; took {timeTaken/60:.2f} minutes, i.e. {timeTaken/3600:.2f} hours")
+    ## TODO: Add code to use all pathway results to make a complete matrix
+    """
+    # Check if this path has already been calculated; if so use it to fill in this inverse path
+    if(os.path.exists(os.path.join(saveDir, f"{geneTarget}_Paths.json"))):
+        with open(os.path.join(saveDir, f"{geneTarget}_Paths.json"), "r") as f:
+            targetPaths = json.load(f)
+        # Get relevant path
+        relPath = targetPaths[geneBase]
+        # Set up dictionary
+        # Path nodes are added in this way so the output JSON will have the nodes in the correct order
+        pathnodes: dict = {"path length": relPath["path length"]}
+        for i in range(relPath["path length"]+1):
+            pathnodes[f"Path node {i}"] = ""
+        # Go through other nodes and add them to this path inverted (so we're calculating the path B -> A from path A -> B)
+        for key in relPath:
+            # Get what node number this is in the original path
+            if("node" in key):
+                nodeNo = int(key.split(" ")[-1])
+                # Otherwise, invert the node number (i.e. path length minus this node's number)
+                newNum = int(relPath["path length"]) - nodeNo
+                pathnodes[f"Path node {newNum}"] = {"name": relPath[key]["name"]}
+    """
+    return
+
+def pathCheckWorker(threadSimple: int, combinations: list[tuple], graphSTRING: ig.Graph, saveDir: str) -> dict:
+    for comb in combinations:
+        # Unpack combination to start and stop gene
+        geneBase, geneTarget = comb[0], comb[1]
+        shortpath = graphSTRING.get_shortest_paths(geneBase, to=geneTarget, weights=graphSTRING.es["combined_score"], output="vpath")[0]
+        # Convert these into a list of nodes - by default it has start, [intermediates], stop as the results
+        # So the first and last entry COULD BE removed for space efficiency as the starting and stopping points are known
+        pathnodes_raw = [graphSTRING.vs[v] for v in shortpath]
+        # Format this path into a more readable/usable form
+        pathnodes: dict = {"path length": len(pathnodes_raw) - 1}
+        for i in range(len(pathnodes_raw)):
+            pathnodes[f"Path node {i}"] = {"name": pathnodes_raw[i].attributes()["name"]}
+
+        # Save the details of this combination
+        with open(os.path.join(saveDir, f"{geneBase}-{geneTarget}.json"), "w") as f:
+            json.dump(pathnodes, f)
+
     return
 
 
