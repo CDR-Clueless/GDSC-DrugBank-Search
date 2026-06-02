@@ -69,7 +69,7 @@ def main(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logF
     genes = genes["symbol"].values
     # Reduce gene count to first 10 if in debug mode
     if(DEBUG_MODE):
-        genes = genes[:10]
+        genes = genes[:200]
 
     # STRING proteins
     logFile.add("Importing STRING data")
@@ -98,10 +98,8 @@ def main(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logF
     if(not g_global.is_connected()):
         logFile.add("STRING network graph is not fully connected; try lowering score requirement or removing unneeded cliques")
         return
-    # Set up temporary output directory for gene path calculation done in parallel
-    tdpfp: str = os.path.join("Data", "Results", "Target-Analysis", "temporary store")
-    if(os.path.exists(tdpfp)==False):
-        os.mkdir(tdpfp)
+    # Get list of gene names in string - dictionary is used rather than list for O(1) retrieval times
+    genesString: dict = {x["name"]: True for x in g_global.vs}
     # Make/get record of genes already checked so they can be skipped
     # Dictionary is used rather than list for O(1) lookup times in later code
     genesChecked: dict = {}
@@ -117,7 +115,7 @@ def main(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logF
     logFile.add(f"Calculating shortest paths for {len(tocheck)} genes between {len(genes)} total genes")
 
     mp.Pool(coreCount).starmap_async(pathCheckWorker,
-                    [(i, batchList[i], genes, os.path.join(saveDir, "Gene-Paths"), g_global, logFile)
+                    [(i, batchList[i], genes, os.path.join(saveDir, "Gene-Paths"), g_global, genesString, logFile)
                     for i in range(coreCount)]).get()
     
     timeTaken = time.time()-t_start
@@ -125,12 +123,20 @@ def main(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logF
 
     return
 
-def pathCheckWorker(threadSimple: int, toCheck: list, genes: list, saveDir: str, graphSTRING: ig.Graph, logFile: Logger):
+def pathCheckWorker(threadSimple: int, toCheck: list, genes: list, saveDir: str, graphSTRING: ig.Graph, genesSTRING: dict, logFile: Logger):
     logFile.add(f"Thread {threadSimple} initialised")
     t_parallelStart = time.time()
     for geneBase in toCheck:
+        # Check this is a valid gene
+        if(geneBase not in genesSTRING):
+            logFile.add(f"Thread {threadSimple} encountered gene {geneBase} not found in STRING database")
+            continue
         paths = {}
         for geneTarget in genes:
+            # Check this is a valid gene
+            if(geneTarget not in genesSTRING):
+                logFile.add(f"Thread {threadSimple} encountered gene {geneBase} not found in STRING database")
+                continue
             # Check if this path has already been calculated; if so use it to fill in this inverse path
             if(os.path.exists(os.path.join(saveDir, f"{geneTarget}_Paths.json"))):
                 with open(os.path.join(saveDir, f"{geneTarget}_Paths.json"), "r") as f:
