@@ -23,7 +23,7 @@ DRUG_TAG_PREFIX: str = "{http://www.drugbank.ca}"
 
 def get_targets_all(data: Optional[Union[list, tuple]] = None,
                 hgncdata: Optional[pd.DataFrame] = None,
-                gdscoverview: Union[pd.DataFrame, str] = os.path.join("Data", "Results", "GDSCdrugs.tsv")) -> pd.DataFrame:
+                gdscoverview: Union[pd.DataFrame, str] = os.path.join("Data", "Derived-Data", "GDSCdrugs.tsv")) -> pd.DataFrame:
     """Compile known (official) targets from DrugBank, GDSC supplementary data and PubChem-ChEMBL
 
     Args:
@@ -45,7 +45,7 @@ def get_targets_all(data: Optional[Union[list, tuple]] = None,
     if(type(gdscoverview)==str):
         # Try to locate and/or download GDSC overview file
         if(os.path.exists(gdscoverview)==False):
-            gdscoverview = os.path.join("Data", "Results", "GDSCdrugs.tsv")
+            gdscoverview = os.path.join("Data", "Derived-Data", "GDSCdrugs.tsv")
             if(os.path.exists(gdscoverview)==False):
                 print(f"GDSC Overview file not found. Attempting to download... to 'Data/Results/GDSCdrugs.tsv'")
                 try:
@@ -59,7 +59,8 @@ def get_targets_all(data: Optional[Union[list, tuple]] = None,
         else:
             print(f"Failed to load GDSC overview table; cannot get drugs to check")
     output = {}
-    for drug in tqdm(gdscoverview[" Name"].unique(), desc = "Fetching available drug targets"):
+    # Get all targets from GDSC overview data
+    for drug in tqdm(gdscoverview["DRUG_NAME"].unique(), desc = "Fetching available drug targets"):
         output[drug] = get_targets(drug, (db, g1, g2), hgncdata, gdscoverview)
     # Transpose list to get database as columns and drugs as rows
     df = pd.DataFrame(output).T
@@ -108,7 +109,7 @@ def get_targets_all(data: Optional[Union[list, tuple]] = None,
     df["PubChem"] = newvals
 
     # Convert PubChem ID's into known drug targets
-    chembltargets = pd.read_csv(os.path.join("Data", "Results", "pubchem-chembl.tsv"), sep = "\t")[["PubChem", "ChEMBL Gene Targets"]]
+    chembltargets = pd.read_csv(os.path.join("Data", "Derived-Data", "pubchem-chembl.tsv"), sep = "\t")[["PubChem", "ChEMBL Gene Targets"]]
     converter = {str(chembltargets["PubChem"].values[i]): chembltargets["ChEMBL Gene Targets"].values[i] for i in range(len(chembltargets))}
     df["PubChem-ChEMBL"] = df["PubChem"].astype(str).map(converter)
     df.drop(["PubChem"], axis = 1, inplace = True)
@@ -119,7 +120,7 @@ def get_targets_all(data: Optional[Union[list, tuple]] = None,
 
 def get_targets(drug_selected: str, data: Optional[Union[list, tuple]] = None,
                 hgncdata: Optional[pd.DataFrame] = None,
-                gdscoverview: Union[pd.DataFrame, str] = os.path.join("Data", "Results", "GDSCdrugs.tsv")) -> dict:
+                gdscoverview: Union[pd.DataFrame, str] = os.path.join("Data", "Derived-Data", "GDSCdrugs.tsv")) -> dict:
     """
     Function to retrieve official, known targets for a given drug
     
@@ -163,9 +164,9 @@ def get_targets(drug_selected: str, data: Optional[Union[list, tuple]] = None,
     if(type(gdscoverview)==str):
         # Try to locate and/or download GDSC overview file
         if(os.path.exists(gdscoverview)==False):
-            gdscoverview = os.path.join("Data", "Results", "GDSCdrugs.tsv")
+            gdscoverview = os.path.join("Data", "Derived-Data", "GDSCdrugs.tsv")
             if(os.path.exists(gdscoverview)==False):
-                print(f"GDSC Overview file not found. Attempting to download... to 'Data/Results/GDSCdrugs.tsv'")
+                print(f"GDSC Overview file not found. Attempting to download... to 'Data/Derived-Data/GDSCdrugs.tsv'")
                 try:
                     GDSCDetailsLoc = "http://cmp.cog.sanger.ac.uk/download/screened_compounds_rel_8.5.csv"
                     request.urlretrieve(GDSCDetailsLoc,
@@ -181,19 +182,20 @@ def get_targets(drug_selected: str, data: Optional[Union[list, tuple]] = None,
         # Try to read in GDSC overview file
         if(os.path.exists(gdscoverview)):
             gdscoverview = pd.read_csv(gdscoverview, sep = "\t")
-            # Make sure the columns are stripped (no whitespaces/tabs before/after word)
-            gdscoverview.rename(columns = {col: col.replace("\"","").upper().strip() for col in gdscoverview.columns}, inplace=True)
-            # Get correct column names
-            targetCol, nameCol, pubChemCol = None, None, None
-            for col in gdscoverview.columns:
-                if("target" in col.lower() and "pathway" not in col.lower()):
-                    targetCol = col
-                elif("name" in col.lower()):
-                    nameCol = col
-                elif("pubchem" in col.lower()):
-                    pubChemCol = col
         else:
             print(f"Failed to load GDSC overview table; target results will be lacking")
+
+    # Make sure the GDSC columns are stripped (no whitespaces/tabs before/after word)
+    gdscoverview.rename(columns = {col: col.replace("\"","").upper().strip() for col in gdscoverview.columns}, inplace=True)
+    # Get correct column names
+    targetCol, nameCol, pubChemCol = None, None, None
+    for col in gdscoverview.columns:
+        if("target" in col.lower() and "pathway" not in col.lower()):
+            targetCol = col
+        elif("name" in col.lower()):
+            nameCol = col
+        elif("pubchem" in col.lower()):
+            pubChemCol = col
     
     # Load targets and PubChem from GDSC overview file
     if(type(gdscoverview)==pd.DataFrame):

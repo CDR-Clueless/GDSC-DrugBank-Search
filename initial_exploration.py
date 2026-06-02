@@ -802,6 +802,72 @@ def GDSCC_sampleCount():
     print(multi.shape)
     print(single.shape)
 
+def data_overview():
+    """Get various details like sample counts, total drugs etc. of the various different GDSC- databases
+    """
+
+    # GDSC1/2
+    g1 = pd.read_excel(os.path.join("Data", "Raw Data", "GDSC1_fitted_dose_response_27Oct23.xlsx"))
+    g2 = pd.read_excel(os.path.join("Data", "Raw Data", "GDSC2_fitted_dose_response_27Oct23.xlsx"))
+
+    print("GDSC:\n")
+    print(g1.columns)
+
+    ## GDSCC Anchor projects
+    print("\nGDSC^2 Anchor:\n")
+    ba = pd.read_csv(os.path.join("Data", "Raw Data", "GDSCC", "anchor_breast_combo.csv"), low_memory=False)
+    ca, pa = pd.read_csv(os.path.join("Data", "Raw Data", "GDSCC", "anchor_colon_combo.csv"), low_memory=False), pd.read_csv(os.path.join("Data", "Raw Data", "GDSCC", "anchor_pancreas_combo.csv"), low_memory=False)
+    anchor = pd.concat([ba, ca, pa], ignore_index=True)
+    anchor.reset_index(inplace=True)
+    del anchor["index"]
+
+    print(anchor.columns)
+    
+    testColumns = ["Cell Line name", "Anchor Name", "Library Name", "Combo Name"]
+
+    for dName, df in zip(["Breast Anchor", "Pancreatic Anchor", "Colorectal Anchor", "All Anchors"],[ba, pa, ca, anchor]):
+        df["Combo Name"] = df.apply(lambda row: sorted([row["Anchor Name"], row["Library Name"]])[0] \
+                                                        + "###" + \
+                                                        sorted([row["Library Name"], row["Anchor Name"]])[1], axis = 1)
+        for testColumn in testColumns:
+            print(f"{dName} {testColumn}: {len(df[testColumn].unique())}")
+        allDrugs = pd.concat([df["Anchor Name"], df["Library Name"]])
+        print(f"{dName} Total drugs: {len(allDrugs.unique())}")
+
+    ## GDSCC matrix projects
+    print("\nGDSC^2 Matrix:\n")
+    m1 = pd.read_csv(os.path.join("Data", "Raw Data", "GDSCC", "gdsc-010_matrix_results.csv"))
+    sm = pd.read_csv(os.path.join("Data", "Raw Data", "GDSCC", "sandpiper-01_matrix_results.csv"))
+
+    #print(m1.columns)
+    #print([c for c in m1.columns if c not in sm.columns])
+    #print([c for c in sm.columns if c not in m1.columns])
+
+    dfs = [deepcopy(m1)]
+    for num in [7, 8, 9, 10]:
+        num = str(num).rjust(2, "0")
+        filename = f"gdsc-0{num}_matrix_results.csv"
+        dfs.append(pd.read_csv(os.path.join("Data", "Raw Data", "GDSCC", filename)))
+    total = pd.concat(dfs, ignore_index=True)
+    total["Combo Name"] = total.apply(lambda row: sorted([row["lib1_name"], row["lib2_name"]])[0] \
+                                                    + "###" + \
+                                                    sorted([row["lib1_name"], row["lib2_name"]])[1], axis = 1)
+    print(total.shape)
+    print(len(total["CELL_LINE_NAME"].unique()))
+    print(len(pd.concat([total["lib1_name"], total["lib2_name"]]).unique()))
+    print(len(total["Combo Name"].unique()))
+    
+
+    print(total.columns)        
+
+    return
+
+
+
+
+
+
+
 def main():
     ### Perform initial setup
     initial_setup()
@@ -815,30 +881,7 @@ def main():
         coreCount: int = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
 
-    m1 = pd.read_csv(os.path.join("Data", "Raw Data", "GDSCC", "gdsc-010_matrix_results.csv"))
-    sm = pd.read_csv(os.path.join("Data", "Raw Data", "GDSCC", "sandpiper-01_matrix_results.csv"))
 
-    print(m1.columns)
-    print([c for c in m1.columns if c not in sm.columns])
-    print([c for c in sm.columns if c not in m1.columns])
-
-    return
-
-    # GDSCC Anchor projects
-    ba = pd.read_csv(os.path.join("Data", "Raw Data", "GDSCC", "anchor_breast_combo.csv"), low_memory=False)
-    ca, pa = pd.read_csv(os.path.join("Data", "Raw Data", "GDSCC", "anchor_colon_combo.csv"), low_memory=False), pd.read_csv(os.path.join("Data", "Raw Data", "GDSCC", "anchor_pancreas_combo.csv"), low_memory=False)
-    print(ba.columns)
-    print(ba["Cancer Type"].unique())
-
-    return
-
-    # GDSC1/2
-    g1 = pd.read_excel(os.path.join("Data", "Raw Data", "GDSC1_fitted_dose_response_27Oct23.xlsx"))
-    g2 = pd.read_excel(os.path.join("Data", "Raw Data", "GDSC2_fitted_dose_response_27Oct23.xlsx"))
-
-    print(g1["WEBRELEASE"].unique())
-    print(g2["WEBRELEASE"].unique())
-    print(g1.columns)
 
     """
     # Visualising pKi vs ic50 data
@@ -955,10 +998,10 @@ def main():
         #        print(f"{modality} {side} drug count: {len(rel[modality][side])}")
     #"""
 
-    """
+    #"""
     ### Get All known Drug targets
     # Go through PubChem identifiers
-    pubchemchembl = pd.read_csv(os.path.join("Data", "Results", "pubchem-chembl.tsv"), sep = "\t")
+    pubchemchembl = pd.read_csv(os.path.join("Data", "Derived-Data", "pubchem-chembl.tsv"), sep = "\t")
 
     pubchemchembl.dropna(inplace = True)
     pubchemchembl.drop_duplicates("PubChem", inplace=True)
@@ -984,7 +1027,7 @@ def main():
 
     #print(f"{len(help)} unidentiable compounds:\n{help}")
     # Save unidentifiable compounds to tsv file
-    udp = os.path.join("Data", "Results", "unknown_drugs.tsv")
+    udp = os.path.join("Data", "Derived-Data", "unknown_drugs.tsv")
     if(os.path.exists(udp)):
         df = pd.read_csv(udp, sep = "\t")
     else:
@@ -1042,11 +1085,60 @@ def main():
     drugTargets = pd.DataFrame(data, columns = ["DRUG", "TARGET"])
     drugTargets.drop_duplicates(inplace = True)
     drugTargets["TARGET"] = drugTargets["TARGET"].str.replace("'","")
+    #print(drugTargets)
+
+    ## Get SC ratio scores for each target
+    scScores = pd.read_csv(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-AllDrugsByAllGenes.tsv"), sep = "\t")
+    scScores.set_index("symbol", inplace=True)
+    # Format columns/values on each dataframe
+    scScores.columns = [str(col).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for col in scScores.columns]
+    drugTargets["DRUG_STANDARD"] = [str(drug).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for drug in drugTargets["DRUG"].values]
+    relSC, thresh = [], []
+    for drug, gene in zip(drugTargets["DRUG_STANDARD"].values, drugTargets["TARGET"].values):
+        if(drug not in scScores.columns):
+            print(f"Drug {drug} not found in Survivability Correlations")
+            relSC.append(np.nan)
+            thresh.append(np.nan)
+            continue
+        if(gene not in scScores.index):
+            #print(f"Gene {gene} not found in Survivability Correlations")
+            relSC.append(np.nan)
+            thresh.append(np.nanmean(scScores[drug].values) + (3*np.nanstd(scScores[drug].values)))
+            continue
+        #print(scScores[drug].loc[gene])
+        val = scScores[drug].loc[gene]
+        if(type(val)==np.float64):
+            relSC.append(val)
+        else:
+            # There seems to be some weird issue with some genes being duplicated in the Survivability Correlations index,
+            # so I'm just using the maximum value found between these two for now
+            relSC.append(max(val.values))
+        thresh.append(np.nanmean(scScores[drug].values) + (3*np.nanstd(scScores[drug].values)))
+    
+    relSC = np.array(relSC, dtype = float)
+    thresh = np.array(thresh, dtype = float)
+
+    drugTargets["SURVIVABILITY CORRELATION"] = relSC
+    drugTargets["SURVIVABILITY TARGET RATIO"] = relSC / thresh
+    realRatios = relSC / thresh
+    realRatios = realRatios[~np.isnan(realRatios)]
+    #print(drugTargets)
+    realVals = relSC[~np.isnan(relSC)]
+    print((sorted(realRatios)[::-1])[50:130])
+    print(f"{realVals.shape[0]} SC values found out of {relSC.shape[0]} rows")
+    plt.plot(range(realRatios.shape[0]), sorted(realRatios)[::-1], color = "b")
+    plt.plot([0, realRatios.shape[0]], [1, 1], linestyle = "--", color = "red")
+    plt.xlabel("Drug Target")
+    plt.ylabel("Target Correlation Ratio")
+    plt.title("SC Score-SC Threshold Ratios of Putative Drug Targets")
+    plt.show()
+
+    return
     
     #"""
 
-    """
-    ### Make venn diagrams for drug information sources
+    #"""
+    ### Make venn diagrams for drug information sources (depends upon drugTarets section above working)
 
     # Make dictionary of sets
     allset = set()

@@ -48,7 +48,6 @@ def main():
     #print(f"{combos} unique combinations along {lines} cell lines")
     #print(drugData)
     gdsc()
-
     #for responseColumn in ["LN_IC50", "eMax"]:
     #    for fileSource in ["anchor", "matrix"]:
     #        gdscc(responseColumn=responseColumn, desiredFiles=fileSource)
@@ -469,11 +468,8 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     for filename in os.listdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store")):
         os.remove(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store", filename))
     os.rmdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))
-
-    # Update time recording variable
-    t_prev = time.time()
     
-    logFile.add(f"GDSC Calculation finished. Total time taken {((time.time())-t_prev)/60.0:.4} minutes")
+    logFile.add(f"GDSC Calculation finished. Total time taken {((time.time())-t_base)/60.0:.4} minutes")
     
     return
 
@@ -584,6 +580,9 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                 # If dealing with IC50 data, multiply is by -1 to transform it from LN(IC50) to pIC50 (pIC50 = -LN(IC50))
                 if("IC50" in responseColumn.upper()):
                     y *= -1
+                # If dealing with eMax data, take the natural log and multiply by -1 to obtain peMax (-Ln(eMax)) from eMax values
+                elif("emax" in responseColumn.lower()):
+                    y = -1 * np.log(y)
 
                 pr, pp = pearsonr(x, y)
                 prs.append(pr)
