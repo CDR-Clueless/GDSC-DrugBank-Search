@@ -121,8 +121,8 @@ def main(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logF
             continue
         for geneEnd in genes[i:]:
             # Ensure gene is valid
-            if(geneBase not in genesString):
-                badGenes[geneBase] = True
+            if(geneEnd not in genesString):
+                badGenes[geneEnd] = True
                 continue
             combs.append(deepcopy((geneBase, geneEnd)))
     
@@ -178,6 +178,10 @@ def main(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logF
 
 def pathCheckWorker(threadSimple: int, combinations: list[tuple], graphSTRING: ig.Graph, saveDir: str) -> dict:
     for comb in combinations:
+        # Set save directory and check if this combination's path has already been calculated
+        outPath = os.path.join(saveDir, f"{geneBase}-{geneTarget}.json")
+        if(os.path.exists(outPath)):
+            continue
         # Unpack combination to start and stop gene
         geneBase, geneTarget = comb[0], comb[1]
         shortpath = graphSTRING.get_shortest_paths(geneBase, to=geneTarget, weights=graphSTRING.es["combined_score"], output="vpath")[0]
@@ -190,7 +194,7 @@ def pathCheckWorker(threadSimple: int, combinations: list[tuple], graphSTRING: i
             pathnodes[f"Path node {i}"] = {"name": pathnodes_raw[i].attributes()["name"]}
 
         # Save the details of this combination
-        with open(os.path.join(saveDir, f"{geneBase}-{geneTarget}.json"), "w") as f:
+        with open(outPath, "w") as f:
             json.dump(pathnodes, f)
 
     return
