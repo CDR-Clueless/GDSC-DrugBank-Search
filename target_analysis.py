@@ -135,21 +135,35 @@ def main(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logF
     batchList: list = split_list(combs, coreCount)
 
     # Pass these combinations of genes to parallel workers to get (collectively) all pathways
-    #mp.Pool(coreCount).starmap_async(pathCheckWorker,
-                #[(i, batchList[i], g_global, os.path.join(saveDir, "Gene-Paths"))
-                #for i in range(coreCount)]).get()
-    pathCheckWorker(0, combs, g_global, os.path.join(saveDir, "Gene-Paths"))
+    mp.Pool(coreCount).starmap_async(pathCheckWorker,
+                [(i, batchList[i], g_global, os.path.join(saveDir, "Gene-Paths"))
+                for i in range(coreCount)]).get()
     
     t_taken = time.time() - t_base
     logFile.add(f"Saved {len(combs)} calculated pathways between {len(genes)-len(badGenes)} valid genes; took {t_taken/60:.2f} minutes, i.e. {t_taken/3600:.1f} hours")
     
+    # Coallate these calculations so each gene has a single json file with all of its pathways
     logFile.add(f"Coallating results")
     t_base = time.time()
 
-    pathCoallateWorker(1, [gene for gene in genes if gene not in badGenes], [gene for gene in genes if gene not in badGenes], os.path.join(saveDir, "Gene-Paths"))
+    goodGenes = [gene for gene in genes if gene not in badGenes]
+    batchList = split_list(goodGenes, coreCount)
+    mp.Pool(coreCount).starmap_async(pathCoallateWorker,
+                [(i, batchList[i], goodGenes, os.path.join(saveDir, "Gene-Paths"))
+                for i in range(coreCount)]).get()
+    #pathCoallateWorker(1, goodGenes, goodGenes, os.path.join(saveDir, "Gene-Paths"))
     
     t_taken = time.time()-t_base
-    logFile.add(f"Results coallated ({t_taken/60:.2f} minutes)")
+    logFile.add(f"Results coallated ({t_taken/60:.2f} minutes). Deleting raw files.")
+
+    for geneBase in goodGenes:
+        for geneEnd in goodGenes:
+            filedir = os.path.join(saveDir, "Gene-Paths", f"{geneBase}-{geneEnd}.json")
+            if(os.path.exists(filedir)):
+                os.remove(filedir)
+    
+    t_taken = time.time() - t_start
+    logFile.add(f"Raw/calculation files deleted. total time taken {t_taken/60:.2f} minutes, i.e. {t_taken/3600:.1f} hours")
     return
 
     ## TODO: Add code to use all pathway results to make a complete matrix
