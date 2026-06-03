@@ -126,30 +126,30 @@ def main(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logF
                 continue
             combs.append(deepcopy((geneBase, geneEnd)))
     
-    logFile.add(f"The following genes were found in GDSC which are not within the STRING database: {','.join(badGenes.keys())}")
+    logFile.add(f"{len(badGenes)} genes were found in GDSC which are not within the STRING database. Saving to {os.path.join(saveDir, 'bad_genes.txt')}")
+    with open(os.path.join(saveDir, "bad genes.txt"), "w") as f:
+        f.write("\n".join(list(badGenes.keys())))
     logFile.add(f"Calculating shortest paths for {len(combs)} combinations of valid genes")
     
     # Split up list of combinations into (roughly) equally-sized sub-lists which will all be passed to parallel workers
     batchList: list = split_list(combs, coreCount)
 
     # Pass these combinations of genes to parallel workers to get (collectively) all pathways
-    mp.Pool(coreCount).starmap_async(pathCheckWorker,
-                [(i, batchList[i], g_global, os.path.join(saveDir, "Gene-Paths"))
-                for i in range(coreCount)]).get()
+    #mp.Pool(coreCount).starmap_async(pathCheckWorker,
+                #[(i, batchList[i], g_global, os.path.join(saveDir, "Gene-Paths"))
+                #for i in range(coreCount)]).get()
+    pathCheckWorker(0, combs, g_global, os.path.join(saveDir, "Gene-Paths"))
     
     t_taken = time.time() - t_base
     logFile.add(f"Saved {len(combs)} calculated pathways between {len(genes)-len(badGenes)} valid genes; took {t_taken/60:.2f} minutes, i.e. {t_taken/3600:.1f} hours")
-    return
     
-    results = resultsList[0]
-    for result in resultsList[1:]:
-        results = results | result
+    logFile.add(f"Coallating results")
+    t_base = time.time()
+
+    pathCoallateWorker(1, [gene for gene in genes if gene not in badGenes], [gene for gene in genes if gene not in badGenes], os.path.join(saveDir, "Gene-Paths"))
     
-    with open(os.path.join(saveDir, "Gene-Paths", f"{geneBase}_Paths.json"), "w") as f:
-        json.dump(results, f)
-    
-    t_taken = time.time() - t_base()
-    logFile.add(f"Saved {len(tocheck[i:])} calculated pathways for gene {geneBase}; took {t_taken/60:.2f} minutes, total time elapsed {t_taken/3600:.1f} hours")
+    t_taken = time.time()-t_base
+    logFile.add(f"Results coallated ({t_taken/60:.2f} minutes)")
     return
 
     ## TODO: Add code to use all pathway results to make a complete matrix
@@ -176,14 +176,15 @@ def main(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logF
     """
     return
 
-def pathCheckWorker(threadSimple: int, combinations: list[tuple], graphSTRING: ig.Graph, saveDir: str) -> dict:
+def pathCheckWorker(threadSimple: int, combinations: list[tuple], graphSTRING: ig.Graph, saveDir: str) -> None:
     for comb in combinations:
+        # Unpack combination to start and stop gene
+        geneBase, geneTarget = comb[0], comb[1]
         # Set save directory and check if this combination's path has already been calculated
         outPath = os.path.join(saveDir, f"{geneBase}-{geneTarget}.json")
         if(os.path.exists(outPath)):
             continue
-        # Unpack combination to start and stop gene
-        geneBase, geneTarget = comb[0], comb[1]
+        # Get path
         shortpath = graphSTRING.get_shortest_paths(geneBase, to=geneTarget, weights=graphSTRING.es["combined_score"], output="vpath")[0]
         # Convert these into a list of nodes - by default it has start, [intermediates], stop as the results
         # So the first and last entry COULD BE removed for space efficiency as the starting and stopping points are known
@@ -199,6 +200,54 @@ def pathCheckWorker(threadSimple: int, combinations: list[tuple], graphSTRING: i
 
     return
 
+def pathCoallateWorker(threadSimple: int, genes: list[str], allGenes: list[str], saveDir: str) -> None:
+    """Worker function to create formated json outputs for a list of genes
+
+    Args:
+        threadSimple (int): _description_
+        genes (list[str]): _description_
+        allGenes (list[str]): _description_
+        saveDir (str): _description_
+    """
+
+    for geneBase in genes:
+        # First, generate lists of all possible json combination files this base gene could be involved in
+        originFiles, destinationFiles = [], []
+        for geneNew in allGenes:
+            originFiles.append(f"{geneBase}-{geneNew}.json")
+            destinationFiles.append(f"{geneNew}-{geneBase}.json")
+        # Remove the baseGene-baseGene duplicate
+        destinationFiles.remove(f"{geneBase}-{geneBase}.json")
+        # Next, refine these lists based on what files actually exist
+        for i in range(len(originFiles))[::-1]:
+            fileDir = os.path.join(saveDir, originFiles[i])
+            if(os.path.exists(fileDir)):
+                continue
+            originFiles.pop(i)
+        for i in range(len(destinationFiles))[::-1]:
+            fileDir = os.path.join(saveDir, destinationFiles[i])
+            if(os.path.exists(fileDir)):
+                continue
+            destinationFiles.pop(i)
+        # Now, take these existing files and coallate them to make a single json detailing all pathways from this base gene
+        pathways = {}
+        for file in originFiles:
+            with open(os.path.join(saveDir, file), "r") as f:
+                pathways[file.split("-")[1].split(".")[0]] = deepcopy(json.load(f))
+        for file in destinationFiles:
+            with open(os.path.join(saveDir, file), "r") as f:
+                reversedPath = json.load(f)
+            path = {"path length": reversedPath["path length"]}
+            for nodeNo in range(path["path length"]+1)[::-1]:
+                newNodeNo = path["path length"] - nodeNo
+                path[f"Path node {newNodeNo}"] = deepcopy(reversedPath[f"Path node {nodeNo}"])
+            pathways[file.split("-")[0]] = deepcopy(path)
+        
+        # Export the pathways of this gene as a final file
+        with open(os.path.join(saveDir, f"{geneBase}-pathways.json"), "w") as f:
+            json.dump(pathways, f)
+    
+    return
 
 ### Legacy code
 """
