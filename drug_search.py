@@ -7,12 +7,15 @@ Created Oct 2025
 """
 
 import os
+from copy import deepcopy
+
 import numpy as np
 import pandas as pd
 from lxml import etree
 from tqdm import tqdm
 from urllib import request
 import re
+import ast
 
 from typing import Optional, Union
 
@@ -113,6 +116,23 @@ def get_targets_all(data: Optional[Union[list, tuple]] = None,
     converter = {str(chembltargets["PubChem"].values[i]): chembltargets["ChEMBL Gene Targets"].values[i] for i in range(len(chembltargets))}
     df["PubChem-ChEMBL"] = df["PubChem"].astype(str).map(converter)
     df.drop(["PubChem"], axis = 1, inplace = True)
+
+    # Add in manually-identified known drug targets
+    ## TODO: STILL BEING WORKED ON!
+    manualLoc = os.path.join("Data", "Derived-Data", "unknown_drugs.tsv")
+    if(os.path.exists(manualLoc)):
+        manual = pd.read_csv(manualLoc, sep = "\t")
+        df["Manual"] = [np.nan for _ in range(len(df))]
+        for i, row in manual.iterrows():
+            drug = str(row["Drug"])
+            targs = row["Gene Targets"]
+            if(type(targs) is str):
+                targs = [n.strip() for n in ast.literal_eval(targs)]
+                print(f"Identified list {targs}")
+                print(df.index)
+                df.loc[df.index==drug] = deepcopy(targs)
+                print(df.loc[df.index==drug])
+        return
 
     #df=df.where(df.astype(bool),np.nan, inplace = False)
     #df.replace({"DrugBank": {{}: np.nan}, "GDSC": {[]: np.nan}}, inplace=True)

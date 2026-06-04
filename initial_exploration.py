@@ -106,75 +106,6 @@ def gaussian(x, A, mu, sigma):
 def bimodal(x, A1, mu1, sigma1, A2, mu2, sigma2):
     return gaussian(x, A1, mu1, sigma1) + gaussian(x, A2, mu2, sigma2)
 
-def calculate_target_paths(g: ig.Graph, target: str, startPoints: list) -> dict:
-    paths = {}
-    for sp in startPoints:
-        shortpath = g.get_shortest_paths(sp, to=target, weights=g.es["combined_score"], output="vpath")[0]
-        # Convert these into a list of nodes - by default it has start, [intermediates], stop, 
-        # So the last entry is removed as the stopping point (the target) is known and the same for all
-        pathnodes = [g.vs[v] for v in shortpath][:-1]
-        # Format this path into a more readable/usable form
-        paths[sp] = deepcopy({f"Path node {i}": {"name": pathnodes[i].attributes()["name"],
-                                                 "survivability": pathnodes[i].attributes()["survivability"]} 
-                                for i in range(len(pathnodes))})
-        # Record path length for easy access to distance between predicted target and actual target
-        paths[sp]["path length"] = len(pathnodes)
-    return paths
-
-def calculate_shortest_path(g: ig.Graph, target: str, startPoints: list) -> dict:
-    shortest, shortestpath = np.inf, []
-    for sp in startPoints:
-        shortpath = g.get_shortest_paths(sp, to=target, weights=g.es["combined_score"], output="vpath")[0]
-        if(shortest>len(shortpath)):
-            shortestpath = deepcopy(shortpath)
-            shortest = len(shortpath)
-    # Get the nodes in this shortest path
-    pathnodes = [g.vs[v] for v in shortestpath]
-    return {"path length": len(pathnodes)-1,
-            "path": \
-                {f"Path node {i}": {"name": pathnodes[i].attributes()["name"],
-                        "survivability": pathnodes[i].attributes()["survivability"]} \
-                                for i in range(len(pathnodes))}}
-
-def calculate_drug_paths(drug: str, g_base: ig.Graph, tdpfp: str, drugGeneSurv: dict, allbyallcol: pd.Series, drugTargetsRefined: pd.DataFrame,
-                         coresPerProcess: Optional[int]):
-    # If there are no targets or this drug's paths have already been calculated, skip
-    targets = drugTargetsRefined["Target"].values
-    if(len(targets)<1):
-        return "No Targets"
-    if(os.path.exists(os.path.join(tdpfp, f"{drug}.json"))):
-        print(f"Found drug path data already calculated for {drug}; skipping...")
-        return "Complete"
-    #print(f"Calculating {drug}...")
-    # Make sure there's at least 1 core available if it isn't a Nonetype
-    if(coresPerProcess is not None):
-        if(type(coresPerProcess)==int):
-            coresPerProcess = max(coresPerProcess, 1)
-        else:
-            coresPerProcess = None
-    # Set up results
-    drugResults = {}
-    # Get the appropriate threshold for 'starting point' genes
-    survivability_cutoff = get_survivability_threshold(drug, drugGeneSurv, np.array(allbyallcol.values, dtype = float))
-    # Get drug targets and save results output
-    g = deepcopy(g_base)
-    g.vs["survivability"] = [allbyallcol.loc[gn] if gn in allbyallcol.index else float("NaN") for gn in g.vs["name"]]
-    startPoints = [n for s,n in zip(g.vs["survivability"], g.vs["name"]) if s >= survivability_cutoff]
-    # Get the shortest path for each target using parallel processing or non-parallel processing if specified
-    if(coresPerProcess is None):
-        results = []
-        for target in targets:
-            results.append(calculate_target_paths(deepcopy(g), target, startPoints))
-    else:
-        with mp.Pool(coresPerProcess) as p:
-            results = p.starmap(calculate_target_paths, [(deepcopy(g), target, startPoints) for target in targets], chunksize = int(len(targets)/coresPerProcess))
-    for target, result in zip(targets, results):
-        drugResults[target] = result
-    with open(os.path.join(tdpfp, f"{drug}.json"), "w") as f:
-        json.dump(drugResults, f)
-    #print(f"Saved graph path data for {drug}")
-    return
-
 def get_cosmic_columns(cosdir: str = os.path.join("Data", "Raw Data", "COSMIC"),
                        outdir: str = os.path.join("Data", "Results", "COSMIC-columns.txt")):
     if(os.path.exists(outdir)==True):
@@ -862,8 +793,227 @@ def data_overview():
 
     return
 
+def target_SC_analysis(saveOutput: Optional[str] = None) -> None:
+    ### Get All known Drug targets
+    # Go through PubChem identifiers
+    pubchemchembl = pd.read_csv(os.path.join("Data", "Derived-Data", "pubchem-chembl.tsv"), sep = "\t")
 
+    pubchemchembl.dropna(inplace = True)
+    pubchemchembl.drop_duplicates("PubChem", inplace=True)
+    #pubchemchembl = {pubchemchembl["PubChem"].values[i]: pubchemchembl["ChEMBL"].values[i] for i in range(len(pubchemchembl))}
 
+    ## TODO: Currently end function early as debugging get_targets_all
+    check = get_targets_all()
+    print(check)
+    return
+
+    # Get unidentifiable compounds
+    nonan = check.dropna(axis = "index", how = "all", inplace = False)
+    help = []
+    for dn in check.index:
+        if(dn not in nonan.index):
+            help.append(dn)
+
+    # Save unidentifiable compounds to tsv file
+    udp = os.path.join("Data", "Derived-Data", "unknown_drugs.tsv")
+    if(os.path.exists(udp)):
+        df = pd.read_csv(udp, sep = "\t")
+    else:
+        df = pd.DataFrame(data = None, columns = ["Drug", "Gene Targets"])
+    toadd = [h for h in help if h not in df["Drug"].values]
+    toadd = pd.DataFrame(data = zip(toadd, [np.nan for _ in range(len(toadd))]), columns = ["Drug", "Gene Targets"])
+    output = pd.concat((df, toadd))
+    output.to_csv(udp, sep = "\t", lineterminator="\n", index = False)
+
+    # Merge the Internal compound and manual drug target information into the main dataframe
+    manTargDict = {output["Drug"].values[i]: output["Gene Targets"].values[i] for i in range(len(output))}
+    check["Manual"] = check.index.map(manTargDict)
+
+    internals = output.loc[output["Alternate Names"]=="INTERNAL COMPOUND"]["Drug"]
+    internals = {i: True for i in internals}
+    check["Internal Compound"] = check.index.map(internals)
+
+    # Refine the DataFrame so we've just got a list of drugs and targets
+    drugTargets = check.loc[check["Internal Compound"]!=True]
+    del drugTargets["Internal Compound"]
+    # Get all relevant entries from drugTargets
+    targets = {}
+    for row in drugTargets.iterrows():
+        drug = row[0]
+        entry = row[1]
+        new = []
+        # drop NaN entries
+        entry = entry.dropna()
+        # Get all relevant values
+        try:
+            for i in entry.index:
+                # Get just the gene name targets as lists and add them to target list
+                if(i=="DrugBank"):
+                    new += list(entry[i].keys())
+                else:
+                    if(type(entry[i]) == list):
+                        tosplit = ",".join(entry[i])
+                    elif(type(entry[i]) == str):
+                         tosplit = entry[i]
+                    else:
+                        tosplit = ",".join(entry[i].tolist())
+                    tosplit = tosplit.replace(" ","").replace("[","").replace("]","")
+                    new += tosplit.split(",")
+            targets[drug] = deepcopy(new)
+        except Exception as e:
+            print(f"Error with entry {entry}: {e}")
+            break
+    
+    data = []
+    for drug in targets.keys():
+        for i in range(len(targets[drug])):
+            data.append((drug, targets[drug][i]))
+
+    drugTargets = pd.DataFrame(data, columns = ["DRUG", "TARGET"])
+    drugTargets.drop_duplicates(inplace = True)
+    drugTargets["TARGET"] = drugTargets["TARGET"].str.replace("'","")
+
+    ## Get SC ratio scores for each target (requires previous code section getting targets to work)
+    scScores = pd.read_csv(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-AllDrugsByAllGenes.tsv"), sep = "\t")
+    scScores.set_index("symbol", inplace=True)
+    # Format columns/values on each dataframe
+    scScores.columns = [str(col).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for col in scScores.columns]
+    drugTargets["DRUG_STANDARD"] = [str(drug).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for drug in drugTargets["DRUG"].values]
+    # List for storing [drug, Target gene SC score, drug threshold]
+    results = []
+    for drug, gene in zip(drugTargets["DRUG_STANDARD"].values, drugTargets["TARGET"].values):
+        if(drug not in scScores.columns):
+            print(f"Drug {drug} not found in Survivability Correlations")
+            results.append((drug, np.nan, np.nan))
+            continue
+        elif(gene not in scScores.index):
+            results.append((drug, np.nan, np.nanmean(scScores[drug].values) + (3*np.nanstd(scScores[drug].values))))
+            continue
+        val = scScores[drug].loc[gene]
+        if(type(val)==np.float64):
+            results.append((drug, val, np.nanmean(scScores[drug].values) + (3*np.nanstd(scScores[drug].values))))
+        else:
+            # There seems to be some weird issue with some genes being duplicated in the Survivability Correlations index,
+            # so I'm just using the maximum value found between these two for now
+            results.append((drug, max(val.values), np.nanmean(scScores[drug].values) + (3*np.nanstd(scScores[drug].values))))
+    
+    relSC = np.array([result[1] for result in results], dtype = float)
+    thresh = np.array([result[2] for result in results], dtype = float)
+
+    drugTargets["SURVIVABILITY CORRELATION"] = relSC
+    drugTargets["SURVIVABILITY TARGET RATIO"] = relSC / thresh
+    realRatios = relSC / thresh
+    realRatios = realRatios[~np.isnan(realRatios)]
+    realVals = relSC[~np.isnan(relSC)]
+    print(f"{realVals.shape[0]} SC values found out of {relSC.shape[0]} rows")
+    plt.scatter(range(realRatios.shape[0]), sorted(realRatios)[::-1], color = "b")
+    plt.plot([0, realRatios.shape[0]], [1, 1], linestyle = "--", color = "red")
+    plt.xlabel("Drug Target")
+    plt.ylabel("Target Correlation Ratio")
+    plt.title("SC Score-SC Threshold Ratios of Putative Drug Targets")
+    if(saveOutput is None):
+        plt.show()
+    else:
+        plt.savefig(os.path.join(saveOutput, "GDSC All Target Scores ratios.png"))
+    plt.clf()
+
+    # Plot the highest ratio for each drug
+    maxRatios = []
+    for drug in drugTargets["DRUG"].unique():
+        ratios = drugTargets.loc[drugTargets["DRUG"]==drug]["SURVIVABILITY TARGET RATIO"].values
+        # Remove NaN values
+        ratios = ratios[~np.isnan(ratios)]
+        if(ratios.shape[0]>0):
+            maxRatios.append(np.max(ratios))
+    plt.scatter(range(len(maxRatios)), sorted(maxRatios)[::-1], color = "b")
+    plt.plot([0, len(maxRatios)-1], [1, 1], linestyle = "--", color = "red")
+    plt.xlabel("Best Scoring Drug Target")
+    plt.ylabel("Target Correlation Ratio")
+    plt.title("SC Score-SC Threshold Ratios of Best Scoring Putative Drug Targets")
+    if(saveOutput is None):
+        plt.show()
+    else:
+        plt.savefig(os.path.join(saveOutput, "GDSC Best Target Scores ratios.png"))
+    plt.clf()
+
+    ## Plotting number of genes with SC scores above putative targets
+    # List for storing [drug, Target gene SC score, drug threshold]
+    results = {}
+    for drug, gene in zip(drugTargets["DRUG_STANDARD"].values, drugTargets["TARGET"].values):
+        if(drug not in results):
+            results[drug] = {}
+        if(drug not in scScores.columns):
+            results[drug][gene] = np.nan
+            continue
+        elif(gene not in scScores.index):
+            results[drug][gene] = np.nan
+            continue
+        val = scScores[drug].loc[gene]
+        if(type(val)!=np.float64):
+            # There seems to be some weird issue with some genes being duplicated in the Survivability Correlations index,
+            # so I'm just using the maximum value found between these two for now
+            val = np.nanmax(val.values)
+        results[drug][gene] = np.sum((scScores[drug].values>val))
+    
+    counts = np.array([results[drug][gene] for drug in results for gene in results[drug]], dtype = float)
+    counts = sorted(counts[~np.isnan(counts)].astype(int))
+    plt.scatter(range(len(counts)), counts)
+    plt.xlabel("Drug Target")
+    plt.ylabel("Number of higher-SC-scoring genes")
+    if(saveOutput is None):
+        plt.show()
+    else:
+        plt.savefig(os.path.join(saveOutput, "GDSC All Higher Target SC Counts.png"))
+    plt.clf()
+
+    # Plot these numbers but for the best-performing target per drug
+    bestCounts: np.ndarray = np.zeros(len(results), dtype = float)
+    for i, drug in enumerate(results.keys()):
+        bestCounts[i] = np.nanmax([results[drug][gene] for gene in results[drug]])
+    bestCounts = sorted(bestCounts[~np.isnan(bestCounts)].astype(int))
+    plt.scatter(range(len(bestCounts)), bestCounts)
+    plt.xlabel("Best Drug Target")
+    plt.ylabel("Number of higher-SC-scoring genes")
+    if(saveOutput is None):
+        plt.show()
+    else:
+        plt.savefig(os.path.join(saveOutput, "GDSC Best Higher Target SC Counts.png"))
+    plt.clf()
+
+    ## Get details on drugs missing from putatitve target lists and putative targets missing from GDSC Survivability Correlation data
+    drugs_missing, gene_missing, extra_drugs, nonTarget_drugs = {}, {}, {}, {}
+    for drug, gene in zip(drugTargets["DRUG_STANDARD"].values, drugTargets["TARGET"].values):
+        if(drug not in scScores.columns):
+            drugs_missing[drug] = True
+        elif(gene not in scScores.index):
+            gene_missing[gene] = True
+    for drug in scScores.columns:
+        if(drug not in drugTargets["DRUG_STANDARD"].values):
+            extra_drugs[drug] = True
+        else:
+            someGene = False
+            for gene in drugTargets.loc[drugTargets["DRUG_STANDARD"]==drug]["TARGET"].values:
+                if(gene in scScores.index):
+                    someGene = True
+            if(not someGene):
+                nonTarget_drugs[drug] = True
+
+    drugMissingString: str = ', '.join([str(drug) for drug in drugs_missing.keys()])
+    geneMissingString: str = ', '.join([str(gene) for gene in gene_missing.keys()])
+    extraDrugString: str = ', '.join([str(drug) for drug in extra_drugs.keys()])
+    nonTargetDrugString: str = ', '.join([str(drug) for drug in nonTarget_drugs.keys()])
+    
+    outString: str = f"{len(drugs_missing)} Drugs in putative target list not found in GDSC Data:\n{drugMissingString}\n\n\
+{len(gene_missing)} Gene Targets in putative target list not found in GDSC Data:\n{geneMissingString}\n\n\
+{len(extra_drugs)} Drugs in GDSC Data not found in putative target list:\n{extraDrugString}\n\n\
+{len(nonTarget_drugs)} Drugs in GDSC Data with no valid putative target:\n{nonTargetDrugString}"
+    if(saveOutput is None):
+        print(outString)
+    else:
+        with open(os.path.join(saveOutput, "Invalid Drugs and Targets.txt"), "w") as f:
+            f.write(outString)
+
+    return
 
 
 
@@ -881,7 +1031,7 @@ def main():
         coreCount: int = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
 
-
+    target_SC_analysis(saveOutput=os.path.join("Data", "Results", "Target-Analysis"))
 
     """
     # Visualising pKi vs ic50 data
@@ -998,7 +1148,7 @@ def main():
         #        print(f"{modality} {side} drug count: {len(rel[modality][side])}")
     #"""
 
-    #"""
+    """
     ### Get All known Drug targets
     # Go through PubChem identifiers
     pubchemchembl = pd.read_csv(os.path.join("Data", "Derived-Data", "pubchem-chembl.tsv"), sep = "\t")
@@ -1085,59 +1235,10 @@ def main():
     drugTargets = pd.DataFrame(data, columns = ["DRUG", "TARGET"])
     drugTargets.drop_duplicates(inplace = True)
     drugTargets["TARGET"] = drugTargets["TARGET"].str.replace("'","")
-    #print(drugTargets)
-
-    ## Get SC ratio scores for each target
-    scScores = pd.read_csv(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-AllDrugsByAllGenes.tsv"), sep = "\t")
-    scScores.set_index("symbol", inplace=True)
-    # Format columns/values on each dataframe
-    scScores.columns = [str(col).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for col in scScores.columns]
-    drugTargets["DRUG_STANDARD"] = [str(drug).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for drug in drugTargets["DRUG"].values]
-    relSC, thresh = [], []
-    for drug, gene in zip(drugTargets["DRUG_STANDARD"].values, drugTargets["TARGET"].values):
-        if(drug not in scScores.columns):
-            print(f"Drug {drug} not found in Survivability Correlations")
-            relSC.append(np.nan)
-            thresh.append(np.nan)
-            continue
-        if(gene not in scScores.index):
-            #print(f"Gene {gene} not found in Survivability Correlations")
-            relSC.append(np.nan)
-            thresh.append(np.nanmean(scScores[drug].values) + (3*np.nanstd(scScores[drug].values)))
-            continue
-        #print(scScores[drug].loc[gene])
-        val = scScores[drug].loc[gene]
-        if(type(val)==np.float64):
-            relSC.append(val)
-        else:
-            # There seems to be some weird issue with some genes being duplicated in the Survivability Correlations index,
-            # so I'm just using the maximum value found between these two for now
-            relSC.append(max(val.values))
-        thresh.append(np.nanmean(scScores[drug].values) + (3*np.nanstd(scScores[drug].values)))
-    
-    relSC = np.array(relSC, dtype = float)
-    thresh = np.array(thresh, dtype = float)
-
-    drugTargets["SURVIVABILITY CORRELATION"] = relSC
-    drugTargets["SURVIVABILITY TARGET RATIO"] = relSC / thresh
-    realRatios = relSC / thresh
-    realRatios = realRatios[~np.isnan(realRatios)]
-    #print(drugTargets)
-    realVals = relSC[~np.isnan(relSC)]
-    print((sorted(realRatios)[::-1])[50:130])
-    print(f"{realVals.shape[0]} SC values found out of {relSC.shape[0]} rows")
-    plt.plot(range(realRatios.shape[0]), sorted(realRatios)[::-1], color = "b")
-    plt.plot([0, realRatios.shape[0]], [1, 1], linestyle = "--", color = "red")
-    plt.xlabel("Drug Target")
-    plt.ylabel("Target Correlation Ratio")
-    plt.title("SC Score-SC Threshold Ratios of Putative Drug Targets")
-    plt.show()
-
-    return
     
     #"""
 
-    #"""
+    """
     ### Make venn diagrams for drug information sources (depends upon drugTarets section above working)
 
     # Make dictionary of sets

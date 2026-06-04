@@ -23,19 +23,21 @@ from typing import Optional
 CLEAN_DATA_DIR: str = os.path.join("Data", "Laurence-Data")
 
 from data_handler import DataHandler
-from drug_search import make_dir
+from drug_search import make_dir, get_targets_all
+from logger import Logger
 
 class CorrelationPlotter(DataHandler):
-    def __init__(self, coreCount: Optional[int], allByAll: str = os.path.join(CLEAN_DATA_DIR, "AllGenesByAllDrugs.tsv")):
+    def __init__(self, coreCount: Optional[int] = None, allByAll: str = os.path.join(CLEAN_DATA_DIR, "AllGenesByAllDrugs.tsv")):
         # Call super init function and insert the relevant AllGenesByAllDrugs data into the instance
         super().__init__((("AllByAll", allByAll),
-                          ("comboSquared", os.path.join("Data","Results","Survivability-Correlations","GDSCC-Combo eMax-AllDrugsByAllGenes.tsv")),
-                          ("leftSquared", os.path.join("Data","Results","Survivability-Correlations","GDSCC-Left Drug eMax-AllDrugsByAllGenes.tsv")),
-                          ("rightSquared", os.path.join("Data","Results","Survivability-Correlations","GDSCC-Right Drug eMax-AllDrugsByAllGenes.tsv"))))
+                          #("comboSquared", os.path.join("Data","Results","Survivability-Correlations","GDSCC-Combo eMax-AllDrugsByAllGenes.tsv")),
+                          #("leftSquared", os.path.join("Data","Results","Survivability-Correlations","GDSCC-Left Drug eMax-AllDrugsByAllGenes.tsv")),
+                          #("rightSquared", os.path.join("Data","Results","Survivability-Correlations","GDSCC-Right Drug eMax-AllDrugsByAllGenes.tsv"))
+                          ))
         # Make sure the columns are named correctly and indexes are set
         self.datasets["AllByAll"] = self.datasets["AllByAll"].rename(columns = {"Unnamed: 0": "Drug"})
-        for key in ["comboSquared", "leftSquared", "rightSquared"]:
-            self.datasets[key] = self.datasets[key].set_index("symbol")
+        #for key in ["comboSquared", "leftSquared", "rightSquared"]:
+            #self.datasets[key] = self.datasets[key].set_index("symbol")
         # Define output path
         self.datasets["outputBase"] = os.path.join("Data", "Results", allByAll.split(os.sep)[-1].replace("AllGenesByAllDrugs.tsv",""))
         # Define number of available cores to utilise in multiprocessing
@@ -47,14 +49,17 @@ class CorrelationPlotter(DataHandler):
         else:
             self.coreCount = max(mp.cpu_count()-2, 1)
     
-    def plot_all(self, stds: list = [3], quantiles: list = []) -> None:
-        self.plot_squared_drug_correlations(stds, quantiles)
-        self.plot_squared_gene_correlations(stds, quantiles)
-        self.plot_drug_correlations(stds, quantiles)
+    def plot_all(self, stds: list = [3], quantiles: list = [], plot_targets: bool = True) -> None:
+        self.plot_drug_correlations(stds, quantiles, plot_targets = plot_targets)
         self.plot_gene_correlations(stds, quantiles)
         self.plot_sd_cumulative("both")
         return
     
+    def plot_all_squared(self, stds: list = [3], quantiles: list = []) -> None:
+        self.plot_squared_drug_correlations(stds, quantiles)
+        self.plot_squared_gene_correlations(stds, quantiles)
+        return
+        
     def __get_stats_markers(self, stds: list = [], quantiles: list = []) -> dict[str, list[float]]:
         # Set up dictionary output for quantiles and SDs json
         resVals = {"quantiles": [0.001, 0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99, 0.999], "devs": [1., 2., 3.]}
@@ -365,7 +370,8 @@ class CorrelationPlotter(DataHandler):
         plt.clf()
         return output
 
-    def plot_drug_correlations(self, graphStds: list = [3], graphQuantiles: list = [], dataStds: list = [-3, -2, -1, 1, 2, 3], dataQuantiles: list = [0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]) -> None:
+    def plot_drug_correlations(self, graphStds: list = [3], graphQuantiles: list = [], plot_targets: bool = False,
+                               dataStds: list = [-3, -2, -1, 1, 2, 3], dataQuantiles: list = [0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]) -> None:
         # Make sure all details from the graph list is in the data list
         for entry in graphStds:
             if(entry not in dataStds):
@@ -373,17 +379,42 @@ class CorrelationPlotter(DataHandler):
         for entry in graphQuantiles:
             if(entry not in dataQuantiles):
                 dataQuantiles.append(entry)
-        # Get data
+        # Get All by All data
         gxd = self.datasets["AllByAll"]
+        # If plotting target scores, get the DataFrame of drug targets in an easier-to-use-for-this-purpose dictionary {Drug: {information}} form
+        if(plot_targets):
+            targets: pd.DataFrame = get_targets_all()
+            # Convert this to a dictionary for easier access
+            targetDict: dict = targets.to_dict(orient = "index")
+            # Remove gene loci from DrugBank drugs so this is more standardised
+            for key in targetDict:
+                if(type(targetDict[key]["DrugBank"])==dict):
+                    targetDict[key]["DrugBank"] = np.array(list(targetDict[key]["DrugBank"].keys()), dtype = object)
+            # Format drug names in targetDict
+            todel = []
+            for key in list(targetDict.keys()):
+                newkey = key.upper().replace(" ","")
+                if(newkey!=key):
+                    targetDict[key.upper().replace(" ","")] = deepcopy(targetDict[key])
+                    todel.append(key)
+            for key in todel:
+                del targetDict[key]
+        # Set pyplot theme and output directory
         sns.set_theme()
         results_dir = self.datasets["outputBase"] + "Drug-gene correlation frequency histograms"
         make_dir(results_dir)
         # Set up dictionary output for quantiles and SDs json
         sres, resVals = {}, self.__get_stats_markers(dataStds, dataQuantiles)
         # Go through rows (i.e. drugs) for drug score distribution analysis in parallel
+        logFile = Logger("logDrugHistogram.txt")
+        logFile.clear()
         with mp.Pool(self.coreCount) as p:
-            results = p.starmap(self.drug_correlations_worker,
-                                [(row, results_dir, graphStds, graphQuantiles, resVals) for i, row in gxd.iterrows()])
+            if(not plot_targets):
+                results = p.starmap(self.drug_correlations_worker,
+                                    [(row, results_dir, graphStds, graphQuantiles, resVals, None, logFile) for i, row in gxd.iterrows()])
+            if(plot_targets):
+                results = p.starmap(self.drug_correlations_worker,
+                                    [(i, row, results_dir, graphStds, graphQuantiles, resVals, targetDict, logFile) for i, row in gxd.iterrows()])
         # Add all these parallel-calculated results to main results output
         for result in results:
             sres.update(result)
@@ -391,13 +422,37 @@ class CorrelationPlotter(DataHandler):
             json.dump(sres, f, indent = 4)
         return
 
-    def drug_correlations_worker(self, row: pd.Series, results_dir: str, stds: list, quantiles: list, resVals: dict) -> dict:
+    def drug_correlations_worker(self, threadSimple: int, row: pd.Series, results_dir: str, stds: list, quantiles: list, resVals: dict,
+                                 targetDict: Optional[dict] = None, logFile: Logger = Logger()) -> dict:
         # Get drug name and all survivability correlations
-        drug, scores = row["Drug"], np.array(row.values[1:], dtype = float)
+        drug: str = row["Drug"]
+        scores: np.ndarray = np.array(row.values[1:], dtype = float)
+        # Get target Survivability correlation values if targetDict is available
+        if(type(targetDict) == dict):
+            targetScores: dict = {}
+            if(drug in targetDict):
+                for targetSource in targetDict[drug]:
+                    if(type(targetDict[drug][targetSource]) is np.ndarray):
+                        for target in targetDict[drug][targetSource]:
+                            if(target in row.index):
+                                targetScores[target] = row[target]
+                                logFile.add(f"Target {target} for drug {drug} found")
+                            else:
+                                logFile.add(f"{target} not found in drug {drug}")
+                    else:
+                        # If this is not a numpy array and not a NaN value, log it for debugging
+                        if(not np.isnan(targetDict[drug][targetSource])):
+                            logFile.add(f"Target dictionary entry {drug} {targetSource} is not a numpy array. Type: {type(targetDict[drug][targetSource])} Value: {targetDict[drug][targetSource]}")
+            else:
+                logFile.add(f"Drug {drug} not found in Target Dictionary data ({targetDict.keys()})")
+            #print(f"{drug.ljust(20, " ")}Target scores: {targetScores}")
+        else:
+            logFile.add(f"Target dictionary for drug {drug} {targetDict} not found to be a dictionary")
+            targetScores = None
         # Remove NaN values
         scores = scores[~np.isnan(scores)]
         # Plot histograms and get histogram-plotting-related information (i.e. stats which are calculated in the histogram plotting step)
-        extra_data = self.save_histogram(scores, f"{drug}-gene LOG correlations", results_dir, stds, quantiles)
+        extra_data = self.save_histogram(scores, f"{drug}-gene LOG correlations", results_dir, stds, quantiles, targetScores = targetScores)
         # Add some extra basic information, i.e. standard deviation, quantiles, and numbers of gene targets within given SD boundaries
         newdict = {"standard deviations": \
                         {d: np.mean(scores)+(np.std(scores)*d) for d in resVals["devs"]},
@@ -442,7 +497,7 @@ class CorrelationPlotter(DataHandler):
     
     def save_histogram(self, scores: Union[np.ndarray, list, tuple], titlebase: str, results_dir: str,
                        stds: list = [], quantiles: list = [], plot_curve: bool = True,
-                       test_modality: bool = True) -> dict:
+                       test_modality: bool = True, targetScores: Optional[dict] = None) -> dict:
         # Set up output dictionary if necessary
         output = {}
         # Get counts and bins for histograms
@@ -450,9 +505,17 @@ class CorrelationPlotter(DataHandler):
         # Get the (corrected) log of these counts for the log graph
         logcounts = np.log(counts)
         logcounts[logcounts == -np.inf] = 0
+        # Make log version of target scores if available
+        logtargetScores: dict = {}
+        if(targetScores is not None):
+            for target in targetScores:
+                logtargetScores[target] = np.log(targetScores[target])
+        else:
+            targetScores = {}
+
         # Loop through relevant variables to produce regular and logged histograms
-        for y, ylabel, title in zip((counts, logcounts), ("Frequency", "Log frequency"), \
-                                            (titlebase.replace("LOG ",""), titlebase.replace("LOG", "log"))):
+        for y, ylabel, title, targets in zip((counts, logcounts), ("Frequency", "Log frequency"), \
+                                            (titlebase.replace("LOG ",""), titlebase.replace("LOG", "log")), (targetScores, logtargetScores)):
             # Main histogram
             plt.stairs(y, bins, fill = True)
             # Black line showing trend
@@ -469,6 +532,10 @@ class CorrelationPlotter(DataHandler):
                 for std in stds:
                     plt.plot([avg+(dev*std)]*2, [0, max(y)*1.01], linestyle = "--", color = "g")
                     plt.text(avg+(dev*std), max(y)*1.05, f"+{std} SDs", size = "xx-small")
+            # Add target bars if appropriate
+            for target in targets:
+                plt.plot([targets[target], targets[target]], [0, max(y)*1.01], linestyle = "--", color = "orange")
+                plt.text(targets[target], max(y)*1.05, target, size = "xx-small")
             # Add quantile markings if appropriate
             if(len(quantiles)>0):
                 vals = np.quantile(scores, quantiles)
