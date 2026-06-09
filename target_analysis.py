@@ -193,7 +193,7 @@ def main(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logF
 def pathCheckWorker(threadSimple: int, combinations: list[tuple], graphSTRING: ig.Graph, saveDir: str,
                     checkTimeSeconds: int = 3600, logFile: Logger = Logger("pathCheckWorkerLog.txt")) -> None:
     t_base, t_prev, fin = time.time(), time.time(), len(combinations)
-    for i, comb in enumerate(combinations):
+    for combi, comb in enumerate(combinations):
         # Unpack combination to start and stop gene
         geneBase, geneTarget = comb[0], comb[1]
         # Set save directory and check if this combination's path has already been calculated
@@ -216,8 +216,8 @@ def pathCheckWorker(threadSimple: int, combinations: list[tuple], graphSTRING: i
         
         # Report progress once checkTimeSeconds has been reached
         if(threadSimple == 1):
-            if(time.time()-t_prev > checkTimeSeconds):
-                t_taken, completePercent = time.time()-t_base, (i.fin)*100
+            if(time.time()-t_prev > checkTimeSeconds or combi==0):
+                t_taken, completePercent = time.time()-t_base, (combi/fin)*100
                 logFile.add(f"Thread {threadSimple} {completePercent:.2f}\% Complete ({t_taken/3600:.1f} hours taken total)")
                 t_prev = time.time()
 
