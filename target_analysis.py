@@ -136,7 +136,7 @@ def main(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logF
 
     # Pass these combinations of genes to parallel workers to get (collectively) all pathways
     mp.Pool(coreCount).starmap_async(pathCheckWorker,
-                [(i, batchList[i], g_global, os.path.join(saveDir, "Gene-Paths"))
+                [(i, batchList[i], g_global, os.path.join(saveDir, "Gene-Paths", 3600, logFile))
                 for i in range(coreCount)]).get()
     
     t_taken = time.time() - t_base
@@ -190,8 +190,10 @@ def main(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logF
     """
     return
 
-def pathCheckWorker(threadSimple: int, combinations: list[tuple], graphSTRING: ig.Graph, saveDir: str) -> None:
-    for comb in combinations:
+def pathCheckWorker(threadSimple: int, combinations: list[tuple], graphSTRING: ig.Graph, saveDir: str,
+                    checkTimeSeconds: int = 3600, logFile: Logger = Logger("pathCheckWorkerLog.txt")) -> None:
+    t_base, t_prev, fin = time.time(), time.time(), len(combinations)
+    for i, comb in enumerate(combinations):
         # Unpack combination to start and stop gene
         geneBase, geneTarget = comb[0], comb[1]
         # Set save directory and check if this combination's path has already been calculated
@@ -211,6 +213,13 @@ def pathCheckWorker(threadSimple: int, combinations: list[tuple], graphSTRING: i
         # Save the details of this combination
         with open(outPath, "w") as f:
             json.dump(pathnodes, f)
+        
+        # Report progress once checkTimeSeconds has been reached
+        if(threadSimple == 1):
+            if(time.time()-t_prev > checkTimeSeconds):
+                t_taken, completePercent = time.time()-t_base, (i.fin)*100
+                logFile.add(f"Thread {threadSimple} {completePercent:.2f}\% Complete ({t_taken/3600:.1f} hours taken total)")
+                t_prev = time.time()
 
     return
 
