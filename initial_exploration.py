@@ -793,19 +793,19 @@ def data_overview():
 
     return
 
-def target_SC_analysis(saveOutput: Optional[str] = None) -> None:
-    ### Get All known Drug targets
+def get_drugTargets() -> pd.DataFrame:
+    """Get all known putative drug targets
+
+    Returns:
+        pd.DataFrame: _description_
+    """
     # Go through PubChem identifiers
     pubchemchembl = pd.read_csv(os.path.join("Data", "Derived-Data", "pubchem-chembl.tsv"), sep = "\t")
 
     pubchemchembl.dropna(inplace = True)
     pubchemchembl.drop_duplicates("PubChem", inplace=True)
-    #pubchemchembl = {pubchemchembl["PubChem"].values[i]: pubchemchembl["ChEMBL"].values[i] for i in range(len(pubchemchembl))}
 
-    ## TODO: Currently end function early as debugging get_targets_all
     check = get_targets_all()
-    print(check)
-    return
 
     # Get unidentifiable compounds
     nonan = check.dropna(axis = "index", how = "all", inplace = False)
@@ -814,7 +814,7 @@ def target_SC_analysis(saveOutput: Optional[str] = None) -> None:
         if(dn not in nonan.index):
             help.append(dn)
 
-    # Save unidentifiable compounds to tsv file
+    # Save unidentifiable compounds to tsv file, or append them if one already exists
     udp = os.path.join("Data", "Derived-Data", "unknown_drugs.tsv")
     if(os.path.exists(udp)):
         df = pd.read_csv(udp, sep = "\t")
@@ -825,10 +825,6 @@ def target_SC_analysis(saveOutput: Optional[str] = None) -> None:
     output = pd.concat((df, toadd))
     output.to_csv(udp, sep = "\t", lineterminator="\n", index = False)
 
-    # Merge the Internal compound and manual drug target information into the main dataframe
-    manTargDict = {output["Drug"].values[i]: output["Gene Targets"].values[i] for i in range(len(output))}
-    check["Manual"] = check.index.map(manTargDict)
-
     internals = output.loc[output["Alternate Names"]=="INTERNAL COMPOUND"]["Drug"]
     internals = {i: True for i in internals}
     check["Internal Compound"] = check.index.map(internals)
@@ -836,6 +832,7 @@ def target_SC_analysis(saveOutput: Optional[str] = None) -> None:
     # Refine the DataFrame so we've just got a list of drugs and targets
     drugTargets = check.loc[check["Internal Compound"]!=True]
     del drugTargets["Internal Compound"]
+
     # Get all relevant entries from drugTargets
     targets = {}
     for row in drugTargets.iterrows():
@@ -857,7 +854,7 @@ def target_SC_analysis(saveOutput: Optional[str] = None) -> None:
                          tosplit = entry[i]
                     else:
                         tosplit = ",".join(entry[i].tolist())
-                    tosplit = tosplit.replace(" ","").replace("[","").replace("]","")
+                    tosplit = tosplit.replace(" ","").replace("[","").replace("]","").replace("\"","")
                     new += tosplit.split(",")
             targets[drug] = deepcopy(new)
         except Exception as e:
@@ -872,6 +869,12 @@ def target_SC_analysis(saveOutput: Optional[str] = None) -> None:
     drugTargets = pd.DataFrame(data, columns = ["DRUG", "TARGET"])
     drugTargets.drop_duplicates(inplace = True)
     drugTargets["TARGET"] = drugTargets["TARGET"].str.replace("'","")
+    return drugTargets
+
+
+def target_SC_analysis(saveOutput: Optional[str] = None) -> None:
+    # Get all known putatitve drug targets
+    drugTargets = get_drugTargets()
 
     ## Get SC ratio scores for each target (requires previous code section getting targets to work)
     scScores = pd.read_csv(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-AllDrugsByAllGenes.tsv"), sep = "\t")
@@ -960,6 +963,7 @@ def target_SC_analysis(saveOutput: Optional[str] = None) -> None:
     plt.scatter(range(len(counts)), counts)
     plt.xlabel("Drug Target")
     plt.ylabel("Number of higher-SC-scoring genes")
+    plt.title("Number of Genes with Higher SC values than Putative Target Genes")
     if(saveOutput is None):
         plt.show()
     else:
@@ -974,6 +978,7 @@ def target_SC_analysis(saveOutput: Optional[str] = None) -> None:
     plt.scatter(range(len(bestCounts)), bestCounts)
     plt.xlabel("Best Drug Target")
     plt.ylabel("Number of higher-SC-scoring genes")
+    plt.title("Number of Genes with Higher SC values than Best Drug Putatitve Target Gene")
     if(saveOutput is None):
         plt.show()
     else:

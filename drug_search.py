@@ -118,21 +118,24 @@ def get_targets_all(data: Optional[Union[list, tuple]] = None,
     df.drop(["PubChem"], axis = 1, inplace = True)
 
     # Add in manually-identified known drug targets
-    ## TODO: STILL BEING WORKED ON!
     manualLoc = os.path.join("Data", "Derived-Data", "unknown_drugs.tsv")
+    ordFixer: dict = {8216: "\"", 8217: "\""}
     if(os.path.exists(manualLoc)):
-        manual = pd.read_csv(manualLoc, sep = "\t")
-        df["Manual"] = [np.nan for _ in range(len(df))]
+        manual = pd.read_csv(manualLoc, sep = "\t", encoding = "utf-8")
+        df["Manual"] = ["" for _ in range(len(df))]
         for i, row in manual.iterrows():
             drug = str(row["Drug"])
             targs = row["Gene Targets"]
             if(type(targs) is str):
-                targs = [n.strip() for n in ast.literal_eval(targs)]
-                print(f"Identified list {targs}")
-                print(df.index)
-                df.loc[df.index==drug] = deepcopy(targs)
-                print(df.loc[df.index==drug])
-        return
+                # The list of targets needed to be formatted in this weird way due to the presence of curly brackets from .tsv-derived lists
+                targs_formatted = ""
+                for char in targs:
+                    if(ord(char) not in ordFixer):
+                        targs_formatted += char
+                    else:
+                        targs_formatted += ordFixer[ord(char)]
+                targs = [n.strip() for n in ast.literal_eval(targs_formatted)]
+                df.loc[drug, "Manual"] = str(targs)
 
     #df=df.where(df.astype(bool),np.nan, inplace = False)
     #df.replace({"DrugBank": {{}: np.nan}, "GDSC": {[]: np.nan}}, inplace=True)
