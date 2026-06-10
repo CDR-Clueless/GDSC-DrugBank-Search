@@ -873,6 +873,7 @@ def get_drugTargets() -> pd.DataFrame:
 
 
 def target_SC_analysis(saveOutput: Optional[str] = None) -> None:
+
     # Get all known putatitve drug targets
     drugTargets = get_drugTargets()
 
@@ -909,8 +910,43 @@ def target_SC_analysis(saveOutput: Optional[str] = None) -> None:
     realRatios = realRatios[~np.isnan(realRatios)]
     realVals = relSC[~np.isnan(relSC)]
     print(f"{realVals.shape[0]} SC values found out of {relSC.shape[0]} rows")
-    plt.scatter(range(realRatios.shape[0]), sorted(realRatios)[::-1], color = "b")
+
+    ## Plot SC values
+    ys = sorted(realVals)[::-1]
+    plt.scatter(range(realVals.shape[0]), ys, color = "b")
+    plt.xlabel("Drug Target")
+    plt.ylabel("Target Survivability Correlation")
+    plt.title("Survivability Correlation of Putative Drug Targets")
+    if(saveOutput is None):
+        plt.show()
+    else:
+        plt.savefig(os.path.join(saveOutput, "GDSC All Target Scores.png"))
+    plt.clf()
+
+    ## Plot best SC scores for each drug
+    ys = np.array([np.nanmax(drugTargets.loc[drugTargets["DRUG_STANDARD"] == drug]["SURVIVABILITY CORRELATION"].values) for drug in drugTargets["DRUG_STANDARD"].unique()], dtype = float)
+    ys = np.array(sorted(ys[~np.isnan(ys)])[::-1])
+    plt.scatter(range(ys.shape[0]), ys, color = "b")
+    plt.xlabel("Drug Target")
+    plt.ylabel("Target Survivability Correlation")
+    plt.title("Survivability Correlation of Highest Scoring Putative Drug Targets")
+    if(saveOutput is None):
+        plt.show()
+    else:
+        plt.savefig(os.path.join(saveOutput, "GDSC Best Target Scores.png"))
+    plt.clf()
+
+    ## Plot SC Ratios
+    ys = sorted(realRatios)[::-1]
+    for i in range(len(ys)-1):
+        if(ys[i]>=1 and ys[i+1] < 1):
+            cutoff = float(i)+0.5
+            cutoffPerc = (i+1)/len(ys)
+    plt.scatter(range(realRatios.shape[0]), ys, color = "b")
     plt.plot([0, realRatios.shape[0]], [1, 1], linestyle = "--", color = "red")
+    # Plot cutoff point and text
+    plt.plot([cutoff, cutoff], [ys[-1], ys[0]], linestyle = "--", color = "g")
+    plt.text(cutoff, ys[0], f"{cutoffPerc*100:.2f}%", color = "g")
     plt.xlabel("Drug Target")
     plt.ylabel("Target Correlation Ratio")
     plt.title("SC Score-SC Threshold Ratios of Putative Drug Targets")
@@ -928,8 +964,16 @@ def target_SC_analysis(saveOutput: Optional[str] = None) -> None:
         ratios = ratios[~np.isnan(ratios)]
         if(ratios.shape[0]>0):
             maxRatios.append(np.max(ratios))
-    plt.scatter(range(len(maxRatios)), sorted(maxRatios)[::-1], color = "b")
+    ys = sorted(maxRatios)[::-1]
+    for i in range(len(ys)-1):
+        if(ys[i]>=1 and ys[i+1] < 1):
+            cutoff = float(i)+0.5
+            cutoffPerc = (i+1)/len(ys)
+    plt.scatter(range(len(maxRatios)), ys, color = "b")
     plt.plot([0, len(maxRatios)-1], [1, 1], linestyle = "--", color = "red")
+    # Plot cutoff point and text
+    plt.plot([cutoff, cutoff], [ys[-1], ys[0]], linestyle = "--", color = "g")
+    plt.text(cutoff, ys[0], f"{cutoffPerc*100:.2f}%", color = "g")
     plt.xlabel("Best Scoring Drug Target")
     plt.ylabel("Target Correlation Ratio")
     plt.title("SC Score-SC Threshold Ratios of Best Scoring Putative Drug Targets")
