@@ -19,7 +19,7 @@ import igraph as ig
 
 from tqdm import tqdm
 
-from drug_search import update_hgnc
+from drug_search import update_hgnc, get_targets_all
 from logger import Logger
 from survivability_correlation_calculation import split_list
 
@@ -67,6 +67,7 @@ def main(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logF
     genes = pd.read_csv(DEFAULT_ALLBYALL, sep = "\t")
     genes = update_hgnc(genes, hgnc)
     genes = genes["symbol"].values
+
     # Reduce gene count to first 10 if in debug mode
     if(DEBUG_MODE):
         genes = genes[:10]
@@ -104,27 +105,40 @@ def main(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logF
     if(not os.path.exists(os.path.join(saveDir, "Gene-Paths"))):
         os.mkdir(os.path.join(saveDir, "Gene-Paths"))
 
+    # Get a list of genes which are known putative targets - these will be our start points
+    targets = get_target_list()
+    startPoints = []
+    for drug in targets:
+        for gene in targets[drug]:
+            if(gene in genesString and gene not in startPoints):
+                startPoints.append(gene)
+
     # Get appproximation of number of combinations if all genes are valid
     approxcombs: int = 0
-    for count in range(len(genes)+1):
-        approxcombs += count
+    for i in range(len(startPoints)):
+        approxcombs += len(genes) - i
 
     logFile.add(f"Building list of combinations to find pathways between (approximately {approxcombs} combinations to calculate)")
     t_base = time.time()
     # Construct a list of combinations of genes to check
-    combs = []
+    combs, done = [], {}
     badGenes: dict = {}
-    for i, geneBase in enumerate(genes):
+    for startPoint in startPoints:
         # Ensure gene is valid
-        if(geneBase not in genesString):
-            badGenes[geneBase] = True
+        if(startPoint not in genesString):
+            badGenes[startPoint] = True
             continue
-        for geneEnd in genes[i:]:
+        for geneEnd in genes:
+            # If this combination has already been calculated, skip it
+            if(geneEnd in done):
+                continue
             # Ensure gene is valid
             if(geneEnd not in genesString):
                 badGenes[geneEnd] = True
                 continue
-            combs.append(deepcopy((geneBase, geneEnd)))
+            combs.append(deepcopy((startPoint, geneEnd)))
+        # Add this gene to list of finished genes to remove duplicate work
+        done[startPoint] = True
     
     logFile.add(f"{len(badGenes)} genes were found in GDSC which are not within the STRING database. Saving to {os.path.join(saveDir, 'bad_genes.txt')}")
     with open(os.path.join(saveDir, "bad genes.txt"), "w") as f:
@@ -136,9 +150,10 @@ def main(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logF
 
     # Pass these combinations of genes to parallel workers to get (collectively) all pathways
     mp.Pool(coreCount).starmap_async(pathCheckWorker,
-                [(i, batchList[i], g_global, os.path.join(saveDir, "Gene-Paths", 3600, logFile))
+                [(i, batchList[i], g_global, os.path.join(saveDir, "Gene-Paths"), 3600, logFile)
                 for i in range(coreCount)]).get()
-    
+    #pathCheckWorker(0, batchList[i], g_global, os.path.join(saveDir, "Gene-Paths", 3600, logFile))
+
     t_taken = time.time() - t_base
     logFile.add(f"Saved {len(combs)} calculated pathways between {len(genes)-len(badGenes)} valid genes; took {t_taken/60:.2f} minutes, i.e. {t_taken/3600:.1f} hours")
     
@@ -147,16 +162,16 @@ def main(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logF
     t_base = time.time()
 
     goodGenes = [gene for gene in genes if gene not in badGenes]
-    batchList = split_list(goodGenes, coreCount)
+    batchList = split_list(startPoints, coreCount)
     mp.Pool(coreCount).starmap_async(pathCoallateWorker,
                 [(i, batchList[i], goodGenes, os.path.join(saveDir, "Gene-Paths"))
                 for i in range(coreCount)]).get()
-    #pathCoallateWorker(1, goodGenes, goodGenes, os.path.join(saveDir, "Gene-Paths"))
+    #pathCoallateWorker(1, [x for xs in batchList for x in xs], goodGenes, os.path.join(saveDir, "Gene-Paths"))
     
     t_taken = time.time()-t_base
     logFile.add(f"Results coallated ({t_taken/60:.2f} minutes). Deleting raw files.")
 
-    for geneBase in goodGenes:
+    for geneBase in startPoints:
         for geneEnd in goodGenes:
             filedir = os.path.join(saveDir, "Gene-Paths", f"{geneBase}-{geneEnd}.json")
             if(os.path.exists(filedir)):
@@ -193,7 +208,7 @@ def main(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logF
 def pathCheckWorker(threadSimple: int, combinations: list[tuple], graphSTRING: ig.Graph, saveDir: str,
                     checkTimeSeconds: int = 3600, logFile: Logger = Logger("pathCheckWorkerLog.txt")) -> None:
     t_base, t_prev, fin = time.time(), time.time(), len(combinations)
-    for combi, comb in enumerate(combinations):
+    for iComb, comb in enumerate(combinations):
         # Unpack combination to start and stop gene
         geneBase, geneTarget = comb[0], comb[1]
         # Set save directory and check if this combination's path has already been calculated
@@ -216,9 +231,9 @@ def pathCheckWorker(threadSimple: int, combinations: list[tuple], graphSTRING: i
         
         # Report progress once checkTimeSeconds has been reached
         if(threadSimple == 1):
-            if(time.time()-t_prev > checkTimeSeconds or combi==0):
-                t_taken, completePercent = time.time()-t_base, (combi/fin)*100
-                logFile.add(f"Thread {threadSimple} {completePercent:.2f}\% Complete ({t_taken/3600:.1f} hours taken total)")
+            if(time.time()-t_prev > checkTimeSeconds or iComb==0):
+                t_taken, completePercent = time.time()-t_base, (iComb/fin)*100
+                logFile.add(f"Thread {threadSimple} {completePercent:.2f}% Complete ({t_taken/3600:.1f} hours taken total)")
                 t_prev = time.time()
 
     return
@@ -240,7 +255,8 @@ def pathCoallateWorker(threadSimple: int, genes: list[str], allGenes: list[str],
             originFiles.append(f"{geneBase}-{geneNew}.json")
             destinationFiles.append(f"{geneNew}-{geneBase}.json")
         # Remove the baseGene-baseGene duplicate
-        destinationFiles.remove(f"{geneBase}-{geneBase}.json")
+        if(f"{geneBase}-{geneBase}.json" in destinationFiles):
+            destinationFiles.remove(f"{geneBase}-{geneBase}.json")
         # Next, refine these lists based on what files actually exist
         for i in range(len(originFiles))[::-1]:
             fileDir = os.path.join(saveDir, originFiles[i])
@@ -271,6 +287,96 @@ def pathCoallateWorker(threadSimple: int, genes: list[str], allGenes: list[str],
             json.dump(pathways, f)
     
     return
+
+def get_target_list(drugTargets: Optional[pd.DataFrame] = None):
+    if(drugTargets is None):
+        drugTargets = get_drugTargets()
+    # Dictionary output used in form {drug1 : [drug 1 target 1, drug 1 target 2, ...], drug 2: [...], ...}
+    results: dict = {}
+    for drug, gene in zip(drugTargets["DRUG"].values, drugTargets["TARGET"].values):
+        if(drug not in results):
+            results[drug] = []
+        if(gene not in results[drug] and gene != ""):
+            results[drug].append(gene)
+    return results
+
+def get_drugTargets() -> pd.DataFrame:
+    """Get all known putative drug targets
+
+    Returns:
+        pd.DataFrame: _description_
+    """
+    # Go through PubChem identifiers
+    pubchemchembl = pd.read_csv(os.path.join("Data", "Derived-Data", "pubchem-chembl.tsv"), sep = "\t")
+
+    pubchemchembl.dropna(inplace = True)
+    pubchemchembl.drop_duplicates("PubChem", inplace=True)
+
+    check = get_targets_all()
+
+    # Get unidentifiable compounds
+    nonan = check.dropna(axis = "index", how = "all", inplace = False)
+    help = []
+    for dn in check.index:
+        if(dn not in nonan.index):
+            help.append(dn)
+
+    # Save unidentifiable compounds to tsv file, or append them if one already exists
+    udp = os.path.join("Data", "Derived-Data", "unknown_drugs.tsv")
+    if(os.path.exists(udp)):
+        df = pd.read_csv(udp, sep = "\t")
+    else:
+        df = pd.DataFrame(data = None, columns = ["Drug", "Gene Targets"])
+    toadd = [h for h in help if h not in df["Drug"].values]
+    toadd = pd.DataFrame(data = zip(toadd, [np.nan for _ in range(len(toadd))]), columns = ["Drug", "Gene Targets"])
+    output = pd.concat((df, toadd))
+    output.to_csv(udp, sep = "\t", lineterminator="\n", index = False)
+
+    internals = output.loc[output["Alternate Names"]=="INTERNAL COMPOUND"]["Drug"]
+    internals = {i: True for i in internals}
+    check["Internal Compound"] = check.index.map(internals)
+
+    # Refine the DataFrame so we've just got a list of drugs and targets
+    drugTargets = check.loc[check["Internal Compound"]!=True]
+    del drugTargets["Internal Compound"]
+
+    # Get all relevant entries from drugTargets
+    targets = {}
+    for row in drugTargets.iterrows():
+        drug = row[0]
+        entry = row[1]
+        new = []
+        # drop NaN entries
+        entry = entry.dropna()
+        # Get all relevant values
+        try:
+            for i in entry.index:
+                # Get just the gene name targets as lists and add them to target list
+                if(i=="DrugBank"):
+                    new += list(entry[i].keys())
+                else:
+                    if(type(entry[i]) == list):
+                        tosplit = ",".join(entry[i])
+                    elif(type(entry[i]) == str):
+                         tosplit = entry[i]
+                    else:
+                        tosplit = ",".join(entry[i].tolist())
+                    tosplit = tosplit.replace(" ","").replace("[","").replace("]","").replace("\"","")
+                    new += tosplit.split(",")
+            targets[drug] = deepcopy(new)
+        except Exception as e:
+            print(f"Error with entry {entry}: {e}")
+            break
+    
+    data = []
+    for drug in targets.keys():
+        for i in range(len(targets[drug])):
+            data.append((drug, targets[drug][i]))
+
+    drugTargets = pd.DataFrame(data, columns = ["DRUG", "TARGET"])
+    drugTargets.drop_duplicates(inplace = True)
+    drugTargets["TARGET"] = drugTargets["TARGET"].str.replace("'","")
+    return drugTargets
 
 ### Legacy code
 """
