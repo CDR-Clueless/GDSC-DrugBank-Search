@@ -1133,6 +1133,7 @@ def main():
     panther["ENSP"] = panther["UniProtKB"].map(converter)
     panther[["Gene Name", "UniProtKB", "ENSP"]].drop_duplicates().to_csv(os.path.join("Data", "Derived-Data", "Panther Simplified.tsv"), sep = "\t", lineterminator="\n", index = False)
     print(panther)
+    return
 
     #corrected = []
     #for prot in panther["UniProtKB"].values:
