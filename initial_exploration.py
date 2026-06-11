@@ -1080,7 +1080,68 @@ def main():
         coreCount: int = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
 
-    target_SC_analysis(saveOutput=os.path.join("Data", "Results", "Target-Analysis"))
+    ## Prepare main STRING graph
+    # Fetch HGNC/HUGO for updating gene names
+    hgnc = pd.read_table(DEFAULT_HUGO_FILE, low_memory=False).fillna('')
+    hgnc = hgnc[['symbol', 'ensembl_gene_id',
+                'prev_symbol', 'location', 'location_sortable']]
+    hgnc.set_index('symbol', inplace=True)
+    # STRING proteins
+    stinfo =  pd.read_table(DEFAULT_STRING_INFO_FILE,
+                            usecols=['#string_protein_id','preferred_name']).fillna('')
+    stinfo.rename(columns = {'#string_protein_id':'ID','preferred_name':'symbol'},inplace=True)
+    stinfo = update_hgnc(stinfo, hgnc)
+    print(stinfo.columns)
+    print(stinfo.iloc[:5])
+
+    # Link STRING ID's and HUGO-corrected Gene names
+    stdict = dict(zip(stinfo.ID,stinfo.symbol))
+
+    # STRING network
+    stlink = pd.read_csv(DEFAULT_STRING_LINK_FILE,sep=' ')
+    stlink.combined_score = stlink.combined_score.astype(int)
+    print(stlink.columns)
+    print(stlink.iloc[:5])
+    # Change proteins in stlink from ID's to HGNC-checked names
+    stlink.protein1 = stlink.protein1.apply(lambda x: stdict[x])
+    stlink.protein2 = stlink.protein2.apply(lambda x: stdict[x])
+    # Refine STRING links to those with a combined score >0.6
+    stlink[stlink.combined_score.gt(600)]
+
+    g_global = ig.Graph.TupleList(stlink.itertuples(index=False), directed=True, weights=False, edge_attrs="combined_score")
+
+    #target_SC_analysis(saveOutput=os.path.join("Data", "Results", "Target-Analysis"))
+
+    stringMapping = pd.read_csv(os.path.join("Data", "Derived-Data", "string_mapping.tsv"), sep = "\t")
+    panther = pd.read_excel(os.path.join("Data", "Derived-Data", "panther_Ids.xlsx"), header = None)
+    del panther[0]
+    panther.columns = ["Gene Index", "HGNC-UniProt", "Gene Name", "Details", "Target", "Protein Type", "Species"]
+    for col in ["Gene Index", "HGNC-UniProt", "Gene Name", "Target", "Protein Type", "Species"]:
+        panther[col] = panther[col].ffill()
+    panther["Gene Index"] = panther["Gene Index"].astype(int)
+    panther[["Simplified Species", "HGNC", "UniProtKB"]] = panther["HGNC-UniProt"].str.split("|", expand = True)
+    del panther["HGNC-UniProt"]
+    for col in ["HGNC", "UniProtKB"]:
+        panther[col] = panther[col].str.replace(f"{col}=","")
+    
+    with open(os.path.join("Data", "Derived-Data", "UniProtKB.txt"), "w") as f:
+        f.write("\n".join(panther["UniProtKB"].unique()))
+    
+    converter = pd.read_csv(os.path.join("Data", "Derived-Data", "panther_gene-ENSP.tsv"), sep = "\t")
+    converter = {gene: ensp for gene, ensp in zip(converter["From"].values, converter["To"].values)}
+
+    panther["ENSP"] = panther["UniProtKB"].map(converter)
+    panther[["Gene Name", "UniProtKB", "ENSP"]].drop_duplicates().to_csv(os.path.join("Data", "Derived-Data", "Panther Simplified.tsv"), sep = "\t", lineterminator="\n", index = False)
+    print(panther)
+
+    #corrected = []
+    #for prot in panther["UniProtKB"].values:
+    #    corrected.append(converter.loc[converter["UniProtKB"]==prot]["Gene Name"].values[0])
+
+    #panther["Corrected Gene Name"] = corrected
+    #print(panther[["Original Gene Name", "Corrected Gene Name"]])
+
+    return
 
     """
     # Visualising pKi vs ic50 data
