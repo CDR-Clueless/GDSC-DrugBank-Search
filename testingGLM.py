@@ -33,8 +33,35 @@ else:
     with open(os.path.join("Local", "localVars.json"), "rb") as f:
         DEBUG_MODE: bool = json.load(f)["DEBUG_MODE"]
 
+def dummyLinear(x1: float = 1.0, c: float = 0.1, noise: float = 0.1, lower: float = 0.0, upper: float = 1.0, n: int = 100) -> np.ndarray:
+    return (np.linspace(lower, upper, n) * x1) + c + (noise * np.random.uniform(0, 1, n))
 
-def main(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
+def dummyTwo(x1: float = 1.0, x2: float = 1.0, c: float = 0.1, noise: float = 0.1, lower: float = 0.0, upper: float = 1.0, n: int = 100) -> np.ndarray:
+    base = np.linspace(lower, upper, n)
+    return (base * x1) + (x2 * np.power(base, 2.)) + c + (noise * np.random.uniform(lower, upper, n))
+
+def dummyX(xs: list = [1, 2], c: float = 0.1, noise: float = 0.1, lower: float = 0.0, upper: float = 1.0, n: int = 100) -> tuple[np.ndarray]:
+    base = np.linspace(lower, upper, n)
+    y = (np.random.uniform(0, 1, n) * noise) + c
+    for power, x in enumerate(xs):
+        y += x * np.power(base, power+1)
+    return np.vstack([np.ones(n, dtype = float)] + [np.power(base, power+1) for power in range(len(xs))]).T, y
+    
+
+def main():
+    # Generate some dummy data
+    linear, square = dummyLinear(c = 3.0), dummyTwo()
+    #plt.scatter(np.linspace(0, 1, linear.shape[0]), linear)
+    #plt.scatter(np.linspace(0, 1, square.shape[0]), square)
+
+    x, y = dummyX()
+
+    lin_model = sm.GLS(y, x)
+    res = lin_model.fit()
+    print(res.summary())
+    print(res.params)
+
+def calculate_survCorr(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
          gdsc1Loc: Optional[str] = None, gdsc2Loc: Optional[str] = None,
          logFile: Logger = Logger(os.path.join("Data", "Results", "GDSC-SC-calculation-output.txt")),
          dMode: bool = DEBUG_MODE):
@@ -105,7 +132,6 @@ def main(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     for d in dList:
         # Get all available cell lines
         cs = [df[df["DRUG_NAME"]==d] for df in [drug2, drug1]]
-        #print(cs)
         
         # Go through all genes from CRISPR dependencies DataFrame
         genes = crisprDeps.columns
@@ -162,8 +188,6 @@ def main(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
                 plt.xlabel("Cell Line CRISPR Dependency")
                 plt.ylabel("pIC50")
                 plt.show()
-                return
-
                 #pr, pp = pearsonr(x, y)
                 prs.append(pr)
                 pps.append(pp)
@@ -176,9 +200,6 @@ def main(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
                     #result.at[gn, d] = pr
                     validCorr = True
                     break
-            # If we haven't found a correlation here (i.e. there was no valid Pearson correlation found), make the result NaN
-            if(not validCorr):
-                result.at[gn, d] = np.nan
         if(DEBUG_MODE):
             return
 
