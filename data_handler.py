@@ -8,10 +8,14 @@ Created 11 Nov 2025
 
 from copy import deepcopy
 import os
+from typing import Optional
+import multiprocessing as mp
 import pandas as pd
 from lxml import etree
 import json
 from typing import Union
+
+DATA_DIR: str = os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-AllGenesByAllDrugs.tsv")
 
 class DataHandler:
     def __init__(self, datasets: Union[tuple, list, None] = None):
@@ -94,3 +98,23 @@ class DataHandler:
             self.datasets[dataset_id] = data
         print(f"Inserted data with ID {dataset_id}")
         return
+
+class DefaultHandler(DataHandler):
+    def __init__(self, coreCount: Optional[int] = None, allByAll: str = DATA_DIR):
+        # Call super init function and insert the relevant AllGenesByAllDrugs data into the instance
+        super().__init__((("AllByAll", allByAll)))
+        # Make sure the columns are named correctly and indexes are set
+        self.datasets["AllByAll"] = self.datasets["AllByAll"].rename(columns = {"Unnamed: 0": "Drug"})
+        self.datasets["AllByAll"].set_index("Drug", inplace = True)
+        #for key in ["comboSquared", "leftSquared", "rightSquared"]:
+            #self.datasets[key] = self.datasets[key].set_index("symbol")
+        # Define output path
+        self.datasets["outputBase"] = os.path.join("Data", "Results", allByAll.split(os.sep)[-1].replace("AllGenesByAllDrugs.tsv",""))
+        # Define number of available cores to utilise in multiprocessing
+        if(coreCount is int):
+            if(coreCount>0):
+                self.coreCount = coreCount
+            else:
+                self.coreCount = 1
+        else:
+            self.coreCount = max(mp.cpu_count()-2, 1)
