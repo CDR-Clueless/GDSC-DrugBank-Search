@@ -62,18 +62,13 @@ def main():
 
     plt.scatter(x, y)
     plt.plot(x, [eq(xi) for xi in x], color = "black")
+    plt.text(0.5, 0.5, calculate_rsquared(x, y, 2))
     plt.show()
 
     return
 
-    lin_model = sm.GLS(y, x)
-    res = lin_model.fit()
-    print(res.summary())
-    print(res.params)
-    print(res.rsquared)
-    plt.scatter(x[:,1], y)
-    plt.plot(x[:,1], res.params[0]+(res.params[1]*x[:,1])+(res.params[2]*np.power(x[:,1], 2.)), color = "black")
-    plt.show()
+def calculate_rsquared(x, y, nComponents: int = 2) -> float:
+    return calculate_SC_GLS(x, y, components = nComponents)
 
 def calculate_survCorr(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
          gdsc1Loc: Optional[str] = None, gdsc2Loc: Optional[str] = None,
@@ -218,6 +213,17 @@ def calculate_SC_Pearson(x, y, return_equation: bool = False, components: int = 
         return (pr, lambda x: (m*x) + c)
 
 def calculate_SC_GLS(x, y, return_equation: bool = False, components: int = 1) -> float | tuple[float, Callable]:
+    """Calculate Generalized Least Squares regression between data x and y
+
+    Args:
+        x (_type_): Input data
+        y (_type_): Output data
+        return_equation (bool, optional): Whether to return a function which serves as the equation of the fitted GLS model. Defaults to False.
+        components (int, optional): Maximum power of x (i.e. fitted esimator equation = c + m1x + m2x^2 + ... + m{components}x^{components}). Defaults to 1.
+
+    Returns:
+        float | tuple[float, Callable]: Returns r^2 value of the fitted model and, optionally, a function serving as an equation to the fitted line of the model
+    """
     # First, format x into a form interpretable by a GLM with the desired component count
     formattedX = np.vstack([np.ones(x.shape[0], dtype = float)] + [np.power(x, power+1) for power in range(components)]).T
     # Now fit the model and extract relevant parameters
@@ -230,6 +236,16 @@ def calculate_SC_GLS(x, y, return_equation: bool = False, components: int = 1) -
     return (pr, lambda result: rho[0] + np.dot(create_squared_array(result, rho.shape[0]-1), rho[1:].T))
 
 def create_squared_array(x, shape: int = 2, dtype = float) -> np.ndarray:
+    """ Create an array of [x, x^2, x^3, ..., x^{shape}]
+
+    Args:
+        x (_type_): Base number
+        shape (int, optional): Length of array and maximum power to calculate. Defaults to 2.
+        dtype (_type_, optional): Data type to make the array; accepts integer or floating point number data types. Defaults to float.
+
+    Returns:
+        np.ndarray: _description_
+    """
     output = np.full(shape, x, dtype = dtype)
     for i in range(1, shape):
         output[i] = np.power(output[0] ,i+1)

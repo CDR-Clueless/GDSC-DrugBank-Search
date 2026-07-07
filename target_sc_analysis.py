@@ -7,7 +7,7 @@ Created 2 Jul 2026
 """
 
 import os
-from typing import Optional
+from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -17,46 +17,38 @@ from matplotlib import pyplot as plt
 from target_functions import get_drugTargets
 
 def main():
-    target_SC_analysis(saveOutput=os.path.join("Data", "Results", "Target-Analysis"))
+    dT = prepare_target_frame()
+    #target_SC_analysis(saveOutput=os.path.join("Data", "Results", "Target-Analysis"))
+    get_zScores(None, dT)
 
-def target_SC_analysis(saveOutput: Optional[str] = None) -> None:
-
+def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None) -> None:
     # Get all known putatitve drug targets
-    drugTargets = get_drugTargets()
-
-    ## Get SC ratio scores for each target (requires previous code section getting targets to work)
-    scScores = pd.read_csv(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-AllDrugsByAllGenes.tsv"), sep = "\t")
-    scScores.set_index("symbol", inplace=True)
-    # Format columns/values on each dataframe
-    scScores.columns = [str(col).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for col in scScores.columns]
-    drugTargets["DRUG_STANDARD"] = [str(drug).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for drug in drugTargets["DRUG"].values]
-    # List for storing [drug, Target gene SC score, drug threshold]
-    results = []
-    for drug, gene in zip(drugTargets["DRUG_STANDARD"].values, drugTargets["TARGET"].values):
-        if(drug not in scScores.columns):
-            print(f"Drug {drug} not found in Survivability Correlations")
-            results.append((drug, np.nan, np.nan))
-            continue
-        elif(gene not in scScores.index):
-            results.append((drug, np.nan, np.nanmean(scScores[drug].values) + (3*np.nanstd(scScores[drug].values))))
-            continue
-        val = scScores[drug].loc[gene]
-        if(type(val)==np.float64):
-            results.append((drug, val, np.nanmean(scScores[drug].values) + (3*np.nanstd(scScores[drug].values))))
-        else:
-            # There seems to be some weird issue with some genes being duplicated in the Survivability Correlations index,
-            # so I'm just using the maximum value found between these two for now
-            results.append((drug, max(val.values), np.nanmean(scScores[drug].values) + (3*np.nanstd(scScores[drug].values))))
+    if(drugTargets is None):
+        drugTargets, _ = prepare_target_frame()
     
-    relSC = np.array([result[1] for result in results], dtype = float)
-    thresh = np.array([result[2] for result in results], dtype = float)
+    drugTargets["ZSCORE"] = np.divide(drugTargets["SURVIVABILITY CORRELATION"] - drugTargets["DRUG_MEAN"], drugTargets["DRUG_SD"])
+    zScores = drugTargets["ZSCORE"][~np.isnan(drugTargets["ZSCORE"])]
 
-    drugTargets["SURVIVABILITY CORRELATION"] = relSC
-    drugTargets["SURVIVABILITY TARGET RATIO"] = relSC / thresh
-    realRatios = relSC / thresh
-    realRatios = realRatios[~np.isnan(realRatios)]
-    realVals = relSC[~np.isnan(relSC)]
-    print(f"{realVals.shape[0]} SC values found out of {relSC.shape[0]} rows")
+    plt.scatter(range(zScores.shape[0]), sorted(zScores)[::-1])
+    plt.xlabel("Putative Drug Target")
+    plt.ylabel("SC Z-Score")
+    plt.title("Z-Scores of Putative Drug Target Survivability Correlations")
+    if(saveOutput is None):
+        plt.show()
+    else:
+        plt.savefig(os.path.join(saveOutput, "GDSC All Target Z-Scores"))
+    return
+
+def target_SC_analysis(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None) -> None:
+    if(drugTargets is None):
+        drugTargets, scScores = prepare_target_frame()
+
+    drugTargets["THRESHOLD"] = drugTargets["DRUG_MEAN"] + (3*drugTargets["DRUG_SD"])
+    drugTargets["SURVIVABILITY TARGET RATIO"] = drugTargets["SURVIVABILITY CORRELATION"] / drugTargets["THRESHOLD"]
+
+    realRatios = drugTargets["SURVIVABILITY TARGET RATIO"][~np.isnan(drugTargets["SURVIVABILITY TARGET RATIO"])]
+    realVals = drugTargets["SURVIVABILITY CORRELATION"][~np.isnan(drugTargets["SURVIVABILITY CORRELATION"])]
+    print(f"{realVals.shape[0]} SC values found out of {len(drugTargets)} rows")
 
     ## Plot SC values
     ys = sorted(realVals)[::-1]
@@ -210,6 +202,44 @@ def target_SC_analysis(saveOutput: Optional[str] = None) -> None:
             f.write(outString)
 
     return
+
+def prepare_target_frame() -> Tuple[pd.DataFrame,pd.DataFrame]:
+    # Get all known putatitve drug targets
+    drugTargets = get_drugTargets()
+
+    ## Get SC ratio scores for each target (requires previous code section getting targets to work)
+    scScores = pd.read_csv(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-AllDrugsByAllGenes.tsv"), sep = "\t")
+    scScores.set_index("symbol", inplace=True)
+    # Format columns/values on each dataframe
+    scScores.columns = [str(col).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for col in scScores.columns]
+    drugTargets["DRUG_STANDARD"] = [str(drug).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for drug in drugTargets["DRUG"].values]
+    # List for storing tuples of (drug, Target gene SC score, drug mean, drug SD)
+    results = []
+    for drug, gene in zip(drugTargets["DRUG_STANDARD"].values, drugTargets["TARGET"].values):
+        if(drug not in scScores.columns):
+            print(f"Drug {drug} not found in Survivability Correlations")
+            results.append((drug, np.nan, np.nan, np.nan))
+            continue
+        elif(gene not in scScores.index):
+            results.append((drug, np.nan, np.nanmean(scScores[drug].values), np.nanstd(scScores[drug].values)))
+            continue
+        val = scScores[drug].loc[gene]
+        if(type(val)==np.float64):
+            results.append((drug, val, np.nanmean(scScores[drug].values), np.nanstd(scScores[drug].values)))
+        else:
+            # There seems to be some weird issue with some genes being duplicated in the Survivability Correlations index,
+            # so I'm just using the maximum value found between these two for now
+            results.append((drug, max(val.values), np.nanmean(scScores[drug].values), np.nanstd(scScores[drug].values)))
+    
+    relSC = np.array([result[1] for result in results], dtype = float)
+    means = np.array([result[2] for result in results], dtype = float)
+    sds = np.array([result[3] for result in results], dtype = float)
+
+    drugTargets["SURVIVABILITY CORRELATION"] = relSC
+    drugTargets["DRUG_MEAN"] = means
+    drugTargets["DRUG_SD"] = sds
+
+    return drugTargets, scScores
 
 if(__name__=="__main__"):
     main()

@@ -24,6 +24,7 @@ import multiprocessing as mp
 from typing import Union, Tuple, Optional
 
 from logger import Logger
+from testingGLM import calculate_rsquared
 
 CLEANED_DATA_DIR: str = os.path.join("Data", "Laurence-Data")
 DEFAULT_CRISPR_FILE: str = os.path.join(CLEANED_DATA_DIR,"CRISPRGeneDependency.csv")
@@ -182,7 +183,9 @@ def gdscc(responseColumn: str = "eMax",
          gdsccLoc: Optional[str] = None, cpu_count: int = max(1, mp.cpu_count()-2),
          logFile: Logger = Logger(os.path.join("Data", "Results", "GDSCC-RESPONSECOLUMN-SC-calculation-output.txt")),
          desiredFiles: list = ["anchor", "matrix"],
-         dMode: bool = DEBUG_MODE):
+         dMode: bool = DEBUG_MODE,
+         scMode: str = "pearson",
+         glmComponents: int = 2):
     
     # Amend LogFile directory
     if("RESPONSECOLUMN" in logFile.directory):
@@ -328,7 +331,7 @@ def gdscc(responseColumn: str = "eMax",
             os.mkdir(tempDir)
         # Get results
         nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
-                [(i,batchList[i],crisprDeps,[df], "Name", "ModelID", responseColumn, True, tempDir, logFile, dMode)
+                [(i,batchList[i],crisprDeps,[df], "Name", "ModelID", responseColumn, True, tempDir, logFile, dMode, scMode, glmComponents)
                 for i in range(cpu_count)]).get()
         
         logFile.add(f'All by All for {drugType} {reportedResponse}{desired} took {((time.time())-t_prev)/60.0:.4} min')
@@ -337,14 +340,17 @@ def gdscc(responseColumn: str = "eMax",
 
         logFile.add(f"Finished Creating allbyall file for {drugType}; {allbyall.shape[0]} rows by {allbyall.shape[1]} columns")
         
-        dbgFile = os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{drugType}-{reportedResponse}{fileDesired}-AllDrugsByAllGenes.tsv")
+        if(scMode.lower().strip()=="pearson"):
+            dbgFile = os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{scMode}-{drugType}-{reportedResponse}{fileDesired}-AllDrugsByAllGenes.tsv")
+        else:
+            dbgFile = os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{scMode}_{glmComponents}-{drugType}-{reportedResponse}{fileDesired}-AllDrugsByAllGenes.tsv")
         logFile.add(f"Writing Drugs x Genes file to {dbgFile}")
         allbyall.to_csv(dbgFile, sep='\t', index=True, header=True)
         
         allbyall = allbyall.T
         allbyall.index.names = ["drugCombination"]
-        gbdFile = os.path.join(DEFAULT_OUTPUT_DIR, f"GDSCC-{drugType}-{reportedResponse}{fileDesired}-AllGenesByAllDrugs.tsv")
         logFile.add(f"Writing Genes x Drugs file to {gbdFile}")
+        gbdFile = dbgFile.replace("AllDrugsByAllGenes", "AllGenesByAllDrugs")
         allbyall.to_csv(gbdFile, sep='\t', index=True, header=True)
         # Delete the temporary data storage
         for filename in os.listdir(tempDir):
@@ -356,7 +362,8 @@ def gdscc(responseColumn: str = "eMax",
 def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
          gdsc1Loc: Optional[str] = None, gdsc2Loc: Optional[str] = None,
          logFile: Logger = Logger(os.path.join("Data", "Results", "GDSC-SC-calculation-output.txt")),
-         dMode: bool = DEBUG_MODE):
+         dMode: bool = DEBUG_MODE,
+         scMode: str = "pearson", nComponents: int = 2):
     
     # First, update logFile path if in debug mode
     if(dMode):
@@ -450,7 +457,7 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     # Run parallel SC calculation function
     nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
             [(i,batch_dlist[i],crisprDeps,[drug2,drug1],
-            "DRUG_NAME", "ModelID", "LN_IC50", True, None, logFile, dMode)
+            "DRUG_NAME", "ModelID", "LN_IC50", True, None, logFile, dMode, scMode, nComponents)
             for i in range(cpu_count)]).get()
     
     logFile.add(f'pIC50 All by All took {((time.time())-t_prev)/60.0:.4} min ({((time.time())-t_prev)/3600.0:.1f} hrs)')
@@ -459,11 +466,15 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     allbyall = pd.concat(nested_dfs,axis=1)
     
     logFile.add('Writing Drugs x Genes file)')
-    allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"pIC50{debugFile}-AllDrugsByAllGenes.tsv"), sep='\t', index=True, header=True)
+    if(scMode.lower().strip()=="pearson"):
+        dbg = os.path.join(DEFAULT_OUTPUT_DIR, f"pIC50{debugFile}-{scMode}-AllDrugsByAllGenes.tsv")
+    else:
+        dbg = os.path.join(DEFAULT_OUTPUT_DIR, f"pIC50{debugFile}-{scMode}_{nComponents}-AllDrugsByAllGenes.tsv")
+    allbyall.to_csv(dbg, sep='\t', index=True, header=True)
     logFile.add('Writing Genes x Drugs file)')
     allbyall = allbyall.T
     allbyall.index.names = ["Drug"]
-    allbyall.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, f"pIC50{debugFile}-AllGenesByAllDrugs.tsv"), sep='\t', index=True, header=True)
+    allbyall.to_csv(dbg.replace("AllDrugsByAllGenes", "AllGenesByAllDrugs"), sep='\t', index=True, header=True)
 
     # Delete the temporary data store now that it's finished with
     for filename in os.listdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store")):
@@ -477,7 +488,7 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
 def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrames: list[pd.DataFrame],
                            drugColumn: str = "DRUG_NAME", cellLineColumn: str = "ModelID", responseColumn: str = "LN_IC50",
                            priorityList: bool = True, starfiledirBase: Optional[str] = None, logFile: Optional[Logger] = None,
-                           dMode: bool = False):
+                           dMode: bool = False, scMode: str = "pearson", glmComponents: int = 2):
     """Altered version of ChunkDrugGene to calculate survival correlations for GDSC1/2 and GDSCC
 
     Args:
@@ -487,24 +498,35 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
         drugFrames (list[pd.DataFrame]): List of DataFrames with IC50/pKi data (i.e. GDSC(/C) data)
         priorityList (bool): Whether the drugFrames list is ordered in terms of importance
             ([most important, mid importance, least importance]) - if True, the highest-importance non-NaN correlation score is used. If False, the highest non-NaN correlation score is used
+        starfiledirBase (Optional[str]): The directory to which (temporary) parallel processing files will be saved. Defaults to None
+        logFile (Optional[Logger]): Optional logging file to record the operation log. Defaults to None
+        dMode: (bool): Debug mode, reduces data calculation of true. Defaults to False
+        scMode: (str): Type of Survivability Correlation to calculate. Valid values are 'pearson' and 'GLS'. Defaults to pearson
+        glmComponents (int): Number of components for any GLM or GLM-like being utilised in SC calculation. Defaults to 2.
     """
     
+    # Set up LogFile if relevant
     if(logFile is not None):
         pass
 
+    # Set up results DataFrame to save to files
     result = pd.DataFrame(columns=['symbol']+il)
     result.symbol = list(CRISPRdeps.columns)
     result = result.fillna(np.nan)
     result.set_index("symbol", inplace=True)
 
+    # Set up relevant function to Calculate Survivability Correlation
+    scFunc = {"pearson": pearsonr, "gls": calculate_rsquared}[scMode.lower().strip()]
+
     # loop through all indexes, i.e. drugs/compounds, calculating r for all genes
     for d in tqdm(il, desc=f"Thread {it} progress"):
         ## Load the calculation for this data if it has already been calculated
+        starFileEnd: str = f"starmapcorrelations-drugColumn_{drugColumn}-cellLineColumn_{cellLineColumn}-responseColumn_{responseColumn}-drug_{d}_scMode-{scMode}_components-{glmComponents}"
         if(starfiledirBase is None):
             starfiledir = os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store",
-                f"starmapcorrelations-drugColumn_{drugColumn}-cellLineColumn_{cellLineColumn}-responseColumn_{responseColumn}-drug_{d}")
+                starFileEnd)
         else:
-            starfiledir = os.path.join(starfiledirBase, f"starmapcorrelations-drugColumn_{drugColumn}-cellLineColumn_{cellLineColumn}-responseColumn_{responseColumn}-drug_{d}")
+            starfiledir = os.path.join(starfiledirBase, starFileEnd)
         if(os.path.exists(starfiledir)):
            # Get finished results
            with open(starfiledir, "r") as f:
@@ -567,12 +589,12 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                 responses.append(cldf.merge(newResponse))
             
             # Get Pearson Correlations
-            prs, pps = [], []
+
+            prs = []
 
             for response in responses:
                 if(response is None):
                     prs.append(None)
-                    pps.append(None)
                     continue
                 
                 # Get the two different responses - which is the Cell Line dependencies and the responseColumn (eMax, IC50 etc.) data
@@ -585,11 +607,13 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                 elif("emax" in responseColumn.lower()):
                     y = -1 * np.log(y)
 
-                pr, pp = pearsonr(x, y)
+                if(scMode.lower().strip()=="pearson"):
+                    pr, pp = pearsonr(x, y)
+                else:
+                    pr = scFunc(x, y, nComponents = glmComponents)
                 prs.append(pr)
-                pps.append(pp)
             
-            # Select which pearson correlation to use
+            # Select which correlation value to use
             validCorr = False
             # If the source (GDSC) DataFrames are speicified in priority order, select the highest-priority dataset correlation
             if(priorityList):
@@ -602,7 +626,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
             else:
                 result.at[gn, d] = max([pr for pr in prs if pr is not None], key = abs)
                 validCorr = True
-            # If we haven't found a correlation here (i.e. there was no valid Pearson correlation found), make the result NaN
+            # If we haven't found a correlation here (i.e. there was no valid correlation found), make the result NaN
             if(not validCorr):
                 result.at[gn, d] = np.nan
 
