@@ -17,9 +17,10 @@ from matplotlib import pyplot as plt
 from target_functions import get_drugTargets
 
 def main():
-    dT = prepare_target_frame()
-    #target_SC_analysis(saveOutput=os.path.join("Data", "Results", "Target-Analysis"))
-    get_zScores(None, dT)
+    outputDir = os.path.join("Data", "Results", "Target-Analysis")
+    dT, sc = prepare_target_frame()
+    #target_SC_analysis(saveOutput=outputDir, drugTargets = dT, scScores = sc)
+    get_zScores(outputDir, dT)
 
 def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None) -> None:
     # Get all known putatitve drug targets
@@ -30,6 +31,9 @@ def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataF
     zScores = drugTargets["ZSCORE"][~np.isnan(drugTargets["ZSCORE"])]
 
     plt.scatter(range(zScores.shape[0]), sorted(zScores)[::-1])
+    # Add threshold AND p < 0.05 lines
+    plt.plot([0, zScores.shape[0]], [3.0, 3.0], color = "green")
+    plt.plot([0, zScores.shape[0]], [1.645, 1.645], color = "red")
     plt.xlabel("Putative Drug Target")
     plt.ylabel("SC Z-Score")
     plt.title("Z-Scores of Putative Drug Target Survivability Correlations")
@@ -39,8 +43,8 @@ def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataF
         plt.savefig(os.path.join(saveOutput, "GDSC All Target Z-Scores"))
     return
 
-def target_SC_analysis(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None) -> None:
-    if(drugTargets is None):
+def target_SC_analysis(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None, scScores: Optional[pd.DataFrame] = None) -> None:
+    if(drugTargets is None or scScores is None):
         drugTargets, scScores = prepare_target_frame()
 
     drugTargets["THRESHOLD"] = drugTargets["DRUG_MEAN"] + (3*drugTargets["DRUG_SD"])
