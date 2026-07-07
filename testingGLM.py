@@ -7,12 +7,14 @@ Created 11 Jun 2026
 """
 import os
 from typing import Optional
+from collections.abc import Callable
 import multiprocessing as mp
 
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 import statsmodels.api as sm
+from scipy.stats import linregress
 import json
 
 from drug_search import get_data
@@ -49,29 +51,44 @@ def dummyX(xs: list = [1, 2], c: float = 0.1, noise: float = 0.1, lower: float =
     
 
 def main():
+    #calculate_survCorr()
+    #return
     # Generate some dummy data
-    linear, square = dummyLinear(c = 3.0), dummyTwo()
-    #plt.scatter(np.linspace(0, 1, linear.shape[0]), linear)
-    #plt.scatter(np.linspace(0, 1, square.shape[0]), square)
-
     x, y = dummyX()
+
+    # Try calculating SC using this
+    x = x[:,1]
+    rsq, eq = calculate_SC_GLS(x, y, True, 2)
+
+    plt.scatter(x, y)
+    plt.plot(x, [eq(xi) for xi in x], color = "black")
+    plt.show()
+
+    return
 
     lin_model = sm.GLS(y, x)
     res = lin_model.fit()
     print(res.summary())
     print(res.params)
+    print(res.rsquared)
+    plt.scatter(x[:,1], y)
+    plt.plot(x[:,1], res.params[0]+(res.params[1]*x[:,1])+(res.params[2]*np.power(x[:,1], 2.)), color = "black")
+    plt.show()
 
 def calculate_survCorr(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
          gdsc1Loc: Optional[str] = None, gdsc2Loc: Optional[str] = None,
          logFile: Logger = Logger(os.path.join("Data", "Results", "GDSC-SC-calculation-output.txt")),
-         dMode: bool = DEBUG_MODE):
+         correlation_mode: str = "pearson", GLM_components: int = 1, dMode: bool = DEBUG_MODE):
     # First, update logFile path if in debug mode
     if(dMode):
         logFile.directory = logFile.directory[:-4]+"-DEBUG"+logFile.directory[-4:]
-    
     # Clear LogFile and add initial line
     logFile.clear()
     logFile.add("GDSC Function starts")
+
+    # Set up function to calculate the Survivability Correlation
+    correlation_mode = correlation_mode.lower().replace(" ","")
+    correlation_calculator: Callable = {"pearson": calculate_SC_Pearson}[correlation_mode]
     # Compile dictionary of relevant file locations
     fileLocs = {}
     for i, name in enumerate(["crispr", "hugo", "cellinfo", "gdsc1", "gdsc2"]):
@@ -163,14 +180,10 @@ def calculate_survCorr(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[st
                                 (gdscdf["ModelID"].isin(cldf_names))].drop_duplicates \
                             (subset=["ModelID"], keep="first")[["LN_IC50","ModelID"]]
                 responses.append(cldf.merge(newResponse))
-            
-            # Get Pearson Correlations
-            prs, pps = [], []
 
-            for response in responses:
+            # Get Survivability Correlation and plot it
+            for gdscv, response in zip(["GDSC2", "GDSC1"], responses):
                 if(response is None):
-                    prs.append(None)
-                    pps.append(None)
                     continue
                 
                 # Get the two different responses - which is the Cell Line dependencies and the "LN_IC50" (eMax, IC50 etc.) data
@@ -183,25 +196,44 @@ def calculate_survCorr(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[st
                 elif("emax" in "LN_IC50".lower()):
                     y = -1 * np.log(y)
                 
+                # Find the predictability and equation
+                pr, eq = correlation_calculator(x, y, True)
+
                 plt.scatter(x, y)
+                plt.plot([min(x), max(x)], [eq(min(x)), eq(max(x))], linestyle = "--", color = "black")
+                plt.text(max(x)-((max(x)-min(x))/10), eq(max(x))+((max(y)-min(y))*.05), f"{pr:.2f}")
                 plt.title(f"{d}-{gn} responses")
                 plt.xlabel("Cell Line CRISPR Dependency")
                 plt.ylabel("pIC50")
                 plt.show()
-                #pr, pp = pearsonr(x, y)
-                prs.append(pr)
-                pps.append(pp)
-            
-            # Select which pearson correlation to use
-            validCorr = False
-            # Select the highest-priority dataset correlation
-            for pr in prs:
-                if(pr is not None):
-                    #result.at[gn, d] = pr
-                    validCorr = True
-                    break
-        if(DEBUG_MODE):
-            return
+                if(DEBUG_MODE):
+                    return
+
+def calculate_SC_Pearson(x, y, return_equation: bool = False, components: int = 1) -> float | tuple[float, Callable]:
+    result = linregress(x, y)
+    m, c, pr, pp, mErr, cErr = result.slope, result.intercept, result.rvalue, result.pvalue, result.stderr, result.intercept_stderr
+    if(not return_equation):
+        return pr
+    else:
+        return (pr, lambda x: (m*x) + c)
+
+def calculate_SC_GLS(x, y, return_equation: bool = False, components: int = 1) -> float | tuple[float, Callable]:
+    # First, format x into a form interpretable by a GLM with the desired component count
+    formattedX = np.vstack([np.ones(x.shape[0], dtype = float)] + [np.power(x, power+1) for power in range(components)]).T
+    # Now fit the model and extract relevant parameters
+    lin_model = sm.GLS(y, formattedX)
+    res = lin_model.fit()
+    rho = res.params
+    pr = res.rsquared
+    if(not return_equation):
+        return pr
+    return (pr, lambda result: rho[0] + np.dot(create_squared_array(result, rho.shape[0]-1), rho[1:].T))
+
+def create_squared_array(x, shape: int = 2, dtype = float) -> np.ndarray:
+    output = np.full(shape, x, dtype = dtype)
+    for i in range(1, shape):
+        output[i] = np.power(output[0] ,i+1)
+    return output
 
 if(__name__=="__main__"):
     main()
