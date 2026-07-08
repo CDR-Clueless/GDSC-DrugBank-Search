@@ -139,7 +139,7 @@ def calculate_gene(line, prior: float, banned_methods: list, desired_methods: li
     
     # If there are desired elements, remove everything else
     if(len(desired_methods)>0):
-        for method in toCombine:
+        for method in list(toCombine.keys()):
             if(method not in desired_methods):
                 del toCombine[method]
     else:
