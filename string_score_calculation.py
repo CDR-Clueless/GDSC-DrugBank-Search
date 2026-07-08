@@ -47,7 +47,7 @@ def calculate(banned_methods: list = ["textmining"], inputFile: str = INPUT_FILE
     banned_methods = [s.lower().replace(" ","") for s in banned_methods]
     desired_methods = [s.lower().replace(" ","") for s in desired_methods]
 
-    if not os.path.exists(INPUT_FILE):
+    if not os.path.exists(inputFile):
         logFile.add("Can't locate input file %s" % INPUT_FILE)
         print("Can't locate input file %s" % INPUT_FILE)
         return
@@ -55,7 +55,7 @@ def calculate(banned_methods: list = ["textmining"], inputFile: str = INPUT_FILE
     prior = 0.041
 
     # Get file data; use 1: to remove header row
-    with open(INPUT_FILE, "r") as f:
+    with open(inputFile, "r") as f:
         lines = f.read().splitlines()[1:]
 
     mp.Pool(coreCount).starmap_async(calculate_gene,
