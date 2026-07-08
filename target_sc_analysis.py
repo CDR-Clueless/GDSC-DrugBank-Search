@@ -29,6 +29,16 @@ def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataF
     
     drugTargets["ZSCORE"] = np.divide(drugTargets["SURVIVABILITY CORRELATION"] - drugTargets["DRUG_MEAN"], drugTargets["DRUG_SD"])
     zScores = drugTargets["ZSCORE"][~np.isnan(drugTargets["ZSCORE"])]
+    # If save dir is given, save this data
+    if(saveOutput is not None):
+        fileDir = os.path.join(saveOutput, "drugTargets.tsv")
+        if(os.path.exists(fileDir)):
+            df = pd.read_csv(fileDir, sep = "\t")
+            df = pd.concat(df, drugTargets)
+        else:
+            df = drugTargets
+        df.drop_duplicates(inplace=True)
+        df.to_csv(fileDir, sep = "\t", lineterminator="\n", index = False)
 
     plt.scatter(range(zScores.shape[0]), sorted(zScores)[::-1])
     # Add threshold AND p < 0.05 lines
@@ -49,6 +59,17 @@ def target_SC_analysis(saveOutput: Optional[str] = None, drugTargets: Optional[p
 
     drugTargets["THRESHOLD"] = drugTargets["DRUG_MEAN"] + (3*drugTargets["DRUG_SD"])
     drugTargets["SURVIVABILITY TARGET RATIO"] = drugTargets["SURVIVABILITY CORRELATION"] / drugTargets["THRESHOLD"]
+
+    # If save dir is given, save this data
+    if(saveOutput is not None):
+        fileDir = os.path.join(saveOutput, "drugTargets.tsv")
+        if(os.path.exists(fileDir)):
+            df = pd.read_csv(fileDir, sep = "\t")
+            df = pd.concat(df, drugTargets)
+        else:
+            df = drugTargets
+        df.drop_duplicates(inplace=True)
+        df.to_csv(fileDir, sep = "\t", lineterminator="\n", index = False)
 
     realRatios = drugTargets["SURVIVABILITY TARGET RATIO"][~np.isnan(drugTargets["SURVIVABILITY TARGET RATIO"])]
     realVals = drugTargets["SURVIVABILITY CORRELATION"][~np.isnan(drugTargets["SURVIVABILITY CORRELATION"])]
