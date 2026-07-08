@@ -55,13 +55,14 @@ def calculate(banned_methods: list = ["textmining"], inputFile: str = INPUT_FILE
 
     prior = 0.041
 
-    # Get file data; use 1: to remove header row
+    # Iterate over lines of the given file
     with open(inputFile, "r") as f:
-        lines = f.read().splitlines()[1:]
+        for line in f:
+            calculate_gene(line, prior, banned_methods, desired_methods, outputFile)
 
-    mp.Pool(coreCount).starmap_async(calculate_gene,
-                [(line, prior, banned_methods, desired_methods, outputFile)
-                for line in range(lines)]).get()
+    #mp.Pool(coreCount).starmap_async(calculate_gene,
+                #[(line, prior, banned_methods, desired_methods, outputFile)
+                #for line in range(lines)]).get()
 
 def compute_prior_away(score, prior):
 
