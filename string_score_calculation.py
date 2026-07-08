@@ -41,6 +41,7 @@ def main(parser: argparse.ArgumentParser):
 def calculate(banned_methods: list = ["textmining"], inputFile: str = INPUT_FILE, outputFile: str = OUTPUT_FILE,
               desired_methods: list =[], coreCount: int = max(mp.cpu_count()-2, 1), logFile: Logger = Logger()):
     
+    logFile.clear()
     logFile.add(f"Banned methods: {banned_methods}\nDesired methods: {desired_methods}\nInput File: {inputFile}\nOutput File: {outputFile}")
 
     # Format banned_methods to standardise for code comparison
