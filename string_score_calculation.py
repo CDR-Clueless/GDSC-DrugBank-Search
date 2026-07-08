@@ -55,9 +55,13 @@ def calculate(banned_methods: list = ["textmining"], inputFile: str = INPUT_FILE
 
     prior = 0.041
 
-    # Iterate over lines of the given file
+    # Iterate over lines of the given file; skip the first as it's the header line
     with open(inputFile, "r") as f:
+        header = True
         for line in f:
+            if(header):
+                header = False
+                continue
             calculate_gene(line, prior, banned_methods, desired_methods, outputFile)
 
     #mp.Pool(coreCount).starmap_async(calculate_gene,
