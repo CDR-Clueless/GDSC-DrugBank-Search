@@ -34,7 +34,7 @@ def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataF
         fileDir = os.path.join(saveOutput, "drugTargets.tsv")
         if(os.path.exists(fileDir)):
             df = pd.read_csv(fileDir, sep = "\t")
-            df = pd.concat(df, drugTargets)
+            df = pd.concat([df, drugTargets])
         else:
             df = drugTargets
         df.drop_duplicates(inplace=True)
@@ -65,7 +65,7 @@ def target_SC_analysis(saveOutput: Optional[str] = None, drugTargets: Optional[p
         fileDir = os.path.join(saveOutput, "drugTargets.tsv")
         if(os.path.exists(fileDir)):
             df = pd.read_csv(fileDir, sep = "\t")
-            df = pd.concat(df, drugTargets)
+            df = pd.concat([df, drugTargets])
         else:
             df = drugTargets
         df.drop_duplicates(inplace=True)
@@ -264,7 +264,7 @@ def prepare_target_frame() -> Tuple[pd.DataFrame,pd.DataFrame]:
     drugTargets["DRUG_MEAN"] = means
     drugTargets["DRUG_SD"] = sds
 
-    return drugTargets, scScores
+    return drugTargets[drugTargets.TARGET != ""], scScores
 
 if(__name__=="__main__"):
     main()

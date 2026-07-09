@@ -63,6 +63,8 @@ def calculate(banned_methods: list = ["textmining"], inputFile: str = INPUT_FILE
                 header = False
                 continue
             calculate_gene(line, prior, banned_methods, desired_methods, outputFile)
+    
+    logFile.add("Finished STRING calculation")
 
     #mp.Pool(coreCount).starmap_async(calculate_gene,
                 #[(line, prior, banned_methods, desired_methods, outputFile)
