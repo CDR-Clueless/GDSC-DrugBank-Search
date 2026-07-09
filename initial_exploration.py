@@ -807,7 +807,7 @@ def main():
         coreCount: int = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
 
-    #"""
+    """
     ### Analyse targets using PPI network
     ## Prepare main STRING graph
     # Fetch HGNC/HUGO for updating gene names
@@ -962,7 +962,7 @@ def main():
     analyser.bliss_sc_comparison()
     #"""
 
-    """
+    #"""
     ### Modality analysis plotting code
     # Generate histograms if they haven't been plotted yet
     for response in ["LN_IC50", "pKi"]:
@@ -978,7 +978,7 @@ def main():
     
     # GDSCC modality analysis
     #for response in ["LN_IC50", "eMax"]:
-        sm = SquaredModalityAnalyzer()
+        #sm = SquaredModalityAnalyzer()
         #sm.plot_cf()
         #sm.plot_waterfall()
         #rel = sm.datasets["drug modality summary organised"]
