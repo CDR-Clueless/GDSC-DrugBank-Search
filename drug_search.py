@@ -302,7 +302,8 @@ def make_dir(directory_to_make: str) -> None:
             os.mkdir(path)
     return
 
-def update_hgnc(df: pd.DataFrame, hgncdata: pd.DataFrame, column: str = "symbol") -> pd.DataFrame:
+def update_hgnc(df: pd.DataFrame, hgncdata: pd.DataFrame = pd.read_csv(DEFAULT_HUGO_FILE, sep = "\t", low_memory=False).fillna('').set_index("symbol"),
+                column: str = "symbol", report_completion: bool = False) -> pd.DataFrame:
     """
     Normalise archaic names using HGNC standard
 
@@ -313,7 +314,10 @@ def update_hgnc(df: pd.DataFrame, hgncdata: pd.DataFrame, column: str = "symbol"
     Returns:
         pd.DataFrame: Version of 'df' with updated gene names
     """
-    bad_names = set(df[column]) & (set(df[column]) ^ set(hgncdata.index))
+
+    bad_names = set(df[column]) - set(hgncdata.index)
+
+    replaced: int = 0
 
     for g in tqdm(bad_names, desc = "Replacing gene names using HUGO standardisation"):
         # Make sure g is a string
@@ -329,9 +333,12 @@ def update_hgnc(df: pd.DataFrame, hgncdata: pd.DataFrame, column: str = "symbol"
         else:
             #print(f'STRING old gene name {g} replaced by new name {g2[0]}')
             df.replace(g,g2[0], inplace=True)
+            replaced += 1
+    if(report_completion):
+        return df, replaced
     return df
 
-def update_hgnc_single(gn: str, hgncdata: pd.DataFrame) -> str:
+def update_hgnc_single(gn: str, hgncdata: pd.DataFrame = pd.read_csv(DEFAULT_HUGO_FILE, sep = "\t")) -> str:
     """
     Normalise individual archaic name using HGNC standard
 
