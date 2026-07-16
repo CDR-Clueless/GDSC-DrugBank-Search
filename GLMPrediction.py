@@ -38,6 +38,9 @@ if(os.path.exists(os.path.join("Local", "localVars.json"))):
         DEBUG_MODE = bool(json.load(f)["DEBUG_MODE"])
 
 def main():
+    logFile: Logger = Logger()
+    logFile.clear()
+    logFile.add("Preparing to train GLMs to predict drug response")
     #sc = import_SC()
     ess = import_essentiality()
     # Get gene essentiality variances for each gene and then sort them
@@ -81,7 +84,9 @@ def main():
         os.mkdir(DEFAULT_MODEL_STATS_OUTPUT)
 
     # Train predictors for each different drug
-    for drug in gdsc2.index.unique():
+    logFile.add("Training GLMs")
+    perc, drugLen = 0.1, len(gdsc2.index.unique())
+    for i, drug in enumerate(gdsc2.index.unique()):
         relGD = gdsc2.loc[gdsc2.index == drug]
         scores = {relGD["ModelID"].values[i]: relGD["pIC50"].values[i] for i in range(len(relGD))}
         predictorFrame = deepcopy(relEss)
@@ -95,6 +100,9 @@ def main():
 
         stats.to_csv(os.path.join(DEFAULT_MODEL_STATS_OUTPUT, f"{drug}-stats.tsv"), sep = "\t", lineterminator="\n", index = False, header = False)
         coefficients.to_csv(os.path.join(DEFAULT_MODEL_STATS_OUTPUT, f"{drug}-coefficients.tsv"), sep = "\t", lineterminator="\n", index = True)
+        if(i/drugLen>perc):
+            logFile.add(f"{perc*100}% of drugs trained on")
+            perc += 0.1
     return
 
 def import_essentiality() -> pd.DataFrame:
