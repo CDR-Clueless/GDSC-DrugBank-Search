@@ -7,6 +7,7 @@ Created 15 Jul 2026
 """
 
 import os
+from io import StringIO
 from copy import deepcopy
 from typing import Optional
 from collections.abc import Callable
@@ -29,6 +30,7 @@ DEFAULT_CELL_INFO_FILE: str = os.path.join(CLEANED_DATA_DIR, "Model.csv")
 DEFAULT_DRUG1_FILE: str = os.path.join(CLEANED_DATA_DIR, 'GDSC1_drug_results_target_cleaned7.tsv')
 DEFAULT_DRUG2_FILE: str = os.path.join(CLEANED_DATA_DIR, 'GDSC2_drug_results_target_cleaned7.tsv')
 DEFAULT_DRUG_COMB_FILE: str = os.path.join("Data", "Raw Data", "GDSCC")
+DEFAULT_MODEL_STATS_OUTPUT: str = os.path.join("Data", "Results", "GLM Model Results-High Variance")
 
 DEBUG_MODE: bool = False
 if(os.path.exists(os.path.join("Local", "localVars.json"))):
@@ -74,6 +76,10 @@ def main():
     # Load in GDSC2 data
     gdsc2 = import_gdsc()
 
+    # Ensure there's an output directory for the model results output
+    if(not os.path.exists(DEFAULT_MODEL_STATS_OUTPUT)):
+        os.mkdir(DEFAULT_MODEL_STATS_OUTPUT)
+
     # Train predictors for each different drug
     for drug in gdsc2.index.unique():
         relGD = gdsc2.loc[gdsc2.index == drug]
@@ -82,10 +88,13 @@ def main():
         predictorFrame["pIC50"] = predictorFrame.index.map(scores)
         predictorFrame.dropna(axis = 0, inplace=True)
 
-        print(train_gls(predictorFrame, "pIC50").summary())
+        results = train_gls(predictorFrame, "pIC50").summary()
 
-        return
+        stats = pd.read_html(StringIO(results.tables[0].as_html()))[0]
+        coefficients = pd.read_html(StringIO(results.tables[1].as_html()), header=0, index_col=0)[0]
 
+        stats.to_csv(os.path.join(DEFAULT_MODEL_STATS_OUTPUT, f"{drug}-stats.tsv"), sep = "\t", lineterminator="\n", index = False, header = False)
+        coefficients.to_csv(os.path.join(DEFAULT_MODEL_STATS_OUTPUT, f"{drug}-coefficients.tsv"), sep = "\t", lineterminator="\n", index = True)
     return
 
 def import_essentiality() -> pd.DataFrame:
