@@ -136,7 +136,7 @@ def import_gdsc(version: int = 2) -> pd.DataFrame:
         df = pd.read_csv(DEFAULT_DRUG1_FILE, sep = "\t")
     else:
         df = pd.read_csv(DEFAULT_DRUG2_FILE, sep = "\t")
-    df["DRUG_NAME"] = df["DRUG_NAME"].apply(lambda x:x.upper())
+    df["DRUG_NAME"] = df["DRUG_NAME"].apply(lambda x:x.upper().strip())
     df.set_index("DRUG_NAME", inplace=True)
     df["pIC50"] = np.multiply(df["LN_IC50"], -1)
     return df
