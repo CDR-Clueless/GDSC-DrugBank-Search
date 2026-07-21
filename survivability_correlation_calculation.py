@@ -49,7 +49,7 @@ def main():
     #combos, lines = len(drugData["Combo Name"].unique()), len(drugData["Cell Line Name"].unique())
     #print(f"{combos} unique combinations along {lines} cell lines")
     #print(drugData)
-    gdsc()
+    gdsc(scMode = "GLS")
     #for responseColumn in ["LN_IC50", "eMax"]:
     #    for fileSource in ["anchor", "matrix"]:
     #        gdscc(responseColumn=responseColumn, desiredFiles=fileSource)
