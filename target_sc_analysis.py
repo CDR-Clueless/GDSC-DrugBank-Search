@@ -18,11 +18,16 @@ from target_functions import get_drugTargets
 
 def main():
     outputDir = os.path.join("Data", "Results", "Target-Analysis")
-    dT, sc = prepare_target_frame()
+    dTPearson, scPearson = prepare_target_frame()
+    dTGLS, scGLS = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-GLS_2-AllDrugsByAllGenes.tsv"))
     #target_SC_analysis(saveOutput=outputDir, drugTargets = dT, scScores = sc)
-    get_zScores(outputDir, dT)
+    #get_zScores(outputDir, dT)
+    get_zScores(drugTargets = dTPearson, saveOutput=outputDir, calcMethod = "Pearson")
+    get_zScores(drugTargets = dTGLS, saveOutput=outputDir, calcMethod = "2-Component GLS")
+    #target_SC_analysis(saveOutput=outputDir, drugTargets=dTGLS, scScores = scGLS, calcMethod = "2-Component GLS")
 
-def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None) -> None:
+def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None,
+                titleBase: Optional[str] = None, calcMethod: str = "Pearson") -> None:
     # Get all known putatitve drug targets
     if(drugTargets is None):
         drugTargets, _ = prepare_target_frame()
@@ -41,19 +46,58 @@ def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataF
         df.to_csv(fileDir, sep = "\t", lineterminator="\n", index = False)
 
     plt.scatter(range(zScores.shape[0]), sorted(zScores)[::-1])
-    # Add threshold AND p < 0.05 lines
+    # Add threshold AND p < 0.05 lines (Z-Score of 3 means 3 SD's above norm which is the threshold, Z-Score of 1.645 translates as p<0.05)
     plt.plot([0, zScores.shape[0]], [3.0, 3.0], color = "green")
     plt.plot([0, zScores.shape[0]], [1.645, 1.645], color = "red")
+    # Add percentages of how many targets are above the two lines
+    threePerc = round((zScores[zScores >= 3.0].shape[0] / zScores.shape[0])*100, 1)
+    p5Perc = round((zScores[zScores >= 1.645].shape[0] / zScores.shape[0])*100, 1)
+    plt.text(threePerc/100 * zScores.shape[0], 3.0+0.2, f"{threePerc}%", color = "green")
+    plt.text(p5Perc/100 * zScores.shape[0], 1.645+0.2, f"{p5Perc}%", color = "red")
     plt.xlabel("Putative Drug Target")
     plt.ylabel("SC Z-Score")
-    plt.title("Z-Scores of Putative Drug Target Survivability Correlations")
+    if(titleBase is None):
+        title = f"Z-Scores of Putative Drug Target {calcMethod} Survivability Correlations"
+    else:
+        title = titleBase
+    plt.title(title.replace("CALCMETHOD", calcMethod))
     if(saveOutput is None):
         plt.show()
     else:
-        plt.savefig(os.path.join(saveOutput, "GDSC All Target Z-Scores"))
+        plt.savefig(os.path.join(saveOutput, f"{calcMethod} GDSC All Target Z-Scores"))
+        plt.clf()
+        plt.close()
+
+    ## Plot the best-scoring gene targets instead of all of them
+    highest = np.array([np.nanmax(drugTargets.loc[drugTargets["DRUG_STANDARD"] == drug]["ZSCORE"].values) for drug in drugTargets["DRUG_STANDARD"].unique()], dtype = float)
+    highest = highest[~np.isnan(highest)]
+    highest = np.array(sorted(list(highest))[::-1])
+    plt.scatter(range(highest.shape[0]), highest)
+    # Add threshold AND p < 0.05 lines (Z-Score of 3 means 3 SD's above norm which is the threshold, Z-Score of 1.645 translates as p<0.05)
+    plt.plot([0, highest.shape[0]], [3.0, 3.0], color = "green")
+    plt.plot([0, highest.shape[0]], [1.645, 1.645], color = "red")
+    # Add percentages of how many targets are above the two lines
+    threePerc = round((highest[highest >= 3.0].shape[0] / highest.shape[0])*100, 1)
+    p5Perc = round((highest[highest >= 1.645].shape[0] / highest.shape[0])*100, 1)
+    plt.text(threePerc/100 * highest.shape[0], 3.0+0.2, f"{threePerc}%", color = "green")
+    plt.text(p5Perc/100 * highest.shape[0], 1.645+0.2, f"{p5Perc}%", color = "red")
+    plt.xlabel("Putative Drug Target")
+    plt.ylabel("SC Z-Score")
+    if(titleBase is None):
+        title = f"Highest Z-Scores of Putative Drug Target {calcMethod} Survivability Correlations"
+    else:
+        title = titleBase
+    plt.title(title.replace("CALCMETHOD", calcMethod))
+    if(saveOutput is None):
+        plt.show()
+    else:
+        plt.savefig(os.path.join(saveOutput, f"{calcMethod} GDSC Highest Target Z-Scores"))
+        plt.clf()
+        plt.close()
     return
 
-def target_SC_analysis(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None, scScores: Optional[pd.DataFrame] = None) -> None:
+def target_SC_analysis(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None, scScores: Optional[pd.DataFrame] = None,
+                       calcMethod: str = "Pearson") -> None:
     if(drugTargets is None or scScores is None):
         drugTargets, scScores = prepare_target_frame()
 
@@ -62,7 +106,7 @@ def target_SC_analysis(saveOutput: Optional[str] = None, drugTargets: Optional[p
 
     # If save dir is given, save this data
     if(saveOutput is not None):
-        fileDir = os.path.join(saveOutput, "drugTargets.tsv")
+        fileDir = os.path.join(saveOutput, f"{calcMethod} drugTargets.tsv")
         if(os.path.exists(fileDir)):
             df = pd.read_csv(fileDir, sep = "\t")
             df = pd.concat([df, drugTargets])
@@ -84,7 +128,7 @@ def target_SC_analysis(saveOutput: Optional[str] = None, drugTargets: Optional[p
     if(saveOutput is None):
         plt.show()
     else:
-        plt.savefig(os.path.join(saveOutput, "GDSC All Target Scores.png"))
+        plt.savefig(os.path.join(saveOutput, f"{calcMethod} GDSC All Target Scores.png"))
     plt.clf()
 
     ## Plot best SC scores for each drug
@@ -97,7 +141,7 @@ def target_SC_analysis(saveOutput: Optional[str] = None, drugTargets: Optional[p
     if(saveOutput is None):
         plt.show()
     else:
-        plt.savefig(os.path.join(saveOutput, "GDSC Best Target Scores.png"))
+        plt.savefig(os.path.join(saveOutput, f"{calcMethod} GDSC Best Target Scores.png"))
     plt.clf()
 
     ## Plot SC Ratios
@@ -117,7 +161,7 @@ def target_SC_analysis(saveOutput: Optional[str] = None, drugTargets: Optional[p
     if(saveOutput is None):
         plt.show()
     else:
-        plt.savefig(os.path.join(saveOutput, "GDSC All Target Scores ratios.png"))
+        plt.savefig(os.path.join(saveOutput, f"{calcMethod} GDSC All Target Scores ratios.png"))
     plt.clf()
 
     ## Plot the highest ratio for each drug
@@ -144,7 +188,7 @@ def target_SC_analysis(saveOutput: Optional[str] = None, drugTargets: Optional[p
     if(saveOutput is None):
         plt.show()
     else:
-        plt.savefig(os.path.join(saveOutput, "GDSC Best Target Scores ratios.png"))
+        plt.savefig(os.path.join(saveOutput, f"{calcMethod} GDSC Best Target Scores ratios.png"))
     plt.clf()
 
     ## Plotting number of genes with SC scores above putative targets
@@ -175,7 +219,7 @@ def target_SC_analysis(saveOutput: Optional[str] = None, drugTargets: Optional[p
     if(saveOutput is None):
         plt.show()
     else:
-        plt.savefig(os.path.join(saveOutput, "GDSC All Higher Target SC Counts.png"))
+        plt.savefig(os.path.join(saveOutput, f"{calcMethod} GDSC All Higher Target SC Counts.png"))
     plt.clf()
 
     # Plot these numbers but for the best-performing target per drug
@@ -190,7 +234,7 @@ def target_SC_analysis(saveOutput: Optional[str] = None, drugTargets: Optional[p
     if(saveOutput is None):
         plt.show()
     else:
-        plt.savefig(os.path.join(saveOutput, "GDSC Best Higher Target SC Counts.png"))
+        plt.savefig(os.path.join(saveOutput, f"{calcMethod} GDSC Best Higher Target SC Counts.png"))
     plt.clf()
 
     ## Get details on drugs missing from putatitve target lists and putative targets missing from GDSC Survivability Correlation data
@@ -223,17 +267,17 @@ def target_SC_analysis(saveOutput: Optional[str] = None, drugTargets: Optional[p
     if(saveOutput is None):
         print(outString)
     else:
-        with open(os.path.join(saveOutput, "Invalid Drugs and Targets.txt"), "w") as f:
+        with open(os.path.join(saveOutput, f"{calcMethod} Invalid Drugs and Targets.txt"), "w") as f:
             f.write(outString)
 
     return
 
-def prepare_target_frame() -> Tuple[pd.DataFrame,pd.DataFrame]:
+def prepare_target_frame(scFrameLoc: str = os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-AllDrugsByAllGenes.tsv")) -> Tuple[pd.DataFrame,pd.DataFrame]:
     # Get all known putatitve drug targets
     drugTargets = get_drugTargets()
 
     ## Get SC ratio scores for each target (requires previous code section getting targets to work)
-    scScores = pd.read_csv(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-AllDrugsByAllGenes.tsv"), sep = "\t")
+    scScores = pd.read_csv(scFrameLoc, sep = "\t")
     scScores.set_index("symbol", inplace=True)
     # Format columns/values on each dataframe
     scScores.columns = [str(col).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for col in scScores.columns]

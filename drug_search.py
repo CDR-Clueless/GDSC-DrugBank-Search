@@ -338,7 +338,7 @@ def update_hgnc(df: pd.DataFrame, hgncdata: pd.DataFrame = pd.read_csv(DEFAULT_H
         return df, replaced
     return df
 
-def update_hgnc_single(gn: str, hgncdata: pd.DataFrame = pd.read_csv(DEFAULT_HUGO_FILE, sep = "\t")) -> str:
+def update_hgnc_single(gn: str, hgncdata: pd.DataFrame = pd.read_csv(DEFAULT_HUGO_FILE, sep = "\t", low_memory = False)) -> str:
     """
     Normalise individual archaic name using HGNC standard
 

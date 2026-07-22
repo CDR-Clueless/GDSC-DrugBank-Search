@@ -361,7 +361,7 @@ def gdscc(responseColumn: str = "eMax",
 
 def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
          gdsc1Loc: Optional[str] = None, gdsc2Loc: Optional[str] = None,
-         logFile: Logger = Logger(os.path.join("Data", "Results", "GDSC-SC-calculation-output.txt")),
+         logFile: Logger = Logger(os.path.join("Data", "Results", "GDSC-SC-calculation-log.txt")),
          dMode: bool = DEBUG_MODE,
          scMode: str = "pearson", nComponents: int = 2):
     
