@@ -7,6 +7,7 @@ Created 2 Jul 2026
 """
 
 import os
+from copy import deepcopy
 from typing import Optional, Tuple
 
 import numpy as np
@@ -22,28 +23,23 @@ def main():
     dTGLS, scGLS = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-GLS_2-AllDrugsByAllGenes.tsv"))
     #target_SC_analysis(saveOutput=outputDir, drugTargets = dT, scScores = sc)
     #get_zScores(outputDir, dT)
-    get_zScores(drugTargets = dTPearson, saveOutput=outputDir, calcMethod = "Pearson")
-    get_zScores(drugTargets = dTGLS, saveOutput=outputDir, calcMethod = "2-Component GLS")
+    get_zScores(drugTargets = dTPearson, saveOutput=outputDir, calcMethod = "Pearson", save_stats = True)
+    get_zScores(drugTargets = dTGLS, saveOutput=outputDir, calcMethod = "2-Component GLS", save_stats = True)
     #target_SC_analysis(saveOutput=outputDir, drugTargets=dTGLS, scScores = scGLS, calcMethod = "2-Component GLS")
 
 def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None,
-                titleBase: Optional[str] = None, calcMethod: str = "Pearson") -> None:
+                titleBase: Optional[str] = None, calcMethod: str = "Pearson",
+                save_stats: bool = False) -> None:
+    # Change save_stats if no save output was given
+    if(saveOutput is None and save_stats == True):
+        print(f"A save directory is required to save analysis results")
+        save_stats = False
     # Get all known putatitve drug targets
     if(drugTargets is None):
         drugTargets, _ = prepare_target_frame()
     
     drugTargets["ZSCORE"] = np.divide(drugTargets["SURVIVABILITY CORRELATION"] - drugTargets["DRUG_MEAN"], drugTargets["DRUG_SD"])
     zScores = drugTargets["ZSCORE"][~np.isnan(drugTargets["ZSCORE"])]
-    # If save dir is given, save this data
-    if(saveOutput is not None):
-        fileDir = os.path.join(saveOutput, "drugTargets.tsv")
-        if(os.path.exists(fileDir)):
-            df = pd.read_csv(fileDir, sep = "\t")
-            df = pd.concat([df, drugTargets])
-        else:
-            df = drugTargets
-        df.drop_duplicates(inplace=True)
-        df.to_csv(fileDir, sep = "\t", lineterminator="\n", index = False)
 
     plt.scatter(range(zScores.shape[0]), sorted(zScores)[::-1])
     # Add threshold AND p < 0.05 lines (Z-Score of 3 means 3 SD's above norm which is the threshold, Z-Score of 1.645 translates as p<0.05)
@@ -94,6 +90,45 @@ def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataF
         plt.savefig(os.path.join(saveOutput, f"{calcMethod} GDSC Highest Target Z-Scores"))
         plt.clf()
         plt.close()
+
+    # If stats are wanted to be saved, save here
+    if(save_stats == True):
+        fileDir = os.path.join(saveOutput, f"{calcMethod} drugTargets.tsv")
+        if(os.path.exists(fileDir)):
+            df = pd.read_csv(fileDir, sep = "\t")
+            df = pd.concat([df, drugTargets])
+        else:
+            df = drugTargets
+        df.drop_duplicates(inplace=True)
+        df.to_csv(fileDir, sep = "\t", lineterminator="\n", index = False)
+        ## Save lists of gene groups predicted and not predicted as targets
+        # First, remove rows with NaN values
+        dTnoNan = drugTargets.dropna(axis = 0, subset = ["ZSCORE"])
+        # Loop over the two major thresholds - 1.645 (p<0.05) and 3.0 (3 Standard Deviations)
+        for threshLabel, thresh in zip(["3SD", "p < 0.05"], [3.0, 1.645]):
+            # Now get all drugs above or below the thresholds
+            pred3z = dTnoNan.loc[dTnoNan["ZSCORE"] >= thresh]
+            nonpred3z = dTnoNan.loc[dTnoNan["ZSCORE"] < thresh]
+            # Next get all drugs which have at least one gene above the threshold
+            highPred3z = []
+            for drug in pred3z["DRUG_STANDARD"].unique():
+                entry = pred3z.loc[pred3z["DRUG_STANDARD"] == drug]
+                rel = entry.loc[entry["ZSCORE"]==max(entry["ZSCORE"].values)]
+                if(rel["ZSCORE"].values[0] >= thresh):
+                    highPred3z.append(deepcopy((rel["DRUG_STANDARD"].values[0], rel["TARGET"].values[0])))
+            # And then use this to infer all drugs which don't have a single gene above the threshold
+            nonHighPred3z = [drug for drug in dTnoNan["DRUG_STANDARD"].values if drug not in [e[0] for e in highPred3z]]
+            # Format the above into a single list of lists (padding with blank strings)
+            maxLen = max([len(pred3z["TARGET"].values), len(nonpred3z["TARGET"].values), len(highPred3z), len(nonHighPred3z)])
+            pred3z = list(pred3z["TARGET"].values) + ([""] * (maxLen - len(pred3z["TARGET"].values)))
+            nonpred3z = list(nonpred3z["TARGET"].values) + ([""] * (maxLen - len(nonpred3z["TARGET"].values)))
+            highPred3z = [e[0] for e in highPred3z] + ([""] * (maxLen - len(highPred3z)))
+            nonHighPred3z = nonHighPred3z + ([""] * (maxLen - len(nonHighPred3z)))            
+            outFrame = pd.DataFrame(data = list(zip(pred3z, nonpred3z, highPred3z, nonHighPred3z)),
+                                    columns = ["Target Genes Predicted", "Target Genes Not Predicted",
+                                               "Drugs With >=1 Target Genes Predicted", "Drugs With No Target Genes Predicted"])
+            outFrame.to_csv(os.path.join(saveOutput, f"{calcMethod} Threshold Labels {threshLabel}.tsv"),
+                            sep = "\t", lineterminator = "\n", index = False)
     return
 
 def target_SC_analysis(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None, scScores: Optional[pd.DataFrame] = None,
