@@ -6,6 +6,7 @@ Created 11 Jun 2026
 @author: jds40
 """
 import os
+from copy import deepcopy
 from typing import Optional
 from collections.abc import Callable
 import multiprocessing as mp
@@ -67,8 +68,8 @@ def main():
 
     return
 
-def calculate_rsquared(x, y, nComponents: int = 2) -> float:
-    return calculate_SC_GLS(x, y, components = nComponents)
+def calculate_rsquared(x, y, nComponents: int = 2, return_equation: bool = False, return_coefficients: bool = False) -> float:
+    return calculate_SC_GLS(x, y, components = nComponents, return_equation = return_equation, return_coefficients = return_coefficients)
 
 def calculate_survCorr(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
          gdsc1Loc: Optional[str] = None, gdsc2Loc: Optional[str] = None,
@@ -212,7 +213,7 @@ def calculate_SC_Pearson(x, y, return_equation: bool = False, components: int = 
     else:
         return (pr, lambda x: (m*x) + c)
 
-def calculate_SC_GLS(x, y, return_equation: bool = False, components: int = 1) -> float | tuple[float, Callable]:
+def calculate_SC_GLS(x, y, components: int = 1, return_equation: bool = False, return_coefficients: bool = False) -> float | tuple[float, Callable]:
     """Calculate Generalized Least Squares regression between data x and y
 
     Args:
@@ -231,9 +232,14 @@ def calculate_SC_GLS(x, y, return_equation: bool = False, components: int = 1) -
     res = lin_model.fit()
     rho = res.params
     pr = res.rsquared
-    if(not return_equation):
+    if(not return_equation and not return_coefficients):
         return pr
-    return (pr, lambda result: rho[0] + np.dot(create_squared_array(result, rho.shape[0]-1), rho[1:].T))
+    output = [pr]
+    if(return_equation):
+        output.append(lambda result: rho[0] + np.dot(create_squared_array(result, rho.shape[0]-1), rho[1:].T))
+    if(return_coefficients):
+        output.append(rho)
+    return deepcopy(tuple(output))
 
 def create_squared_array(x, shape: int = 2, dtype = float) -> np.ndarray:
     """ Create an array of [x, x^2, x^3, ..., x^{shape}]

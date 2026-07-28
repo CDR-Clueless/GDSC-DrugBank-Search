@@ -12,6 +12,7 @@ from copy import deepcopy
 import random
 import time
 import numpy as np
+from scipy.optimize import curve_fit as scipy_curvefit
 import pandas as pd
 from scipy.stats import pearsonr
 
@@ -24,7 +25,7 @@ import multiprocessing as mp
 from typing import Union, Tuple, Optional
 
 from logger import Logger
-from testingGLM import calculate_rsquared
+from testingGLM import calculate_SC_GLS
 
 CLEANED_DATA_DIR: str = os.path.join("Data", "Laurence-Data")
 DEFAULT_CRISPR_FILE: str = os.path.join(CLEANED_DATA_DIR,"CRISPRGeneDependency.csv")
@@ -333,6 +334,7 @@ def gdscc(responseColumn: str = "eMax",
         nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
                 [(i,batchList[i],crisprDeps,[df], "Name", "ModelID", responseColumn, True, tempDir, logFile, dMode, scMode, glmComponents)
                 for i in range(cpu_count)]).get()
+        nested_dfs, nested_coefs = [n[0] for n in nested_dfs], [n[1] for n in nested_dfs]
         
         logFile.add(f'All by All for {drugType} {reportedResponse}{desired} took {((time.time())-t_prev)/60.0:.4} min')
         
@@ -358,6 +360,9 @@ def gdscc(responseColumn: str = "eMax",
         os.rmdir(tempDir)
         t_prev = time.time()
     logFile.add("Finished calculating GDSCC correlations")
+
+def linear_line(x: Union[np.ndarray, float], m: float, c: float) -> Union[np.ndarray, float]:
+    return (m * x) + c
 
 def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
          gdsc1Loc: Optional[str] = None, gdsc2Loc: Optional[str] = None,
@@ -459,11 +464,13 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
             [(i,batch_dlist[i],crisprDeps,[drug2,drug1],
             "DRUG_NAME", "ModelID", "LN_IC50", True, None, logFile, dMode, scMode, nComponents)
             for i in range(cpu_count)]).get()
+    nested_dfs, nested_coefs = [n[0] for n in nested_dfs], [n[1] for n in nested_dfs]
     
     logFile.add(f'pIC50 All by All took {((time.time())-t_prev)/60.0:.4} min ({((time.time())-t_prev)/3600.0:.1f} hrs)')
     
     # Concatenate all SC values
     allbyall = pd.concat(nested_dfs,axis=1)
+    coefs = [list(col) for col in zip(*nested_coefs)]
     
     logFile.add('Writing Drugs x Genes file)')
     if(scMode.lower().strip()=="pearson"):
@@ -471,6 +478,14 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     else:
         dbg = os.path.join(DEFAULT_OUTPUT_DIR, f"pIC50{debugFile}-{scMode}_{nComponents}-AllDrugsByAllGenes.tsv")
     allbyall.to_csv(dbg, sep='\t', index=True, header=True)
+    with open(dbg.replace(".tsv", "-Coefficients.tsv"), "w") as f:
+        out = ""
+        for row in coefs:
+            newrow = ""
+            for item in row:
+                newrow += f"{item}\t"
+            out += newrow.strip() + "\n"
+        f.write(out)
     logFile.add('Writing Genes x Drugs file)')
     allbyall = allbyall.T
     allbyall.index.names = ["Drug"]
@@ -510,16 +525,18 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
         pass
 
     # Set up results DataFrame to save to files
-    result = pd.DataFrame(columns=['symbol']+il)
+    result: pd.DataFrame = pd.DataFrame(columns=['symbol']+il)
     result.symbol = list(CRISPRdeps.columns)
     result = result.fillna(np.nan)
     result.set_index("symbol", inplace=True)
+    # Copy this dataframe into a list of lists recording coefficients
+    resultCoefficients: pd.DataFrame = [[np.nan for _ in range(len(result.columns))] for __ in range(len(result))]
 
     # Set up relevant function to Calculate Survivability Correlation
-    scFunc = {"pearson": pearsonr, "gls": calculate_rsquared}[scMode.lower().strip()]
+    scFunc = {"pearson": pearsonr, "gls": calculate_SC_GLS}[scMode.lower().strip()]
 
     # loop through all indexes, i.e. drugs/compounds, calculating r for all genes
-    for d in tqdm(il, desc=f"Thread {it} progress"):
+    for di, d in tqdm(zip(range(len(il)), il), desc=f"Thread {it} progress"):
         ## Load the calculation for this data if it has already been calculated
         starFileEnd: str = f"starmapcorrelations-drugColumn_{drugColumn}-cellLineColumn_{cellLineColumn}-responseColumn_{responseColumn}-drug_{d}_scMode-{scMode}_components-{glmComponents}"
         if(starfiledirBase is None):
@@ -562,7 +579,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
         # If in Debug mode, only do this for the first 20 genes
         if(dMode):
             genes = genes[:20]
-        for i, gn in enumerate(genes):
+        for gi, gn in enumerate(genes):
             
             # get dependencies (deps) for all available cell lines, as well as a list of cell lines which
             # were found within the deps DataFrame
@@ -590,7 +607,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
             
             # Get Pearson Correlations
 
-            prs = []
+            prs, coeffs = [], []
 
             for response in responses:
                 if(response is None):
@@ -609,17 +626,20 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
 
                 if(scMode.lower().strip()=="pearson"):
                     pr, pp = pearsonr(x, y)
+                    coeffs = scipy_curvefit(linear_line, x, y)
                 else:
-                    pr = scFunc(x, y, nComponents = glmComponents)
+                    pr, coeffs = scFunc(x, y, nComponents = glmComponents, return_coefficients = True)
                 prs.append(pr)
+                coeffs.append(deepcopy(coeffs))
             
             # Select which correlation value to use
             validCorr = False
             # If the source (GDSC) DataFrames are speicified in priority order, select the highest-priority dataset correlation
             if(priorityList):
-                for pr in prs:
+                for pr, coef in zip(prs, coeffs):
                     if(pr is not None):
                         result.at[gn, d] = pr
+                        resultCoefficients[gi][di] = coef
                         validCorr = True
                         break
             # If the DataFrames are not given in priority, choose the most non-zero correlation value
@@ -634,7 +654,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
         with open(starfiledir, "w") as f:
             f.write("\n".join([str(v) for v in result[d].values]))
             
-    return(result)
+    return(result, resultCoefficients)
 
 
 def ChunkDrugGene(it: int, dl: set, deps: pd.DataFrame, drug1: pd.DataFrame, drug2: pd.DataFrame):
