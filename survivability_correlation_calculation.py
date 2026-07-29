@@ -628,7 +628,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                     pr, pp = pearsonr(x, y)
                     coeffs = scipy_curvefit(linear_line, x, y)
                 else:
-                    pr, coeffs = scFunc(x, y, nComponents = glmComponents, return_coefficients = True)
+                    pr, coeffs = scFunc(x, y, components = glmComponents, return_coefficients = True)
                 prs.append(pr)
                 coeffs.append(deepcopy(coeffs))
             
