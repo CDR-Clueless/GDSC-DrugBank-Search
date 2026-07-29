@@ -626,11 +626,11 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
 
                 if(scMode.lower().strip()=="pearson"):
                     pr, pp = pearsonr(x, y)
-                    coeffs = scipy_curvefit(linear_line, x, y)
+                    coeff = scipy_curvefit(linear_line, x, y)
                 else:
-                    pr, coeffs = scFunc(x, y, components = glmComponents, return_coefficients = True)
+                    pr, coeff = scFunc(x, y, components = glmComponents, return_coefficients = True)
                 prs.append(pr)
-                coeffs.append(deepcopy(coeffs))
+                coeffs.append(deepcopy(coeff))
             
             # Select which correlation value to use
             validCorr = False
