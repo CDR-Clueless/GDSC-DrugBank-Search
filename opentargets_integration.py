@@ -20,6 +20,49 @@ from sqlite3 import connect
 DRUGS_TSV: str = os.path.join("Data", "Results", "Target-Analysis", "Pearson Threshold Labels p < 0.05.tsv")
 
 def main():
+    # Load in ChEMBL Data
+    conn = connect(database = os.path.join("Data", "Raw Data", "ChEMBL", "chembl_37", "chembl_37_sqlite", "chembl_37.db"))
+    cursor = conn.cursor()
+    out = cursor.execute("SELECT COMPOUND_NAME, PCHEMBL_VALUE FROM COMPOUND_RECORDS INNER JOIN ACTIVITIES ON COMPOUND_RECORDS.RECORD_ID = ACTIVITIES.RECORD_ID")
+    dfCmbl = pd.DataFrame(data = out.fetchall(), columns = ["Common Name", "pChEMBL"])
+    dfCmbl.dropna(axis = "index", inplace=True)
+    dfCmbl["Common Name"] = dfCmbl["Common Name"].str.upper()
+
+    # Load in good/bad drug target data
+    dfDrug = pd.read_csv(DRUGS_TSV, sep = "\t")
+    goodDrugsRaw = dfDrug["Drugs With >=1 Target Genes Predicted"].dropna()
+    badDrugsRaw = dfDrug["Drugs With No Target Genes Predicted"].dropna()
+
+    goodDrugsCountRaw = goodDrugsRaw.shape[0]
+    badDrugsRawCount = badDrugsRaw.shape[0]
+    goodDrugs = goodDrugsRaw.loc[goodDrugsRaw.isin(dfCmbl["Common Name"])]
+    badDrugs = badDrugsRaw.loc[badDrugsRaw.isin(dfCmbl["Common Name"])]
+    goodDrugsCount = goodDrugs.shape[0]
+    badDrugsCount = badDrugs.shape[0]
+
+    print(f"{str(goodDrugsCountRaw).ljust(3)} -> {str(goodDrugsCount).ljust(3)}")
+    print(f"{str(badDrugsRawCount).ljust(3)} -> {str(badDrugsCount).ljust(3)}")
+
+    goodResults = []
+    badResults = []
+
+    for drug in goodDrugs:
+        rel = dfCmbl.loc[dfCmbl["Common Name"] == drug]
+        goodResults.append(np.mean(rel["pChEMBL"].values))
+    for drug in badDrugs:
+        rel = dfCmbl.loc[dfCmbl["Common Name"] == drug]
+        badResults.append(np.mean(rel["pChEMBL"].values))
+
+    plt.figure(figsize = (12.8, 9.6))
+    plt.boxplot(x = [goodResults, badResults])
+    plt.ylabel("Average Drug pChEMBL Value")
+    plt.xlabel("Category")
+    plt.xticks([1, 2], labels = ["w. Predictable Targets", "wo. Predictable Targets"], rotation = 15)
+    plt.title("Average pChEMBL values of drugs with predictable and non-predictable targets")
+    plt.show()
+    return
+
+def plot_actions():
     # Load in OpenTargets Data
     dfTarget = pq.read_table(os.path.join("Data", "Raw Data", "OpenTargets", "drug_mechanism_of_action", "part-00000-10b94b1b-f29a-440c-98e0-c91862b6d2a8-c000.snappy.parquet")).to_pandas()
     dfTarget2 = pq.read_table(os.path.join("Data", "Raw Data", "OpenTargets", "drug_mechanism_of_action", "part-00001-10b94b1b-f29a-440c-98e0-c91862b6d2a8-c000.snappy.parquet")).to_pandas()
