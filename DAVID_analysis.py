@@ -92,7 +92,5 @@ def import_david(dtype: str = "tissue", targType: str = "predicted"):
 def import_tissue() -> Tuple[pd.DataFrame, pd.DataFrame]:
     return pd.read_csv(os.path.join(DAVID_DIR, "DAVIDChartReport_Non-Predicted Targets_Tissues.csv")), pd.read_csv(os.path.join(DAVID_DIR, "DAVIDChartReport_Predicted Targets_Tissues.csv"))
 
-
-
 if(__name__=="__main__"):
     main()
