@@ -50,7 +50,8 @@ def main():
     #combos, lines = len(drugData["Combo Name"].unique()), len(drugData["Cell Line Name"].unique())
     #print(f"{combos} unique combinations along {lines} cell lines")
     #print(drugData)
-    gdsc(scMode = "GLS")
+    gdsc(scMode = "pearson")
+    #gdsc(scMode = "GLS")
     #for responseColumn in ["LN_IC50", "eMax"]:
     #    for fileSource in ["anchor", "matrix"]:
     #        gdscc(responseColumn=responseColumn, desiredFiles=fileSource)
@@ -470,7 +471,14 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     
     # Concatenate all SC values
     allbyall = pd.concat(nested_dfs,axis=1)
-    coefs = [list(col) for col in zip(*nested_coefs)]
+    # Convert list of coefficient dictionaries of [{gene: {drug: coeffs, ...}, ...}, ...] into {drug: {gene: coeffs, ...}, ...}
+    coefs = {}
+    for entry in nested_coefs:
+        for gene in entry:
+            for drug in entry[gene]:
+                if(drug not in coefs):
+                    coefs[drug] = {}
+                coefs[drug][gene] = deepcopy(entry[gene][drug])
     
     logFile.add('Writing Drugs x Genes file)')
     if(scMode.lower().strip()=="pearson"):
@@ -478,13 +486,11 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     else:
         dbg = os.path.join(DEFAULT_OUTPUT_DIR, f"pIC50{debugFile}-{scMode}_{nComponents}-AllDrugsByAllGenes.tsv")
     allbyall.to_csv(dbg, sep='\t', index=True, header=True)
+    # Write coefficients to a custom-made TSV file
     with open(dbg.replace(".tsv", "-Coefficients.tsv"), "w") as f:
-        out = ""
-        for row in coefs:
-            newrow = ""
-            for item in row:
-                newrow += f"{item}\t"
-            out += newrow.strip() + "\n"
+        out = "\t".join(list(coefs.keys())) + "\n"
+        for gene in coefs[list(coefs.keys())[0]].keys():
+            out += "gene\t" + "\t".join([coefs[drug][gene] for drug in coefs.keys()]) + "\n"
         f.write(out)
     logFile.add('Writing Genes x Drugs file)')
     allbyall = allbyall.T
@@ -530,13 +536,13 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
     result = result.fillna(np.nan)
     result.set_index("symbol", inplace=True)
     # Copy this dataframe into a list of lists recording coefficients
-    resultCoefficients: pd.DataFrame = [[np.nan for _ in range(len(result.columns))] for __ in range(len(result))]
+    resultCoefficients: dict = {gn: {drug: np.nan for drug in result.columns} for gn in result.index}
 
     # Set up relevant function to Calculate Survivability Correlation
     scFunc = {"pearson": pearsonr, "gls": calculate_SC_GLS}[scMode.lower().strip()]
 
     # loop through all indexes, i.e. drugs/compounds, calculating r for all genes
-    for di, d in tqdm(zip(range(len(il)), il), desc=f"Thread {it} progress"):
+    for d in tqdm(il, desc=f"Thread {it} progress"):
         ## Load the calculation for this data if it has already been calculated
         starFileEnd: str = f"starmapcorrelations-drugColumn_{drugColumn}-cellLineColumn_{cellLineColumn}-responseColumn_{responseColumn}-drug_{d}_scMode-{scMode}_components-{glmComponents}"
         if(starfiledirBase is None):
@@ -579,7 +585,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
         # If in Debug mode, only do this for the first 20 genes
         if(dMode):
             genes = genes[:20]
-        for gi, gn in enumerate(genes):
+        for gn in genes:
             
             # get dependencies (deps) for all available cell lines, as well as a list of cell lines which
             # were found within the deps DataFrame
@@ -639,7 +645,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                 for pr, coef in zip(prs, coeffs):
                     if(pr is not None):
                         result.at[gn, d] = pr
-                        resultCoefficients[gi][di] = coef
+                        resultCoefficients[gn][d] = coef
                         validCorr = True
                         break
             # If the DataFrames are not given in priority, choose the most non-zero correlation value
