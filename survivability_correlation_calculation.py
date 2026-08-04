@@ -462,13 +462,13 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
 
     # Run parallel SC calculation function
     nested_dfs = []
-    for i in range(len(batch_dlist)):
-        nested_dfs.append(chunkDrugGeneFormatted(i,batch_dlist[i],crisprDeps,[drug2,drug1],
-            "DRUG_NAME", "ModelID", "LN_IC50", True, None, logFile, dMode, scMode, nComponents))
-    #nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
-    #        [(i,batch_dlist[i],crisprDeps,[drug2,drug1],
-    #        "DRUG_NAME", "ModelID", "LN_IC50", True, None, logFile, dMode, scMode, nComponents)
-    #        for i in range(cpu_count)]).get()
+    #for i in range(len(batch_dlist)):
+    #    nested_dfs.append(chunkDrugGeneFormatted(i,batch_dlist[i],crisprDeps,[drug2,drug1],
+    #        "DRUG_NAME", "ModelID", "LN_IC50", True, None, logFile, dMode, scMode, nComponents))
+    nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
+            [(i,batch_dlist[i],crisprDeps,[drug2,drug1],
+            "DRUG_NAME", "ModelID", "LN_IC50", True, None, logFile, dMode, scMode, nComponents)
+            for i in range(cpu_count)]).get()
     nested_dfs, nested_coefs = [n[0] for n in nested_dfs], [n[1] for n in nested_dfs]
     
     logFile.add(f'pIC50 All by All took {((time.time())-t_prev)/60.0:.4} min ({((time.time())-t_prev)/3600.0:.1f} hrs)')
