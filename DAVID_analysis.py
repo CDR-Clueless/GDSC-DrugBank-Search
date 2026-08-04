@@ -17,8 +17,6 @@ DAVID_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis", "Downloads")
 OUTPUT_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis")
 
 def main():
-    dtypes = {"tissue": "Tissues", "interaction": "Interactions", "pathway": "Pathways",
-              "protein": "ProteinDomains", "transcription": "TranscriptionFactors"}
     fig, ax = plt.subplots(layout='constrained', nrows = 3, ncols=2, figsize = (12.8, 9.6))
     k = 0
 
@@ -36,7 +34,7 @@ def main():
 
             p, pNon = import_david(targType="predicted", dtype = key), import_david(targType="non-predicted", dtype = key)
 
-            # Combine the two DataFrames into one
+            # Combine the two DataFrames into one with 3 Columns: Full Term, Proportion, Non-Predicted Proportion
             combined = p[["Full Term", "Proportion"]]
             combined = combined.merge(pNon[["Full Term", "Proportion"]], left_on="Full Term", right_on="Full Term")
             combined.rename(columns={"Full Term": title, "Proportion_x": "Predicted Proportion", "Proportion_y": "Non-Predicted Proportion"}, inplace=True)
