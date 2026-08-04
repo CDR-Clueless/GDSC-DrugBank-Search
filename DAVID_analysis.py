@@ -45,7 +45,10 @@ def main():
             combined = pd.concat([combined, toAdd])
 
             for column, offset in zip(["Predicted Proportion", "Non-Predicted Proportion"], [-0.2, 0.2]):
-                rel.bar(np.array(range(len(combined)))+offset, combined[column], width = 0.4, label = column)
+                if(combined.shape[0]>300):
+                    rel.scatter(np.array(range(len(combined))), combined[column], label = column)
+                else:
+                    rel.bar(np.array(range(len(combined)))+offset, combined[column], width = 0.4, label = column)
 
             # Labels, titles etc.
             #rel.set_xticks(np.array(range(len(combined))))
