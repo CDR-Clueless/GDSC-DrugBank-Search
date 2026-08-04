@@ -566,16 +566,21 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                 # Turn dresult from list of strings into list of floats
                 dresult = [dresult[i].replace("\"", "").replace("\'", "") for i in range(len(dresult))]
                 dresult = [float(dresult[i]) if dresult[i] != "" else float("NaN") for i in range(len(dresult))]
-                # Trim down to remove any spillover values caused by excess newlines in file writing
-                dresult = dresult[:len(result[d])]
-                # Copy results in
-                result[d] = deepcopy(dresult)
-                print(f"Thread {it} found and loaded correlations for {d}", flush = True)
-                continue
-           # If the results are blank, fill this with np.nan values
+                # Check that there are enough values to paste into the results, else the calculations will need to be re-run
+                if(len(dresult)<len(result[d])):
+                    pass
+                else:
+                    # Trim down to remove any spillover values caused by excess newlines in file writing
+                    dresult = dresult[:len(result[d])]
+                    # Copy results in
+                    result[d] = deepcopy(dresult)
+                    print(f"Thread {it} found and loaded correlations for {d}", flush = True)
+                    continue
+           # If the results are blank, rerun the calculation
            else:
-                result[d] = deepcopy([np.nan]*len(result[d]))
-                continue
+                pass
+                #result[d] = deepcopy([np.nan]*len(result[d]))
+                #continue
 
         ## If there is no file, calculate the correlations for this drug
         print(f'Thread {it} Calculating correlations for {d}',flush=True)
