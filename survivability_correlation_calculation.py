@@ -17,6 +17,7 @@ import pandas as pd
 from scipy.stats import pearsonr
 
 import json
+import argparse
 
 from tqdm import tqdm
 
@@ -43,18 +44,21 @@ else:
     with open(os.path.join("Local", "localVars.json"), "rb") as f:
         DEBUG_MODE: bool = json.load(f)["DEBUG_MODE"]
 
-def main():
+def main(parser):
+    # Ensure an output directory exists
     if(not os.path.exists(DEFAULT_OUTPUT_DIR)):
         os.mkdir(DEFAULT_OUTPUT_DIR)
-    #drugData, files = load_gdscc(DEFAULT_DRUG_COMB_FILE, returnLoaded = True)
-    #combos, lines = len(drugData["Combo Name"].unique()), len(drugData["Cell Line Name"].unique())
-    #print(f"{combos} unique combinations along {lines} cell lines")
-    #print(drugData)
-    gdsc(scMode = "pearson")
-    #gdsc(scMode = "GLS")
-    #for responseColumn in ["LN_IC50", "eMax"]:
-    #    for fileSource in ["anchor", "matrix"]:
-    #        gdscc(responseColumn=responseColumn, desiredFiles=fileSource)
+
+    # Parse arguments handed to the program
+    args = parser.parse_args()
+    study: str = args.studyDatabase
+    calcMode: str = args.scCalcMode
+    nComponents: int = int (args.nComponents)
+
+    if(study.upper().strip()=="GDSC"):
+        gdsc(scMode = calcMode.lower(), nComponents=nComponents)
+    elif(study.upper().strip() in ["GDSC2", "GDSCC"]):
+        gdscc(scMode = calcMode, glmComponents=nComponents)
     return
 
 def load_gdscc(folderLoc: str = DEFAULT_DRUG_COMB_FILE, returnLoaded: bool = False,
@@ -797,4 +801,8 @@ def split_list(l: list, parts: int, shuffle: bool = False) -> list:
     return output
 
 if(__name__=="__main__"):
-    main()
+    parser = argparse.ArgumentParser(description = "Survivability Correlation Calculation Parser")
+    parser.add_argument("--study",     action = "store", dest = "studyDatabase",      default = "GDSC")
+    parser.add_argument("--mode", action = "store", dest = "scCalcMode", default = "Pearson")
+    parser.add_argument("--nComponents", action = "store", dest = "nCombonents", default = "2")
+    main(parser)
