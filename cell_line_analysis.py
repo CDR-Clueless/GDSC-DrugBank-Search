@@ -47,6 +47,8 @@ def main():
     toSub = split_list(drugs, cpu_count)
     # Calculate distances between cell lines and linear lines of best fit in parallel, saving results to be coallated later
     starDir = os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap")
+    if(not os.path.exists(os.path.dirname(starDir))):
+        os.mkdir(os.path.dirname(starDir))
     if(not os.path.exists(starDir)):
         os.mkdir(starDir)
     results = mp.Pool(cpu_count).starmap_async(cellWorker,
