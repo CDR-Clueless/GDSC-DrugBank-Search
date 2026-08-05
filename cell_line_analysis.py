@@ -42,62 +42,44 @@ def main():
     # First, fetch the DataFrame List of Cell Line - Drug Response values
     drugs, genes, cls = sorted(get_drugs()), sorted(get_genes()), sorted(get_cellLines())
     if(DEBUG_MODE):
-        drugs, genes, cls = drugs[:2], genes[:2], cls[:5]
-    # Set up all the pairs of drugs and genes to test to pass to starmap handler
-    pairs = []
-    for drug in drugs:
-        pairs += [(drug, gene) for gene in genes]
-    toSub = split_list(pairs, cpu_count)
-    # Calculate distances between cell lines and linear lines of best fit in parallel
-    results = mp.Pool(cpu_count).starmap_async(pairworker,
-                                               [(toSub[i],cls)
+        drugs, genes, cls = drugs[:2], genes[:2], cls[:50]
+    # Get split list of drugs for parallel worker to handle
+    toSub = split_list(drugs, cpu_count)
+    # Calculate distances between cell lines and linear lines of best fit in parallel, saving results to be coallated later
+    if(not os.path.exists(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap"))):
+        os.mkdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap"))
+    results = mp.Pool(cpu_count).starmap_async(cellWorker,
+                                               [(toSub[i],genes, cls, os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap"))
                                                                for i in range(cpu_count)]).get()
-    # Coallate these results
-    out = {}
-    for result in results:
-        for cL in result:
-            if(cL not in out):
-                out[cL] = {}
-            for drug in result[cL]:
-                if(drug not in out[cL]):
-                    out[cL][drug] = {}
-                for gene in result[cL][drug]:
-                    out[cL][drug][gene] = result[cL][drug][gene]
-
-    # Make sure appropriate directory exists
-    if(not os.path.exists(DEFAULT_OUTPUT_DIR)):
-        os.mkdir(DEFAULT_OUTPUT_DIR)
-
-    # Iterate through cell lines and save distances as DataFrame
-    for cL in out:
-        df = pd.DataFrame.from_dict(out[cL])
-        saveName = f"{cL}DEBUG-Results.tsv".replace("DEBUG", {True: "-DEBUG", False: ""}[DEBUG_MODE])
-        df.to_csv(os.path.join(DEFAULT_OUTPUT_DIR, saveName), sep = "\t", lineterminator="\n")
+    # Coallate results
     return
 
-# Starmap worker
-def pairworker(pairs: list, cellLines: Union[list, tuple]):
-    out = {}
-    for cL in cellLines:
-        out[cL] = {drug: {gene: np.nan} for drug, gene in pairs}
-    for drug, gene in pairs:
-        response = load_response(drug, gene)
-        # Get Pearson Correlation and line of best fit
-        result = linregress(response["Essentiality"].values, response["pIC50"].values)
-        m, c, pr, pp, mErr, cErr = result.slope, result.intercept, result.rvalue, result.pvalue, result.stderr, result.intercept_stderr
-        # Get distance of every Cell Line available from the curve
-        for cL in response["ModelID"].values:
-            if(cL not in out.keys()):
-                continue
-            rel = response.loc[response["ModelID"]==cL][["Essentiality", "pIC50"]].values
-            x, y = rel[0][0], rel[0][1]
-            # Calculate distance using d = |Ax + By + C| / sqrt(A^2 + B^2)
-            # Here A is the slope (variable m), B is -1 (slope and intercept fit y = mx + c, so 0 = mx + c - y therefore B is -1), C is the intercept (variable c)
-            # x is the Cell Line response x-coordinate (Essentiality), and y the y-coordinate (pIC50)
-            num = (m * x) + (-1 * y) + c
-            den = np.sqrt(np.power(m, 2) + 1)
-            out[cL][drug][gene] = np.divide(num, den)
-    return out
+# Starmap worker - saves cell line data
+def cellWorker(drugs: list, genes: list, cellLines: list, outDir: str = os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap")):
+    # Iterate over drug-gene pairs
+    for drug in drugs:
+        out = {gene: {} for gene in genes}
+        for gene in genes:
+            response = load_response(drug, gene)
+            # Get Pearson Correlation and line of best fit
+            result = linregress(response["Essentiality"].values, response["pIC50"].values)
+            m, c, pr, pp, mErr, cErr = result.slope, result.intercept, result.rvalue, result.pvalue, result.stderr, result.intercept_stderr
+            # Get distance of every Cell Line available from the curve
+            for cL in response["ModelID"].values:
+                rel = response.loc[response["ModelID"]==cL][["Essentiality", "pIC50"]].values
+                if(len(rel)<1):
+                    continue
+                x, y = rel[0][0], rel[0][1]
+                # Calculate distance using d = |Ax + By + C| / sqrt(A^2 + B^2)
+                # Here A is the slope (variable m), B is -1 (slope and intercept fit y = mx + c, so 0 = mx + c - y therefore B is -1), C is the intercept (variable c)
+                # x is the Cell Line response x-coordinate (Essentiality), and y the y-coordinate (pIC50)
+                num = (m * x) + (-1 * y) + c
+                den = np.sqrt(np.power(m, 2) + 1)
+                out[gene][cL] = np.divide(num, den)
+        # Save calculations for this drug
+        with open(os.path.join(outDir, f"{drug}.json"), "w") as f:
+            json.dump(out, f, indent = 4)
+    return
 
 def get_drugs() -> tuple:
     # Compile dictionary of relevant file locations
