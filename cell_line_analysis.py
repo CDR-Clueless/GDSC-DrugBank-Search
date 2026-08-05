@@ -46,19 +46,41 @@ def main():
     # Get split list of drugs for parallel worker to handle
     toSub = split_list(drugs, cpu_count)
     # Calculate distances between cell lines and linear lines of best fit in parallel, saving results to be coallated later
-    if(not os.path.exists(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap"))):
-        os.mkdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap"))
+    starDir = os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap")
+    if(not os.path.exists(starDir)):
+        os.mkdir(starDir)
     results = mp.Pool(cpu_count).starmap_async(cellWorker,
-                                               [(toSub[i],genes, cls, os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap"))
+                                               [(toSub[i],genes, starDir)
                                                                for i in range(cpu_count)]).get()
     # Coallate results
+    coallated: dict = {}
+    for drug in drugs:
+        with open(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap", f"{drug}.json"), "r") as f:
+            drugDict = json.load(f)
+        for gene in drugDict:
+            for cL in drugDict[gene]:
+                if(cL not in coallated):
+                    coallated[cL] = {drug: {gene: np.nan for gene in genes} for drug in drugs}
+                coallated[cL][drug][gene] = drugDict[gene][cL]
+    # Save coallated results and delete temporary starmap store
+    for cL in coallated:
+        with open(os.path.join(DEFAULT_OUTPUT_DIR, f"{cL}-Distances.json"), "w") as f:
+            json.dump(coallated[cL], f)
+    for filename in os.listdir(starDir):
+        os.remove(os.path.join(starDir, filename))
+    os.rmdir(starDir)
     return
 
 # Starmap worker - saves cell line data
-def cellWorker(drugs: list, genes: list, cellLines: list, outDir: str = os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap")):
-    # Iterate over drug-gene pairs
+def cellWorker(drugs: list, genes: list, outDir: str = os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap")):
+    # Iterate over drugs
     for drug in drugs:
+        # Check if this drug has already had its results calculated; skip if so
+        if(os.path.exists(os.path.join(outDir, f"{drug}.json"))):
+            continue
+        # Create dictionary to store output calculations
         out = {gene: {} for gene in genes}
+        # Iterate over responses for each gdrug-gene pair
         for gene in genes:
             response = load_response(drug, gene)
             # Get Pearson Correlation and line of best fit
@@ -67,8 +89,6 @@ def cellWorker(drugs: list, genes: list, cellLines: list, outDir: str = os.path.
             # Get distance of every Cell Line available from the curve
             for cL in response["ModelID"].values:
                 rel = response.loc[response["ModelID"]==cL][["Essentiality", "pIC50"]].values
-                if(len(rel)<1):
-                    continue
                 x, y = rel[0][0], rel[0][1]
                 # Calculate distance using d = |Ax + By + C| / sqrt(A^2 + B^2)
                 # Here A is the slope (variable m), B is -1 (slope and intercept fit y = mx + c, so 0 = mx + c - y therefore B is -1), C is the intercept (variable c)
