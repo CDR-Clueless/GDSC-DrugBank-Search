@@ -14,7 +14,7 @@ import time
 import numpy as np
 from scipy.optimize import curve_fit as scipy_curvefit
 import pandas as pd
-from scipy.stats import pearsonr
+from scipy.stats import pearsonr, linregress
 
 import json
 import argparse
@@ -53,7 +53,7 @@ def main(parser):
     args = parser.parse_args()
     study: str = args.studyDatabase
     calcMode: str = args.scCalcMode
-    nComponents: int = int (args.nComponents)
+    nComponents: int = int(args.nComponents)
 
     if(study.upper().strip()=="GDSC"):
         gdsc(scMode = calcMode.lower(), nComponents=nComponents)
@@ -367,7 +367,7 @@ def gdscc(responseColumn: str = "eMax",
     logFile.add("Finished calculating GDSCC correlations")
 
 def linear_line(x: Union[np.ndarray, float], m: float, c: float) -> Union[np.ndarray, float]:
-    return (m * x) + c
+    return c + (m * x)
 
 def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
          gdsc1Loc: Optional[str] = None, gdsc2Loc: Optional[str] = None,
@@ -466,13 +466,13 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
 
     # Run parallel SC calculation function
     nested_dfs = []
-    #for i in range(len(batch_dlist)):
-    #    nested_dfs.append(chunkDrugGeneFormatted(i,batch_dlist[i],crisprDeps,[drug2,drug1],
-    #        "DRUG_NAME", "ModelID", "LN_IC50", True, None, logFile, dMode, scMode, nComponents))
-    nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
-            [(i,batch_dlist[i],crisprDeps,[drug2,drug1],
-            "DRUG_NAME", "ModelID", "LN_IC50", True, None, logFile, dMode, scMode, nComponents)
-            for i in range(cpu_count)]).get()
+    for i in range(len(batch_dlist)):
+        nested_dfs.append(chunkDrugGeneFormatted(i,batch_dlist[i],crisprDeps,[drug2,drug1],
+            "DRUG_NAME", "ModelID", "LN_IC50", True, None, logFile, dMode, scMode, nComponents))
+    #nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
+    #        [(i,batch_dlist[i],crisprDeps,[drug2,drug1],
+    #        "DRUG_NAME", "ModelID", "LN_IC50", True, None, logFile, dMode, scMode, nComponents)
+    #        for i in range(cpu_count)]).get()
     nested_dfs, nested_coefs = [n[0] for n in nested_dfs], [n[1] for n in nested_dfs]
     
     logFile.add(f'pIC50 All by All took {((time.time())-t_prev)/60.0:.4} min ({((time.time())-t_prev)/3600.0:.1f} hrs)')
@@ -541,7 +541,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
     # Set up results DataFrame to save to files
     result: pd.DataFrame = pd.DataFrame(columns=['symbol']+il)
     result.symbol = list(CRISPRdeps.columns)
-    result = result.fillna(np.nan)
+    #result.fillna(np.nan, inplace = True)
     result.set_index("symbol", inplace=True)
     # Copy this dataframe into a list of lists recording coefficients
     resultCoefficients: dict = {gn: {drug: np.nan for drug in result.columns} for gn in result.index}
@@ -550,7 +550,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
     scFunc = {"pearson": pearsonr, "gls": calculate_SC_GLS}[scMode.lower().strip()]
 
     # loop through all indexes, i.e. drugs/compounds, calculating r for all genes
-    for d in tqdm(il, desc=f"Thread {it} progress"):
+    for d in il:
         ## Load the calculation for this data if it has already been calculated
         starFileEnd: str = f"starmapcorrelations-drugColumn_{drugColumn}-cellLineColumn_{cellLineColumn}-responseColumn_{responseColumn}-drug_{d}_scMode-{scMode}_components-{glmComponents}"
         if(starfiledirBase is None):
@@ -558,7 +558,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                 starFileEnd)
         else:
             starfiledir = os.path.join(starfiledirBase, starFileEnd)
-        if(os.path.exists(starfiledir)):
+        if(os.path.exists(starfiledir) and os.path.exists(starfiledir+"-coefficients")):
            # Get finished results
            with open(starfiledir, "r") as f:
                dresult = str(f.read()).split("\n")
@@ -578,8 +578,21 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                     dresult = dresult[:len(result[d])]
                     # Copy results in
                     result[d] = deepcopy(dresult)
-                    print(f"Thread {it} found and loaded correlations for {d}", flush = True)
+                    #print(f"Thread {it} found and loaded correlations for {d}", flush = True)
                     continue
+                # Now that the correlation results have been loaded, get the coefficients
+                with open(starfiledir+"-coefficients", "r") as f:
+                    cresult = str(f.read()).split("\n")
+                    # Iterate over each line
+                    for line in cresult:
+                        # Separate gene name out
+                        gn, coefs = line.strip().split("\t")
+                        # Save the coefficients to the main dictionary
+                        if(coefs=="NaN"):
+                            resultCoefficients[gn][d] = np.nan
+                            continue
+                        resultCoefficients[gn][d] = np.array([float(coef) for coef in coefs.split(",")], dtype = float)
+                    
            # If the results are blank, rerun the calculation
            else:
                 pass
@@ -587,7 +600,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                 #continue
 
         ## If there is no file, calculate the correlations for this drug
-        print(f'Thread {it} Calculating correlations for {d}',flush=True)
+        #print(f'Thread {it} Calculating correlations for {d}',flush=True)
 
         # Get all available cell lines
         cs = [df[df[drugColumn]==d] for df in drugFrames]
@@ -644,8 +657,10 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                     y = -1 * np.log(y)
 
                 if(scMode.lower().strip()=="pearson"):
+                    linResult = linregress(x, y)
+                    m, c, r2, r2p, mErr, cErr = linResult.slope, linResult.intercept, linResult.rvalue, linResult.pvalue, linResult.stderr, linResult.intercept_stderr
                     pr, pp = pearsonr(x, y)
-                    coeff = scipy_curvefit(linear_line, x, y)
+                    coeff = np.array([c, m], dtype = float)
                 else:
                     pr, coeff = scFunc(x, y, components = glmComponents, return_coefficients = True)
                 prs.append(pr)
@@ -672,99 +687,19 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
         # Save result for this valud of 'd', in case the program is interrupted
         with open(starfiledir, "w") as f:
             f.write("\n".join([str(v) for v in result[d].values]))
-            
-    return(result, resultCoefficients)
+        with open(starfiledir+"-coefficients", "w") as f:
+            # Prepare string for saving
+            toSave: str = ""
+            for gn in resultCoefficients:
+                if(not isinstance(resultCoefficients[gn][d], np.ndarray)):
+                    toSave += f"{gn}\tNaN\n"
+                    continue
+                coefs = ",".join([str(float(e)) for e in resultCoefficients[gn][d]])
+                toSave += f"{gn}\t{coefs}\n"
+            # Remove final newline
+            f.write(toSave.strip())
 
-
-def ChunkDrugGene(it: int, dl: set, deps: pd.DataFrame, drug1: pd.DataFrame, drug2: pd.DataFrame):
-    """
-    
-    Function for calculating Drug-gene correlations for a chunk of drugs (necessary for parallel processing)
-
-    Args:
-        it (int): (Simplified) ID for the thread working on this chunk
-        dl (set): Set of drugs in this chunk to be tested
-        deps (pd.DataFrame): DataFrame of CRISPR gene dependency data (DepMap)
-        drug1 (pd.DataFrame): DataFrame of GDSC1 data
-        drug2 (pd.DataFrame): DataFrame of GDSC2 data
-    """
-
-    result = pd.DataFrame(columns=['symbol']+dl)
-    result.symbol = list(deps.columns[1:])
-    result = result.fillna(0.0)
-    result.set_index('symbol', inplace=True)
-
-    # loop through all drugs, calculating r for all genes
-    for d in dl:
-        # Load the calculation for this data if it has already been calculated
-        starfiledir = os.path.join(CLEANED_DATA_DIR, "temp_starmap_store", f"starmapcorrelations-{d}")
-        if(os.path.exists(starfiledir)):
-           dresult = pd.read_csv(os.path.join(CLEANED_DATA_DIR, "temp_starmap_store", f""), sep = "\t", index = False, lineterminator="\n")
-           result[:, d] = deepcopy(dresult)
-           print(f"Thread {it} found and loaded correlations for {d}", flush = True)
-           continue
-
-        # If there is no file, calculate the correlations for this drug
-        print(f'Thread {it} Calculating correlations for {d}',flush=True)
-
-        # Get all available cell lines
-        c1 = drug1[drug1.DRUG_NAME == d]['ModelID']
-        c2 = drug2[drug2.DRUG_NAME == d]['ModelID']
-        
-        # Go through all genes from CRISPR dependencies DataFrame
-        for i, gn in enumerate(deps.columns):
-            
-            # get dependencies (deps) for all available cell lines, as well as a list of cell lines which
-            # were found within the deps DataFrame
-            dep1 = deps[deps.index.isin(c1)][gn].reset_index()
-            dep1_names = list(dep1.ModelID)
-            dep2 = deps[deps.index.isin(c2)][gn].reset_index()
-            dep2_names = list(dep2.ModelID)
-            
-            # get pKis
-            if len(dep1) > 0:
-                # Get first available pKi value for relevant drug with acceptable ModelID values
-                pKi1 = drug1[(drug1.DRUG_NAME == d) & 
-                             (drug1.ModelID.isin(dep1_names))].drop_duplicates \
-                            (subset=["ModelID"], keep='first')[['pKi','ModelID']]
-                # merge data on common ModelID
-                # This means the merged frame will only include cell lines found in CRISPR dependency df
-                # and should have both CRISPR-based gene dependency data and pKi data for each cell line
-                dpdat1 = dep1.merge(pKi1)
-                
-            if len(dep2) > 0:
-                pKi2 = drug2[(drug2.DRUG_NAME == d) & 
-                             (drug2.ModelID.isin(dep2_names))].drop_duplicates \
-                            (subset=["ModelID"], keep='first')[['pKi','ModelID']]
-                dpdat2 = dep2.merge(pKi2)
-                
-            pr1,pp1,pr2,pp2 = 0,1,0,1
-
-            if len(dep1) > 0:
-                
-                # Correlation coefficient between current gene expression (0 or 1 as it's binary k/o) and pKi value
-                x = np.array(dpdat1[gn])
-                y = dpdat1['pKi']
-                                
-                pr1,pp1 = pearsonr(x,y)
-
-            if len(dep2) > 0:
-                
-                x = np.array(dpdat2[gn])
-                # X = x[:,np.newaxis]
-                y = dpdat2['pKi']
-                
-                pr2,pp2 = pearsonr(x,y)
-                
-            # select which value to use; pr1 or pr2
-            result.at[gn,d] = max(pr1,pr2,key=abs)
-            if (i % 1000) == 0:
-                print(f'Thread {it} done {i} genes',flush=True)
-
-        # Save result for this valud of 'd', in case the program is interrupted
-        result[d].to_csv(starfiledir, sep = "\t", index = False, lineterminator="\n")
-            
-    return(result)
+    return (result, resultCoefficients)
 
 def split_list(l: list, parts: int, shuffle: bool = False) -> list:
     """Split a larger list into a given number of component lists (used here for more efficient multiprocessing batches)
@@ -804,5 +739,5 @@ if(__name__=="__main__"):
     parser = argparse.ArgumentParser(description = "Survivability Correlation Calculation Parser")
     parser.add_argument("--study",     action = "store", dest = "studyDatabase",      default = "GDSC")
     parser.add_argument("--mode", action = "store", dest = "scCalcMode", default = "Pearson")
-    parser.add_argument("--nComponents", action = "store", dest = "nCombonents", default = "2")
+    parser.add_argument("--nComponents", action = "store", dest = "nComponents", default = "2")
     main(parser)
