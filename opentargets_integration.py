@@ -20,6 +20,9 @@ from sqlite3 import connect
 DRUGS_TSV: str = os.path.join("Data", "Results", "Target-Analysis", "Pearson Threshold Labels p < 0.05.tsv")
 
 def main():
+    plot_actions()
+
+def plot_pChEMBL():
     # Load in ChEMBL Data
     conn = connect(database = os.path.join("Data", "Raw Data", "ChEMBL", "chembl_37", "chembl_37_sqlite", "chembl_37.db"))
     cursor = conn.cursor()
@@ -88,50 +91,65 @@ def plot_actions():
 
     goodDrugsCountRaw = len(goodDrugsRaw)
     goodDrugsCount = sum(goodDrugsRaw.isin(dfTarget["N1"]) | goodDrugsRaw.isin(dfTarget["N2"]))
-    badDrugsRawCount = len(badDrugsRaw)
+    badDrugsCountRaw = len(badDrugsRaw)
     badDrugsCount = sum(badDrugsRaw.isin(dfTarget["N1"]) | badDrugsRaw.isin(dfTarget["N2"]))
-
     goodDrugs = goodDrugsRaw[goodDrugsRaw.isin(dfTarget["N1"]) | goodDrugsRaw.isin(dfTarget["N2"])].unique()
     badDrugs = badDrugsRaw[badDrugsRaw.isin(dfTarget["N1"]) | badDrugsRaw.isin(dfTarget["N2"])].unique()
+    goodDrugsCountUnique = len(goodDrugs)
+    badDrugsCountUnique = len(badDrugs)
 
-    goodTargTypes = dfTarget.loc[dfTarget["N1"].isin(goodDrugs) | dfTarget["N2"].isin(goodDrugs)].targetType
-    badTargTypes = dfTarget.loc[dfTarget["N1"].isin(badDrugs) | dfTarget["N2"].isin(badDrugs)].targetType
-    goodActionTypes = dfTarget.loc[dfTarget["N1"].isin(goodDrugs) | dfTarget["N2"].isin(goodDrugs)].actionType
-    badActionTypes = dfTarget.loc[dfTarget["N1"].isin(badDrugs) | dfTarget["N2"].isin(badDrugs)].actionType
+    print(f"Good Drugs: {goodDrugsCountRaw} -> {goodDrugsCount} -> {goodDrugsCountUnique}")
+    print(f"Bad Drugs:  {badDrugsCountRaw} -> {badDrugsCount} -> {badDrugsCountUnique}")
 
-    print(len(goodActionTypes))
-    print(len(badActionTypes))
+    # Set up dictionaries to record target and action types for each 'good'/'bad' drug
+    goodTargTypes, goodActionTypes = {tType: 0.0 for tType in dfTarget["targetType"].unique()}, {aType: 0 for aType in dfTarget["actionType"].unique()}
+    badTargTypes, badActionTypes = deepcopy(goodTargTypes), deepcopy(goodActionTypes)
+    # Record each action and target types associated with each drug of interest
+    for drug in goodDrugs:
+        rel = dfTarget.loc[(dfTarget.N1 == drug) | (dfTarget.N2 == drug)]
+        for aType in rel["actionType"].unique():
+            goodActionTypes[aType] += 1.
+        for tType in rel["targetType"].unique():
+            goodTargTypes[tType] += 1.
+    for drug in badDrugs:
+        rel = dfTarget.loc[(dfTarget.N1 == drug) | (dfTarget.N2 == drug)]
+        for aType in rel["actionType"].unique():
+            badActionTypes[aType] += 1.
+        for tType in rel["targetType"].unique():
+            badTargTypes[tType] += 1.
+    # Convert all these counts to proportions of the total number of drugs in each list
+    for total, d in zip([goodDrugsCountUnique, goodDrugsCountUnique, badDrugsCountUnique, badDrugsCountUnique],
+                        [goodTargTypes, goodActionTypes, badTargTypes, badActionTypes]):
+        for key in d:
+            d[key] /= total
+
+    for key in deepcopy(list(goodTargTypes.keys())):
+        if(goodTargTypes[key]==0.0 and badTargTypes[key]==0.0):
+            del goodTargTypes[key]
+            del badTargTypes[key]
+    for key in deepcopy(list(goodActionTypes.keys())):
+        if(goodActionTypes[key]==0.0 and badActionTypes[key]==0.0):
+            del goodActionTypes[key]
+            del badActionTypes[key]
 
     # Make list of zipped proportions of target types and action types, then plot them
     fig, axs = plt.subplots(nrows = 2, figsize = (12.8, 9.6))
     indexTranslator = {"Target": 0, "Action": 1}
     for aot, gTA, bTA in zip(["Target", "Action"], [goodTargTypes, goodActionTypes], [badTargTypes, badActionTypes]):
         # gTA is the good targets (all), bTA is the bad targets (all), and aot makes clear whether we're dealing with actions or targets
-        props, vals = [], []
-        # Go through all types in gTA and add proportions for all of them
-        for t in gTA.unique():
-            gT = len(gTA.loc[gTA==t])
-            bT = len(bTA.loc[bTA==t])
-            tT = gT + bT
-            props.append((t, gT/tT, bT/tT))
-            vals.append((t, gT, bT))
-        # Go through any types in bTA not in gTA and add the (now known) proportion for them
-        for t in bTA.unique():
-            if(t not in gTA.unique()):
-                props.append((t, 0, len(bTA.loc[bTA==t])))
 
         # Plot grouped bar chart
         ax = axs[indexTranslator[aot]]
-        for label, values, counts, offset in zip(["Good Targets", "Bad Targets"],
-                                         [[props[i][1] for i in range(len(props))], [props[i][2] for i in range(len(props))]],
-                                         [[vals[i][1] for i in range(len(vals))], [vals[i][2] for i in range(len(vals))]],
+        for label, xs, ys, offset in zip(["Good Targets", "Bad Targets"],
+                                         [list(gTA.keys()), list(bTA.keys())],
+                                         [list(gTA.values()), list(bTA.values())],
                                          [-0.2, 0.2]):
-            ax.bar(np.array(range(len(props)))+offset, values, width = 0.4, label = label)
-            for i in range(len(props)):
-                ax.text(x = i + (offset/2), y = values[i] / 2, s = counts[i], fontsize = "x-small", ha = "center")
+            ax.bar(np.array(range(len(xs)))+offset, ys, width = 0.4, label = label)
+            for i in range(len(xs)):
+                ax.text(x = i + (offset/2), y = ys[i] / 2, s = f"{ys[i]:.2f}", fontsize = "x-small", ha = "center")
         # Labels, titles etc.
-        ax.set_xticks(np.array(range(len(props))))
-        ax.set_xticklabels([props[i][0] for i in range(len(props))], ha = "right")
+        ax.set_xticks(np.array(range(len(xs))))
+        ax.set_xticklabels(xs, ha = "right")
         ax.tick_params("x", labelrotation=15, labelsize = "x-small")
         ax.set_ylabel("Proportion")
         ax.set_title(f"{aot} Type Proportions for Drugs with and without predicted Targets")
