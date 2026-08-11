@@ -374,6 +374,19 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
          logFile: Logger = Logger(os.path.join("Data", "Results", "GDSC-SC-calculation-log.txt")),
          dMode: bool = DEBUG_MODE,
          scMode: str = "pearson", nComponents: int = 2):
+    """ Calculate GDSC Survivability Correlations
+
+    Args:
+        crisprDepsLoc (Optional[str], optional): _description_. Defaults to None.
+        hugoLoc (Optional[str], optional): _description_. Defaults to None.
+        cellInfoLoc (Optional[str], optional): _description_. Defaults to None.
+        gdsc1Loc (Optional[str], optional): _description_. Defaults to None.
+        gdsc2Loc (Optional[str], optional): _description_. Defaults to None.
+        logFile (Logger, optional): _description_. Defaults to Logger(os.path.join("Data", "Results", "GDSC-SC-calculation-log.txt")).
+        dMode (bool, optional): _description_. Defaults to DEBUG_MODE.
+        scMode (str, optional): Method used to calculate Survivability Correlation. Valid values: 'pearson', 'gls'. Defaults to "pearson".
+        nComponents (int, optional): _description_. Defaults to 2.
+    """
     
     # First, update logFile path if in debug mode
     if(dMode):
@@ -489,10 +502,14 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
                 coefs[drug][gene] = deepcopy(entry[gene][drug])
     
     logFile.add('Writing Drugs x Genes file)')
+    # Ensure folder exists for GDSC data
+    outDir = os.path.join(DEFAULT_OUTPUT_DIR, "GDSC")
+    if(not os.path.exists(outDir)):
+        os.mkdir(outDir)
     if(scMode.lower().strip()=="pearson"):
-        dbg = os.path.join(DEFAULT_OUTPUT_DIR, f"pIC50{debugFile}-{scMode}-AllDrugsByAllGenes.tsv")
+        dbg = os.path.join(outDir, f"pIC50{debugFile}-{scMode}-AllDrugsByAllGenes.tsv")
     else:
-        dbg = os.path.join(DEFAULT_OUTPUT_DIR, f"pIC50{debugFile}-{scMode}_{nComponents}-AllDrugsByAllGenes.tsv")
+        dbg = os.path.join(outDir, f"pIC50{debugFile}-{scMode}_{nComponents}-AllDrugsByAllGenes.tsv")
     allbyall.to_csv(dbg, sep='\t', index=True, header=True)
     # Write coefficients to a custom-made TSV file
     with open(dbg.replace(".tsv", "-Coefficients.tsv"), "w") as f:
