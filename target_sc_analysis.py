@@ -23,6 +23,7 @@ def main():
     #dTGLS, scGLS = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-GLS_2-AllDrugsByAllGenes.tsv"))
     #target_SC_analysis(saveOutput=outputDir, drugTargets = dT, scScores = sc)
     #get_zScores(outputDir, dT)
+    plot_knownDrugs(drugTargets=dTPearson, scScores=scPearson)
     plot_realScores(drugTargets = dTPearson, scScores = scPearson, saveOutput=None, calcMethod = "Pearson")
     #get_zScores(drugTargets = dTPearson, saveOutput=outputDir, calcMethod = "Pearson", save_stats = True)
     #get_zScores(drugTargets = dTGLS, saveOutput=outputDir, calcMethod = "2-Component GLS", save_stats = True)
@@ -132,6 +133,17 @@ def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataF
                             sep = "\t", lineterminator = "\n", index = False)
     return
 
+# Plot drugs which don't have known targets
+def plot_knownDrugs(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None, scScores: Optional[pd.DataFrame] = None,
+                       calcMethod: str = "Pearson"):
+    rdT = drugTargets.dropna(axis = "index", subset = "SURVIVABILITY CORRELATION")
+    total_drugs = 542
+    drugsKnown = len(rdT["DRUG_STANDARD"].unique())
+    plt.pie([drugsKnown, total_drugs - drugsKnown], labels = ["Drugs with Known Targets", "Drugs without Known Targets"],
+            autopct = "%.1f")
+    plt.show()
+    return
+
 def plot_realScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None, scScores: Optional[pd.DataFrame] = None,
                        calcMethod: str = "Pearson"):
     if(drugTargets is None or scScores is None):
@@ -152,22 +164,25 @@ def plot_realScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.D
         df.to_csv(fileDir, sep = "\t", lineterminator="\n", index = False)
 
     # Get relevant columns and drop NaN rows
-    rdT = drugTargets[["DRUG_STANDARD", "TARGET", "SURVIVABILITY CORRELATION", "THRESHOLD"]]
-    rdT.dropna(axis = "index", subset = ["SURVIVABILITY CORRELATION", "THRESHOLD"], inplace=True)
+    rdT = drugTargets[["DRUG_STANDARD", "TARGET", "SURVIVABILITY CORRELATION", "THRESHOLD", "p<0.05"]]
+    rdT.dropna(axis = "index", subset = ["SURVIVABILITY CORRELATION", "THRESHOLD", "p<0.05"], inplace=True)
     rdT.sort_values("THRESHOLD", axis = "index", ascending = False, inplace=True)
 
-    # Plot thresholds and drug values
+    # Plot thresholds, p<0.05 values and drug values
     plt.plot(range(len(rdT)), rdT["THRESHOLD"].values, label = "Threshold Value", color = "green")
-    plt.scatter(range(len(rdT)), rdT["SURVIVABILITY CORRELATION"].values, color = "blue")
+    plt.plot(range(len(rdT)), rdT["p<0.05"].values, label = "p<0.05 Cutoff", color = "blue")
+    plt.scatter(range(len(rdT)), rdT["SURVIVABILITY CORRELATION"].values, color = "orange")
     # Remove xtick labels
     plt.xticks(ticks = range(len(rdT)), labels = ["" for _ in range(len(rdT))])
     # Plot percentage of values above and below threshold
     above, below = len(rdT.loc[rdT["SURVIVABILITY CORRELATION"]>=rdT["THRESHOLD"]])/len(rdT), len(rdT.loc[rdT["SURVIVABILITY CORRELATION"]<rdT["THRESHOLD"]])/len(rdT)
-    for ymod, perc, col in zip([min, max], [below, above], ["red", "blue"]):
-        plt.text(len(rdT)/2, ymod(rdT["SURVIVABILITY CORRELATION"].values), f"{perc*100:.4f}%", color = col)
+    abovep, belowp = len(rdT.loc[rdT["SURVIVABILITY CORRELATION"]>=rdT["p<0.05"]])/len(rdT), len(rdT.loc[rdT["SURVIVABILITY CORRELATION"]<rdT["p<0.05"]])/len(rdT)
+    for ymod, perc, col in zip([lambda x : max(x)-0.05, max], [abovep, above], ["blue", "green"]):
+        plt.text(len(rdT)/2, ymod(rdT["SURVIVABILITY CORRELATION"].values), f"{perc*100:.1f}%", color = col)
     plt.xlabel("Drug")
     plt.ylabel("Survivability Correlation")
     plt.title(f"{calcMethod} Survivability Correlation Target Values")
+    plt.legend(loc = "upper right")
 
     ## Plot SC values
     if(saveOutput is None):
@@ -179,6 +194,8 @@ def plot_realScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.D
 def add_thresholds(drugTargets: pd.DataFrame):
     drugTargets["THRESHOLD"] = drugTargets["DRUG_MEAN"] + (3*drugTargets["DRUG_SD"])
     drugTargets["SURVIVABILITY TARGET RATIO"] = drugTargets["SURVIVABILITY CORRELATION"] / drugTargets["THRESHOLD"]
+    drugTargets["ZSCORE"] = np.divide(drugTargets["SURVIVABILITY CORRELATION"] - drugTargets["DRUG_MEAN"], drugTargets["DRUG_SD"])
+    drugTargets["p<0.05"] = (1.96 * drugTargets["DRUG_SD"]) + drugTargets["DRUG_MEAN"]
     return drugTargets
 
 def target_SC_analysis(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None, scScores: Optional[pd.DataFrame] = None,
