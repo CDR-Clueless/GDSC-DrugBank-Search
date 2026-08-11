@@ -39,8 +39,9 @@ def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataF
     # Get all known putatitve drug targets
     if(drugTargets is None):
         drugTargets, _ = prepare_target_frame()
+
+    drugTargets = add_thresholds(drugTargets)
     
-    drugTargets["ZSCORE"] = np.divide(drugTargets["SURVIVABILITY CORRELATION"] - drugTargets["DRUG_MEAN"], drugTargets["DRUG_SD"])
     zScores = drugTargets["ZSCORE"][~np.isnan(drugTargets["ZSCORE"])]
 
     plt.scatter(range(zScores.shape[0]), sorted(zScores)[::-1])
@@ -141,7 +142,12 @@ def plot_knownDrugs(saveOutput: Optional[str] = None, drugTargets: Optional[pd.D
     drugsKnown = len(rdT["DRUG_STANDARD"].unique())
     plt.pie([drugsKnown, total_drugs - drugsKnown], labels = ["Drugs with Known Targets", "Drugs without Known Targets"],
             autopct = "%.1f")
-    plt.show()
+    if(saveOutput is None):
+        plt.show()
+    else:
+        plt.savefig(os.path.join(saveOutput, "Drug Target Knowledge Comparison.png"))
+    plt.clf()
+    plt.close()
     return
 
 def plot_realScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None, scScores: Optional[pd.DataFrame] = None,
@@ -195,7 +201,7 @@ def add_thresholds(drugTargets: pd.DataFrame):
     drugTargets["THRESHOLD"] = drugTargets["DRUG_MEAN"] + (3*drugTargets["DRUG_SD"])
     drugTargets["SURVIVABILITY TARGET RATIO"] = drugTargets["SURVIVABILITY CORRELATION"] / drugTargets["THRESHOLD"]
     drugTargets["ZSCORE"] = np.divide(drugTargets["SURVIVABILITY CORRELATION"] - drugTargets["DRUG_MEAN"], drugTargets["DRUG_SD"])
-    drugTargets["p<0.05"] = (1.96 * drugTargets["DRUG_SD"]) + drugTargets["DRUG_MEAN"]
+    drugTargets["p<0.05"] = (1.645 * drugTargets["DRUG_SD"]) + drugTargets["DRUG_MEAN"]
     return drugTargets
 
 def target_SC_analysis(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None, scScores: Optional[pd.DataFrame] = None,
