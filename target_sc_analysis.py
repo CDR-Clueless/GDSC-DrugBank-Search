@@ -20,11 +20,12 @@ from target_functions import get_drugTargets
 def main():
     outputDir = os.path.join("Data", "Results", "Target-Analysis")
     dTPearson, scPearson = prepare_target_frame()
-    dTGLS, scGLS = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-GLS_2-AllDrugsByAllGenes.tsv"))
+    #dTGLS, scGLS = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-GLS_2-AllDrugsByAllGenes.tsv"))
     #target_SC_analysis(saveOutput=outputDir, drugTargets = dT, scScores = sc)
     #get_zScores(outputDir, dT)
-    get_zScores(drugTargets = dTPearson, saveOutput=outputDir, calcMethod = "Pearson", save_stats = True)
-    get_zScores(drugTargets = dTGLS, saveOutput=outputDir, calcMethod = "2-Component GLS", save_stats = True)
+    plot_realScores(drugTargets = dTPearson, scScores = scPearson, saveOutput=None, calcMethod = "Pearson")
+    #get_zScores(drugTargets = dTPearson, saveOutput=outputDir, calcMethod = "Pearson", save_stats = True)
+    #get_zScores(drugTargets = dTGLS, saveOutput=outputDir, calcMethod = "2-Component GLS", save_stats = True)
     #target_SC_analysis(saveOutput=outputDir, drugTargets=dTGLS, scScores = scGLS, calcMethod = "2-Component GLS")
 
 def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None,
@@ -131,13 +132,62 @@ def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataF
                             sep = "\t", lineterminator = "\n", index = False)
     return
 
+def plot_realScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None, scScores: Optional[pd.DataFrame] = None,
+                       calcMethod: str = "Pearson"):
+    if(drugTargets is None or scScores is None):
+        drugTargets, scScores = prepare_target_frame()
+
+    # Add threshold and SC Target ratios
+    drugTargets = add_thresholds(drugTargets)
+
+    # If save dir is given, save this data
+    if(saveOutput is not None):
+        fileDir = os.path.join(saveOutput, f"{calcMethod} drugTargets.tsv")
+        if(os.path.exists(fileDir)):
+            df = pd.read_csv(fileDir, sep = "\t")
+            df = pd.concat([df, drugTargets])
+        else:
+            df = drugTargets
+        df.drop_duplicates(inplace=True)
+        df.to_csv(fileDir, sep = "\t", lineterminator="\n", index = False)
+
+    # Get relevant columns and drop NaN rows
+    rdT = drugTargets[["DRUG_STANDARD", "TARGET", "SURVIVABILITY CORRELATION", "THRESHOLD"]]
+    rdT.dropna(axis = "index", subset = ["SURVIVABILITY CORRELATION", "THRESHOLD"], inplace=True)
+    rdT.sort_values("THRESHOLD", axis = "index", ascending = False, inplace=True)
+
+    # Plot thresholds and drug values
+    plt.plot(range(len(rdT)), rdT["THRESHOLD"].values, label = "Threshold Value", color = "green")
+    plt.scatter(range(len(rdT)), rdT["SURVIVABILITY CORRELATION"].values, color = "blue")
+    # Remove xtick labels
+    plt.xticks(ticks = range(len(rdT)), labels = ["" for _ in range(len(rdT))])
+    # Plot percentage of values above and below threshold
+    above, below = len(rdT.loc[rdT["SURVIVABILITY CORRELATION"]>=rdT["THRESHOLD"]])/len(rdT), len(rdT.loc[rdT["SURVIVABILITY CORRELATION"]<rdT["THRESHOLD"]])/len(rdT)
+    for ymod, perc, col in zip([min, max], [below, above], ["red", "blue"]):
+        plt.text(len(rdT)/2, ymod(rdT["SURVIVABILITY CORRELATION"].values), f"{perc*100:.4f}%", color = col)
+    plt.xlabel("Drug")
+    plt.ylabel("Survivability Correlation")
+    plt.title(f"{calcMethod} Survivability Correlation Target Values")
+
+    ## Plot SC values
+    if(saveOutput is None):
+        plt.show()
+    else:
+        plt.savefig(os.path.join(saveOutput, f"{calcMethod} GDSC All Target Scores Plus Threshold.png"))
+    plt.clf()
+
+def add_thresholds(drugTargets: pd.DataFrame):
+    drugTargets["THRESHOLD"] = drugTargets["DRUG_MEAN"] + (3*drugTargets["DRUG_SD"])
+    drugTargets["SURVIVABILITY TARGET RATIO"] = drugTargets["SURVIVABILITY CORRELATION"] / drugTargets["THRESHOLD"]
+    return drugTargets
+
 def target_SC_analysis(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None, scScores: Optional[pd.DataFrame] = None,
                        calcMethod: str = "Pearson") -> None:
     if(drugTargets is None or scScores is None):
         drugTargets, scScores = prepare_target_frame()
 
-    drugTargets["THRESHOLD"] = drugTargets["DRUG_MEAN"] + (3*drugTargets["DRUG_SD"])
-    drugTargets["SURVIVABILITY TARGET RATIO"] = drugTargets["SURVIVABILITY CORRELATION"] / drugTargets["THRESHOLD"]
+    # Add threshold and SC Target ratios
+    drugTargets = add_thresholds(drugTargets)
 
     # If save dir is given, save this data
     if(saveOutput is not None):
