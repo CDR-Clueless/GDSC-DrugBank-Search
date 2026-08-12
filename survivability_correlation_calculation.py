@@ -387,6 +387,9 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
         scMode (str, optional): Method used to calculate Survivability Correlation. Valid values: 'pearson', 'gls'. Defaults to "pearson".
         nComponents (int, optional): _description_. Defaults to 2.
     """
+
+    if(not os.path.exists(DEFAULT_OUTPUT_DIR)):
+        os.mkdir(DEFAULT_OUTPUT_DIR)
     
     # First, update logFile path if in debug mode
     if(dMode):
@@ -503,8 +506,6 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     
     logFile.add('Writing Drugs x Genes file)')
     # Ensure folder exists for GDSC data
-    if(not os.path.exists(DEFAULT_OUTPUT_DIR)):
-        os.mkdir(DEFAULT_OUTPUT_DIR)
     outDir = os.path.join(DEFAULT_OUTPUT_DIR, "GDSC")
     if(not os.path.exists(outDir)):
         os.mkdir(outDir)
