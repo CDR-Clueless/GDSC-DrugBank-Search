@@ -390,6 +390,9 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
 
     if(not os.path.exists(DEFAULT_OUTPUT_DIR)):
         os.mkdir(DEFAULT_OUTPUT_DIR)
+
+    print(DEFAULT_OUTPUT_DIR)
+    print(os.path.exists(DEFAULT_OUTPUT_DIR))
     
     # First, update logFile path if in debug mode
     if(dMode):
