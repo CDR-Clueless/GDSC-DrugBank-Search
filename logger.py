@@ -16,8 +16,8 @@ class Logger:
     # Append time and desired details to existing log
     def add(self, string: str):
         cTime = str(datetime.now()).split(".")[0].ljust(21)
-        if(os.path.exists(self.directory)==False):
-            with open(self.directory, "w") as f:
+        if(not os.path.exists(self.directory)):
+            with open(self.directory, "x") as f:
                 f.write(cTime + string)
             return
         with open(self.directory, "r") as f:
