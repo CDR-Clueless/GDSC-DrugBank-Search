@@ -503,6 +503,8 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     
     logFile.add('Writing Drugs x Genes file)')
     # Ensure folder exists for GDSC data
+    if(not os.path.exists(DEFAULT_OUTPUT_DIR)):
+        os.mkdir(DEFAULT_OUTPUT_DIR)
     outDir = os.path.join(DEFAULT_OUTPUT_DIR, "GDSC")
     if(not os.path.exists(outDir)):
         os.mkdir(outDir)
