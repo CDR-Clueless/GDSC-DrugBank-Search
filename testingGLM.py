@@ -7,7 +7,7 @@ Created 11 Jun 2026
 """
 import os
 from copy import deepcopy
-from typing import Optional
+from typing import Optional, Union
 from collections.abc import Callable
 import multiprocessing as mp
 
@@ -43,15 +43,26 @@ def dummyTwo(x1: float = 1.0, x2: float = 1.0, c: float = 0.1, noise: float = 0.
     base = np.linspace(lower, upper, n)
     return (base * x1) + (x2 * np.power(base, 2.)) + c + (noise * np.random.uniform(lower, upper, n))
 
-def dummyX(xs: list = [1, 2], c: float = 0.1, noise: float = 0.1, lower: float = 0.0, upper: float = 1.0, n: int = 100) -> tuple[np.ndarray]:
+def dummyX(xs: list = [1, 2], c: float = 0.1, noise: Union[list, np.ndarray, float] = 0.1, lower: float = 0.0, upper: float = 1.0, n: int = 100) -> tuple[np.ndarray]:
     base = np.linspace(lower, upper, n)
-    y = (np.random.uniform(0, 1, n) * noise) + c
+    # If noise is an array, make it the same shape 
+    if(noise is not float and noise is not int):
+        realNoise = np.ones(n)
+        for i in range(len(noise)):
+            fracl, fracu = i/len(noise), (i+1)/len(noise)
+            realNoise[int(fracl*realNoise.shape[0]):int(fracu*realNoise.shape[0])] = noise[i]
+        # Fill in the remaining noise
+        realNoise[int(fracu*realNoise.shape[0]):] = noise[-1]
+        noise = realNoise
+    y = (np.random.uniform(-1, 1, n) * noise) + c
     for power, x in enumerate(xs):
         y += x * np.power(base, power+1)
     return np.vstack([np.ones(n, dtype = float)] + [np.power(base, power+1) for power in range(len(xs))]).T, y
     
 
 def main():
+    testing()
+    return
     #calculate_survCorr()
     #return
     # Generate some dummy data
@@ -66,6 +77,45 @@ def main():
     plt.text(0.5, 0.5, calculate_rsquared(x, y, 2))
     plt.show()
 
+    return
+
+def testing():
+    true = [0.1, 4]
+    x, y = dummyX(xs = true[1:], c = true[0], upper = 100, noise = [750, 250, 500, 5, 700])
+    # Fit models
+    lin_model = sm.GLS(y, x)
+    resGLS = lin_model.fit()
+    rhoGLS = resGLS.params
+    # Calculate approximate weights for the WLS using just data
+    weights = np.ones(y.shape[0])
+    for i in range(weights.shape[0]//10, weights.shape[0], weights.shape[0]//10):
+        dev = np.std(y[i-(weights.shape[0]//10):i])
+        weights[i-(weights.shape[0]//10):i] = dev
+    weights[-weights.shape[0]//10:] = np.std(y[-weights.shape[0]//10:])
+    # Train WLS
+    w_model = sm.WLS(y, x, weights = 1.0 / (weights**2))
+    resWLS = w_model.fit()
+    rhoWLS = resWLS.params
+    # Calculate weights for WLS using GLS predictions
+    yGLS = sum([x[:,i]*rhoGLS[i] for i in range(len(rhoGLS))])
+    yerrGLS = y - yGLS
+    regions = 10
+    weights = [np.std(yerrGLS[((i-1)*yerrGLS.shape[0])//regions:(i*yerrGLS.shape[0])//regions]) for i in range(1, regions)]
+    weights = np.repeat(weights, int(yerrGLS.shape[0]/regions))
+    # Pad weights
+    weights = np.pad(weights, yerrGLS.shape[0]-weights.shape[0], mode = "edge")[yerrGLS.shape[0]-weights.shape[0]:]
+    # Train WLS using GLS errors
+    wGLS_model = sm.WLS(y, x, weights = 1.0 / (weights**2))
+    reswGLS = wGLS_model.fit()
+    rhowGLS = reswGLS.params
+    plt.scatter(x[:, 1], y)
+    plt.plot(x[:, 1], sum([x[:,i]*true[i] for i in range(len(true))]), label = "True", color = "blue")
+    plt.plot(x[:, 1], sum([x[:,i]*rhoGLS[i] for i in range(len(rhoGLS))]), label = "GLS", color = "orange")
+    plt.plot(x[:, 1], sum([x[:,i]*rhoWLS[i] for i in range(len(rhoWLS))]), label = "WLS Data", color = "green")
+    plt.plot(x[:, 1], sum([x[:,i]*rhowGLS[i] for i in range(len(rhowGLS))]), label = "WLS GLS", color = "red")
+    plt.legend()
+    print(f"GLS Error: {rhoGLS - np.array(true)}\nWLS Data Error: {rhoWLS - np.array(true)}\nWLS GLS Error: {rhowGLS - np.array(true)}")
+    plt.show()
     return
 
 def calculate_rsquared(x, y, nComponents: int = 2, return_equation: bool = False, return_coefficients: bool = False) -> float:
