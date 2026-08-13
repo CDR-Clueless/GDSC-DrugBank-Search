@@ -80,41 +80,22 @@ def main():
     return
 
 def testing():
-    true = [0.1, 4]
+    true = np.array([0.1, 4], dtype = float)
     x, y = dummyX(xs = true[1:], c = true[0], upper = 100, noise = [750, 250, 500, 5, 700])
     # Fit models
-    lin_model = sm.GLS(y, x)
-    resGLS = lin_model.fit()
+    gls_model = sm.GLS(y, x)
+    resGLS = gls_model.fit()
     rhoGLS = resGLS.params
-    # Calculate approximate weights for the WLS using just data
-    weights = np.ones(y.shape[0])
-    for i in range(weights.shape[0]//10, weights.shape[0], weights.shape[0]//10):
-        dev = np.std(y[i-(weights.shape[0]//10):i])
-        weights[i-(weights.shape[0]//10):i] = dev
-    weights[-weights.shape[0]//10:] = np.std(y[-weights.shape[0]//10:])
-    # Train WLS
-    w_model = sm.WLS(y, x, weights = 1.0 / (weights**2))
-    resWLS = w_model.fit()
-    rhoWLS = resWLS.params
-    # Calculate weights for WLS using GLS predictions
-    yGLS = sum([x[:,i]*rhoGLS[i] for i in range(len(rhoGLS))])
-    yerrGLS = y - yGLS
-    regions = 10
-    weights = [np.std(yerrGLS[((i-1)*yerrGLS.shape[0])//regions:(i*yerrGLS.shape[0])//regions]) for i in range(1, regions)]
-    weights = np.repeat(weights, int(yerrGLS.shape[0]/regions))
-    # Pad weights
-    weights = np.pad(weights, yerrGLS.shape[0]-weights.shape[0], mode = "edge")[yerrGLS.shape[0]-weights.shape[0]:]
-    # Train WLS using GLS errors
-    wGLS_model = sm.WLS(y, x, weights = 1.0 / (weights**2))
-    reswGLS = wGLS_model.fit()
-    rhowGLS = reswGLS.params
+    wlsD_rsq, rhowlsD = calculate_SC_WLS_data(x[:,1], y, components=1, return_coefficients=True)
+    wlsP_rsq, rhowlsP = calculate_SC_WLS_prediction(x[:,1], y, components=1, return_coefficients=True)
+    
     plt.scatter(x[:, 1], y)
     plt.plot(x[:, 1], sum([x[:,i]*true[i] for i in range(len(true))]), label = "True", color = "blue")
     plt.plot(x[:, 1], sum([x[:,i]*rhoGLS[i] for i in range(len(rhoGLS))]), label = "GLS", color = "orange")
-    plt.plot(x[:, 1], sum([x[:,i]*rhoWLS[i] for i in range(len(rhoWLS))]), label = "WLS Data", color = "green")
-    plt.plot(x[:, 1], sum([x[:,i]*rhowGLS[i] for i in range(len(rhowGLS))]), label = "WLS GLS", color = "red")
+    plt.plot(x[:, 1], sum([x[:,i]*rhowlsD[i] for i in range(len(rhowlsD))]), label = "WLS Data", color = "green")
+    plt.plot(x[:, 1], sum([x[:,i]*rhowlsP[i] for i in range(len(rhowlsP))]), label = "WLS GLS-Error", color = "red")
     plt.legend()
-    print(f"GLS Error: {rhoGLS - np.array(true)}\nWLS Data Error: {rhoWLS - np.array(true)}\nWLS GLS Error: {rhowGLS - np.array(true)}")
+    print(f"GLS Error: {true - rhoGLS}\nWLS Data Error: {true - rhowlsD}\nWLS GLS Error: {true - rhowlsP}")
     plt.show()
     return
 
@@ -263,7 +244,7 @@ def calculate_SC_Pearson(x, y, return_equation: bool = False, components: int = 
     else:
         return (pr, lambda x: (m*x) + c)
 
-def calculate_SC_GLS(x, y, components: int = 1, return_equation: bool = False, return_coefficients: bool = False) -> float | tuple[float, Callable]:
+def calculate_SC_GLS(x, y, components: int = 1, return_equation: bool = False, return_coefficients: bool = False) -> Union[float, tuple[float, Callable], tuple[float, float], tuple[float, Callable, float]]:
     """Calculate Generalized Least Squares regression between data x and y
 
     Args:
@@ -290,6 +271,147 @@ def calculate_SC_GLS(x, y, components: int = 1, return_equation: bool = False, r
     if(return_coefficients):
         output.append(rho)
     return deepcopy(tuple(output))
+
+def calculate_SC_WLS(x, y, components: int = 1, return_equation: bool = False, return_coefficients: bool = False,
+                          noiseMethod: str = "data", noiseSections: int = 10, noiseSplit: str = "values") -> Union[float, tuple[float, Callable], tuple[float, float], tuple[float, Callable, float]]:
+    """Calculate Weighted Least Squares regression between data x and y
+
+    Args:
+        x (_type_): Input data
+        y (_type_): Output data
+        return_equation (bool, optional): Whether to return a function which serves as the equation of the fitted GLS model. Defaults to False.
+        components (int, optional): Maximum power of x (i.e. fitted esimator equation = c + m1x + m2x^2 + ... + m{components}x^{components}). Defaults to 1.
+        noiseSections (int, optional): Number of sections of data with different noise values. Defaults to 10
+        noiseSplit (str, optional): Determines whether noise sections should be determined by data points (i.e. sections of equal size) or values (i.e. noise x1 for 0.0-0.1, x2 for 0.1-0.2, etc.)
+
+    Returns:
+        float | tuple[float, Callable]: Returns r^2 value of the fitted model and, optionally: a function serving as an equation to the fitted line of the model; resultant coefficients of the model
+    """
+    # First, sort the x and y values by their x value for easier manipulation
+    allSort = sorted(zip(x, y))
+    x, y = np.array([e[0] for e in allSort], dtype = float), np.array([e[1] for e in allSort], dtype = float)
+    # Create a formatted version of X interpretable by statsmodels now to save duplicate work later
+    formattedX = np.vstack([np.ones(x.shape[0], dtype = float)] + [np.power(x, power+1) for power in range(components)]).T
+    ## Next, get an array representing the noise weights to feed into the WLS model
+    # use the raw data points if noiseMethod is set to 'date', or the errors resulting from a trained GLS if noiseMethod is set to 'error'
+    if(noiseMethod.lower().strip()=="data"):
+        noise = create_wls_weights(x, y, noiseSections, noiseSplit)
+    else:
+        ## Start by training an appropriate GLS model
+        # Fit the model and extract relevant parameters
+        gls_model = sm.GLS(y, formattedX)
+        res = gls_model.fit()
+        rho = res.params
+        ## Now calculate all the errors of this model
+        # Get predicted y values of model
+        predictions = np.dot(rho, formattedX.T)
+        # Subtract predictions from true values to obtain error
+        errors = y - predictions
+        # Finally, create the weights required using these errors
+        noise = create_wls_weights(x, errors, noiseSections, noiseSplit)
+            
+    # Now fit the model and extract relevant parameters
+    wls_model = sm.WLS(y, formattedX, weights = 1 / (noise**2))
+    res = wls_model.fit()
+    rho = res.params
+    pr = res.rsquared
+    if(not return_equation and not return_coefficients):
+        return pr
+    output = [pr]
+    if(return_equation):
+        output.append(lambda result: rho[0] + np.dot(create_squared_array(result, rho.shape[0]-1), rho[1:].T))
+    if(return_coefficients):
+        output.append(rho)
+    return deepcopy(tuple(output))
+
+def calculate_SC_WLS_data(x, y, components: int = 1, return_equation: bool = False, return_coefficients: bool = False,
+                          noiseSections: int = 10, noiseSplit: str = "values") -> Union[float, tuple[float, Callable], tuple[float, float], tuple[float, Callable, float]]:
+    """Calculate Weighted Least Squares regression between data x and y using raw data to determine weights
+
+    Args:
+        x (_type_): Input data
+        y (_type_): Output data
+        return_equation (bool, optional): Whether to return a function which serves as the equation of the fitted GLS model. Defaults to False.
+        components (int, optional): Maximum power of x (i.e. fitted esimator equation = c + m1x + m2x^2 + ... + m{components}x^{components}). Defaults to 1.
+        noiseSections (int, optional): Number of sections of data with different noise values. Defaults to 10
+        noiseSplit (str, optional): Determines whether noise sections should be determined by data points (i.e. sections of equal size) or values (i.e. noise x1 for 0.0-0.1, x2 for 0.1-0.2, etc.)
+
+    Returns:
+        float | tuple[float, Callable]: Returns r^2 value of the fitted model and, optionally, a function serving as an equation to the fitted line of the model
+    """
+
+    return calculate_SC_WLS(x, y, components, return_equation, return_coefficients, "data", noiseSections, noiseSplit)
+
+def calculate_SC_WLS_prediction(x, y, components: int = 1, return_equation: bool = False, return_coefficients: bool = False,
+                          noiseSections: int = 10, noiseSplit: str = "values") -> Union[float, tuple[float, Callable], tuple[float, float], tuple[float, Callable, float]]:
+    """Calculate Weighted Least Squares regression between data x and y using GLS prediction error to determine weights
+
+    Args:
+        x (_type_): Input data
+        y (_type_): Output data
+        return_equation (bool, optional): Whether to return a function which serves as the equation of the fitted GLS model. Defaults to False.
+        components (int, optional): Maximum power of x (i.e. fitted esimator equation = c + m1x + m2x^2 + ... + m{components}x^{components}). Defaults to 1.
+        noiseSections (int, optional): Number of sections of data with different noise values. Defaults to 10
+        noiseSplit (str, optional): Determines whether noise sections should be determined by data points (i.e. sections of equal size) or values (i.e. noise x1 for 0.0-0.1, x2 for 0.1-0.2, etc.)
+
+    Returns:
+        float | tuple[float, Callable]: Returns r^2 value of the fitted model and, optionally, a function serving as an equation to the fitted line of the model
+    """
+
+    return calculate_SC_WLS(x, y, components, return_equation, return_coefficients, "prediction", noiseSections, noiseSplit)
+
+def create_wls_weights(x, y, noiseSections: int = 10, noiseSplit: str = "values") -> np.ndarray[tuple[()],float]:
+    """ Create an array which can be plugged into WLS models as weights = 1 / (output**2)
+
+    Args:
+        x (_type_): _description_
+        y (_type_): _description_
+        noiseSections (int, optional): Number of sections of data with different noise values. Defaults to 10.
+        noiseSplit (str, optional): Determines whether noise sections should be determined by counts of data points (i.e. sections of equal size) or values (i.e. noise x1 for 0.0-0.1, x2 for 0.1-0.2, etc.). Defaults to "values".
+
+    Returns:
+        np.ndarray: Array of values which can be plugged into WLS weights as weights = 1 / (np.ndarray**2)
+    """
+    # First, sort the x and y values by their x value for easier manipulation
+    allSort = sorted(zip(x, y))
+    x, y = np.array([e[0] for e in allSort], dtype = float), np.array([e[1] for e in allSort], dtype = float)
+    ## Next, get an array representing the noise weights to feed into the WLS model
+    noise = np.zeros(x.shape[0], dtype = float)
+    # Get noise values from equally sized sections
+    if(noiseSplit.lower().strip() in ["counts", "count"]):
+        # Fraction of the total each section needs to be
+        frac = 1/noiseSections
+        # Assign noise values based on standard deviation of y values
+        for i in range(1, noiseSections+1):
+            # Set upper and lower bounds
+            lb, ub = int((i-1)*frac*x.shape[0]), int(i*frac*x.shape[0])
+            val = np.std(y[lb:ub])
+            noise[lb:ub] = val
+        # Ensure the final noise entry has a value
+        if(noise[-1]==0.0):
+            noise[-1] = val
+    # Get noise values from sections between certain values
+    else:
+        # Get upper and lower bounds for values from which sections are derived
+        # Note that x[0] and x[-1] can be used instead of minimum and maximum as they've already been sorted
+        lb, ub = x[0], x[-1]
+        # Create an array from lb to ub, these will determine cutoff points to use for groups from which standard deviations are derived
+        cutoffs = np.linspace(lb, ub, noiseSections+1, endpoint=True)
+        cMark, j = 1, 0 # Counters to mark current cutoff used in cutoffs, maximum index of previous cutoff + 1
+        for i in range(x.shape[0]):
+            # Check if the current sample has gone above the relevant cutoff point;
+            # calculate the relevant standard deviation, use it as noise, and reset j index if so
+            if(x[i]>cutoffs[cMark]):
+                noise[j:i] = np.std(y[j:i])
+                j = i
+                # While is used here to skip any empty sections (i.e. if 0.5-0.6 is a section but there are no values there)
+                while(x[i]>cutoffs[cMark]):
+                    cMark += 1
+        # Ensure the final noise values are filled
+        if(j<noise.shape[0]):
+            noise[j:] = np.std(y[j:])
+
+    return noise
 
 def create_squared_array(x, shape: int = 2, dtype = float) -> np.ndarray:
     """ Create an array of [x, x^2, x^3, ..., x^{shape}]
