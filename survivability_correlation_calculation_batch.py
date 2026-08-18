@@ -20,6 +20,7 @@ def main():
             continue
         gdsc(logFile = Logger(os.path.join("Data", "Results", "Survivability-Correlations", f"{method}-{nCom}-calcLog.log")),
              scMode = method, nComponents = nCom)
+        print(f"Finished calculation for {method} with {nCom} components")
     return
 
 if(__name__=="__main__"):
