@@ -15,6 +15,9 @@ def main():
     methods = ["pearson"] + (["gls"]*5) + (["wlsp"]*5) + (["wlsd"]*5)
     components = [1] + (list(range(1, 6))*3)
     for method, nCom in zip(methods, components):
+        # Check if file already exists; skip if so
+        if(os.path.exists(os.path.join("Data", "Results", "Survivability-Correlations", "GDSC", f"pIC50-{method}-AllDrugsByAllGenes.tsv"))):
+            continue
         gdsc(logFile = Logger(os.path.join("Data", "Results", "Survivability-Correlations", f"{method}-{nCom}-calcLog.log")),
              scMode = method, nComponents = nCom)
     return

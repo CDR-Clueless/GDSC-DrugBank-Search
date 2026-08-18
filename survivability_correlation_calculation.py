@@ -26,7 +26,7 @@ import multiprocessing as mp
 from typing import Union, Tuple, Optional
 
 from logger import Logger
-from testingGLM import calculate_SC_GLS
+from testingGLM import calculate_SC_GLS, calculate_SC_WLS_data, calculate_SC_WLS_prediction
 
 CLEANED_DATA_DIR: str = os.path.join("Data", "Laurence-Data")
 DEFAULT_CRISPR_FILE: str = os.path.join(CLEANED_DATA_DIR,"CRISPRGeneDependency.csv")
@@ -570,7 +570,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
     resultCoefficients: dict = {gn: {drug: np.nan for drug in result.columns} for gn in result.index}
 
     # Set up relevant function to Calculate Survivability Correlation
-    scFunc = {"pearson": pearsonr, "gls": calculate_SC_GLS}[scMode.lower().strip()]
+    scFunc = {"pearson": pearsonr, "gls": calculate_SC_GLS, "wlsd": calculate_SC_WLS_data, "wlsp": calculate_SC_WLS_prediction}[scMode.lower().strip()]
 
     # loop through all indexes, i.e. drugs/compounds, calculating r for all genes
     for d in il:
