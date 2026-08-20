@@ -558,8 +558,12 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
     """
     
     # Set up LogFile if relevant
+    writeLog: bool
+    t_prev: float = time.time()
     if(logFile is not None):
-        pass
+        writeLog = True
+    else:
+        writeLog = False
 
     # Set up results DataFrame to save to files
     result: pd.DataFrame = pd.DataFrame(columns=['symbol']+il)
@@ -573,7 +577,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
     scFunc = {"pearson": pearsonr, "gls": calculate_SC_GLS, "wlsd": calculate_SC_WLS_data, "wlsp": calculate_SC_WLS_prediction}[scMode.lower().strip()]
 
     # loop through all indexes, i.e. drugs/compounds, calculating r for all genes
-    for d in il:
+    for di, d in enumerate(il):
         ## Load the calculation for this data if it has already been calculated
         starFileEnd: str = f"starmapcorrelations-drugColumn_{drugColumn}-cellLineColumn_{cellLineColumn}-responseColumn_{responseColumn}-drug_{d}_scMode-{scMode}_components-{glmComponents}"
         if(starfiledirBase is None):
@@ -721,6 +725,12 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                 toSave += f"{gn}\t{coefs}\n"
             # Remove final newline
             f.write(toSave.strip())
+        # Write to log if appropriate
+        if(writeLog):
+            if(it == 0):
+                t_passed: float = np.divide(time.time() - t_prev, 3600)
+                if(t_passed > 1):
+                    logFile.write(f"Thread {it} is {(di/len(d))*100:.1f}% Complete")
 
     return (result, resultCoefficients)
 
