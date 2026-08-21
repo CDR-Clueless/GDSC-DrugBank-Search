@@ -373,7 +373,8 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
          gdsc1Loc: Optional[str] = None, gdsc2Loc: Optional[str] = None,
          logFile: Logger = Logger(os.path.join("Data", "Results", "GDSC-SC-calculation-log.txt")),
          dMode: bool = DEBUG_MODE,
-         scMode: str = "pearson", nComponents: int = 2):
+         scMode: str = "pearson", nComponents: int = 2,
+         outDir: str = os.path.join(DEFAULT_OUTPUT_DIR, "GDSC")):
     """ Calculate GDSC Survivability Correlations
 
     Args:
@@ -388,11 +389,8 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
         nComponents (int, optional): _description_. Defaults to 2.
     """
 
-    if(not os.path.exists(DEFAULT_OUTPUT_DIR)):
-        os.mkdir(DEFAULT_OUTPUT_DIR)
-
-    print(DEFAULT_OUTPUT_DIR)
-    print(os.path.exists(DEFAULT_OUTPUT_DIR))
+    if(not os.path.exists(outDir)):
+        os.mkdir(outDir)
     
     # First, update logFile path if in debug mode
     if(dMode):
@@ -509,7 +507,8 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     
     logFile.add('Writing Drugs x Genes file)')
     # Ensure folder exists for GDSC data
-    outDir = os.path.join(DEFAULT_OUTPUT_DIR, "GDSC")
+    if(outDir.split(os.sep)[-1]!="GDSC"):
+        outDir = os.path.join(outDir, "GDSC")
     if(not os.path.exists(outDir)):
         os.mkdir(outDir)
     if(scMode.lower().strip()=="pearson"):
