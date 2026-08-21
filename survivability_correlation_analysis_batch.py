@@ -10,6 +10,7 @@ import os
 
 import numpy as np
 import pandas as pd
+from matplotlib import pyplot as plt
 
 from target_functions import get_drugTargets
 
@@ -31,6 +32,7 @@ def main():
     #print(list(df.index))
     #print(dTargets["TARGET"])
     dTargets = dTargets.loc[dTargets["TARGET"].isin(df.index)]
+    dTargets.reset_index(inplace=True)
     #print(len(dTargets["DRUG_STANDARD"].unique()))
     # Add Z-Scores from each toImport DataFrame to dTargets
     for key in toImport:
@@ -38,7 +40,31 @@ def main():
         scData.set_index("symbol", inplace = True)
         scData.columns = [col.upper().replace(" ","").replace(" ","").replace("_", "").replace("(","").replace(")","") for col in scData.columns]
         dTargets = add_zscore(dTargets, scData, f"Z-{key}")
-    print(dTargets)
+    # Plot number of scores above Z = 1.645 and number above Z = 3
+    p5s, p99s, names = [], [], []
+    for col in dTargets.columns[4:]:
+        name = col.replace("Z-","")
+        # Remove non-float values
+        rel = dTargets[col].dropna()
+        vals = []
+        for val in rel.values:
+            try:
+                vals.append(float(val))
+            except:
+                pass
+        arr = np.array(vals, dtype = float)
+        p5, p99 = sum(arr >= 1.645), sum(arr >= 3.0)
+        p5s.append(p5)
+        p99s.append(p99)
+        names.append(name)
+    p5ticks = np.array(range(len(names)), dtype = float) - 0.2
+    p99ticks = np.array(range(len(names)), dtype = float) + 0.2
+    plt.bar(p5ticks, p5s, width = 0.4, color = "blue", label = "p < 0.05")
+    plt.bar(p99ticks, p99s, width = 0.4, color = "orange", label = "Z > 3.0")
+    plt.xticks(range(len(names)), names)
+    plt.ylim((0, arr.shape[0]))
+    plt.legend()
+    plt.show()
     return
 
 def get_sc_files(fileDir: str = DEFAULT_FILE_LOC):
