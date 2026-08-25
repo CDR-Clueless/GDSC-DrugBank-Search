@@ -23,7 +23,7 @@ def main():
     #dTGLS, scGLS = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-GLS_2-AllDrugsByAllGenes.tsv"))
     #target_SC_analysis(saveOutput=outputDir, drugTargets = dT, scScores = sc)
     #get_zScores(outputDir, dT)
-    plot_knownDrugs(drugTargets=dTPearson, scScores=scPearson)
+    plot_knownDrugs(drugTargets=dTPearson, scScores=scPearson, csvSave = "good-bad-drugs.tsv")
     #plot_realScores(drugTargets = dTPearson, scScores = scPearson, saveOutput=None, calcMethod = "Pearson")
     #get_zScores(drugTargets = dTPearson, saveOutput=outputDir, calcMethod = "Pearson", save_stats = True)
     #get_zScores(drugTargets = dTGLS, saveOutput=outputDir, calcMethod = "2-Component GLS", save_stats = True)
@@ -136,7 +136,7 @@ def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataF
 
 # Plot drugs which don't have known targets
 def plot_knownDrugs(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None, scScores: Optional[pd.DataFrame] = None,
-                       calcMethod: str = "Pearson"):
+                       calcMethod: str = "Pearson", csvSave: str = ""):
     rdT = drugTargets.dropna(axis = "index", subset = "SURVIVABILITY CORRELATION")
     # Get total number of drugs from GDSC dataset
     total_drugs = len(scScores.columns)
@@ -149,10 +149,12 @@ def plot_knownDrugs(saveOutput: Optional[str] = None, drugTargets: Optional[pd.D
             drugsKnown += 1
             drugsKnownList.append(drug)
     drugsWgenes: int = 0
+    drugsWgenesList: list = []
     for drug in drugsKnownList:
         rel = rdT.loc[rdT["DRUG_STANDARD"] == drug]
         if(True in rel["TARGET"].isin(scScores.index).values):
             drugsWgenes += 1
+            drugsWgenesList.append(drug)
     
     plt.pie([drugsWgenes, drugsKnown - drugsWgenes, total_drugs - drugsKnown], labels = ["Drugs w DepMap Gene Targets", "Drugs w Known Targets", "Drugs w/o Known Targets"],
             autopct = "%.1f")
@@ -162,6 +164,27 @@ def plot_knownDrugs(saveOutput: Optional[str] = None, drugTargets: Optional[pd.D
         plt.savefig(os.path.join(saveOutput, "Drug Target Knowledge Comparison.png"))
     plt.clf()
     plt.close()
+    if(csvSave != ""):
+        # Get list of drugs with unknown and known but non-DepMap targets
+        drugsUnknownList: list = []
+        for d in GDSCdrugs:
+            if(d not in drugsKnownList):
+                drugsUnknownList.append(d)
+        drugsNonDepMap: list = []
+        for d in drugsKnownList:
+            if(d not in drugsWgenesList):
+                drugsNonDepMap.append(d)
+        # Pad lists to all be same length
+        maxL = max([len(drugsUnknownList), len(drugsNonDepMap), len(drugsWgenesList)])
+        for l in [drugsUnknownList, drugsNonDepMap, drugsWgenesList]:
+            l += [""] * (maxL - len(l))
+        df = pd.DataFrame(data = list(zip(drugsUnknownList, drugsNonDepMap, drugsWgenesList)),
+                          columns = ["Drugs with no known Target", "Drugs with non-DepMap Gene Targets", "Drugs with at least 1 known DepMap Gene Target"])
+        if(csvSave.split(".")[-1].lower()=="tsv"):
+            sep = "\t"
+        else:
+            sep = ","
+        df.to_csv(csvSave, sep = sep, lineterminator="\n", index = False)
     return
 
 def plot_realScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None, scScores: Optional[pd.DataFrame] = None,
