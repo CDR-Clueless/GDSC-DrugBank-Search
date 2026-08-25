@@ -374,7 +374,8 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
          logFile: Logger = Logger(os.path.join("Data", "Results", "GDSC-SC-calculation-log.txt")),
          dMode: bool = DEBUG_MODE,
          scMode: str = "pearson", nComponents: int = 2,
-         outDir: str = os.path.join(DEFAULT_OUTPUT_DIR, "GDSC")):
+         outDir: str = os.path.join(DEFAULT_OUTPUT_DIR, "GDSC"),
+         use_parallel: bool = True):
     """ Calculate GDSC Survivability Correlations
 
     Args:
@@ -483,13 +484,16 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
 
     # Run parallel SC calculation function
     nested_dfs = []
-    #for i in range(len(batch_dlist)):
-    #    nested_dfs.append(chunkDrugGeneFormatted(i,batch_dlist[i],crisprDeps,[drug2,drug1],
-    #        "DRUG_NAME", "ModelID", "LN_IC50", True, None, logFile, dMode, scMode, nComponents))
-    nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
-            [(i,batch_dlist[i],crisprDeps,[drug2,drug1],
-            "DRUG_NAME", "ModelID", "LN_IC50", True, None, logFile, dMode, scMode, nComponents)
-            for i in range(cpu_count)]).get()
+    if(use_parallel):
+        nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
+                [(i,batch_dlist[i],crisprDeps,[drug2,drug1],
+                "DRUG_NAME", "ModelID", "LN_IC50", True, None, logFile, dMode, scMode, nComponents)
+                for i in range(cpu_count)]).get()
+    else:
+        for i in range(len(batch_dlist)):
+            nested_dfs.append(chunkDrugGeneFormatted(i,batch_dlist[i],crisprDeps,[drug2,drug1],
+                                                     "DRUG_NAME", "ModelID", "LN_IC50", True, None,
+                                                     logFile, dMode, scMode, nComponents))
     nested_dfs, nested_coefs = [n[0] for n in nested_dfs], [n[1] for n in nested_dfs]
     
     logFile.add(f'pIC50 All by All took {((time.time())-t_prev)/60.0:.4} min ({((time.time())-t_prev)/3600.0:.1f} hrs)')
@@ -718,7 +722,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                 pass
                 if(time.time() - t_prev >= 3600):
                     perc = (di / len(d)) + ((gi / len(genes)) / len(d))*100
-                    logFile.add(f"Thread {it} is {perc:.1f}\% Complete")
+                    logFile.add(f"Thread {it} is {perc:.1f}% Complete")
                     t_prev = time.time()
 
         # Save result for this valud of 'd', in case the program is interrupted
