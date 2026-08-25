@@ -483,13 +483,13 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
 
     # Run parallel SC calculation function
     nested_dfs = []
-    for i in range(len(batch_dlist)):
-        nested_dfs.append(chunkDrugGeneFormatted(i,batch_dlist[i],crisprDeps,[drug2,drug1],
-            "DRUG_NAME", "ModelID", "LN_IC50", True, None, logFile, dMode, scMode, nComponents))
-    #nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
-    #        [(i,batch_dlist[i],crisprDeps,[drug2,drug1],
-    #        "DRUG_NAME", "ModelID", "LN_IC50", True, None, logFile, dMode, scMode, nComponents)
-    #        for i in range(cpu_count)]).get()
+    #for i in range(len(batch_dlist)):
+    #    nested_dfs.append(chunkDrugGeneFormatted(i,batch_dlist[i],crisprDeps,[drug2,drug1],
+    #        "DRUG_NAME", "ModelID", "LN_IC50", True, None, logFile, dMode, scMode, nComponents))
+    nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
+            [(i,batch_dlist[i],crisprDeps,[drug2,drug1],
+            "DRUG_NAME", "ModelID", "LN_IC50", True, None, logFile, dMode, scMode, nComponents)
+            for i in range(cpu_count)]).get()
     nested_dfs, nested_coefs = [n[0] for n in nested_dfs], [n[1] for n in nested_dfs]
     
     logFile.add(f'pIC50 All by All took {((time.time())-t_prev)/60.0:.4} min ({((time.time())-t_prev)/3600.0:.1f} hrs)')
@@ -637,7 +637,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
         # If in Debug mode, only do this for the first 20 genes
         if(dMode):
             genes = genes[:20]
-        for gn in genes:
+        for gi, gn in enumerate(genes):
             
             # get dependencies (deps) for all available cell lines, as well as a list of cell lines which
             # were found within the deps DataFrame
@@ -713,6 +713,14 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
             if(not validCorr):
                 result.at[gn, d] = np.nan
 
+            # Write current progress to log if appropriate
+            if(writeLog and it == 0):
+                pass
+                if(time.time() - t_prev >= 3600):
+                    perc = (di / len(d)) + ((gi / len(genes)) / len(d))*100
+                    logFile.add(f"Thread {it} is {perc:.1f}\% Complete")
+                    t_prev = time.time()
+
         # Save result for this valud of 'd', in case the program is interrupted
         with open(starfiledir, "w") as f:
             f.write("\n".join([str(v) for v in result[d].values]))
@@ -727,12 +735,6 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                 toSave += f"{gn}\t{coefs}\n"
             # Remove final newline
             f.write(toSave.strip())
-        # Write to log if appropriate
-        if(writeLog):
-            if(it == 0):
-                t_passed: float = np.divide(time.time() - t_prev, 3600)
-                if(t_passed > 1):
-                    logFile.add(f"Thread {it} is {(di/len(d))*100:.1f}% Complete")
 
     return (result, resultCoefficients)
 
