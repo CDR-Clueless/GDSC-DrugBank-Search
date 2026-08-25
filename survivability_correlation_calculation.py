@@ -480,7 +480,6 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
         batch_dlist = [[dList[i]] for i in range(cpu_count)]
         debugFile: str = "-DEBUG"
         print("Running in Debug mode")
-    logFile.add("Running GDSC Parallel code")
     # Set up directory to store temporary calculations from parallel functions
     if(os.path.exists(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))==False):
         os.mkdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))
@@ -491,11 +490,13 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     # Run parallel SC calculation function
     nested_dfs = []
     if(use_parallel):
+        logFile.add("Running GDSC Parallel code")
         nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
                 [(i,batch_dlist[i],crisprDeps,[drug2,drug1],
                 "DRUG_NAME", "ModelID", "LN_IC50", True, None, logFile, dMode, scMode, nComponents)
                 for i in range(cpu_count)]).get()
     else:
+        logFile.add("Running GDSC Non-parallel code")
         for i in range(len(batch_dlist)):
             nested_dfs.append(chunkDrugGeneFormatted(i,batch_dlist[i],crisprDeps,[drug2,drug1],
                                                      "DRUG_NAME", "ModelID", "LN_IC50", True, None,

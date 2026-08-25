@@ -7,13 +7,15 @@ Created 11 Aug 2026
 """
 
 import os
+import itertools
 
 from survivability_correlation_calculation import gdsc
 from logger import Logger
 
 def main():
-    methods = ["pearson"] + (["gls"]*5) + (["wlsp"]*5) + (["wlsd"]*5)
-    components = [1] + (list(range(1, 6))*3)
+    methods = ["pearson"] + (["gls", "wlsp", "wlsd"] * 5)
+    components = [1] + list(itertools.chain(*[[i for _ in range(3)] for i in range(1, 6)]))
+
     outDir = os.path.join("Data", "Results", "Survivability-Correlations", "GDSC")
     if(not os.path.exists(outDir)):
         os.mkdir(outDir)
