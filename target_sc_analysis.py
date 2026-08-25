@@ -24,7 +24,7 @@ def main():
     #target_SC_analysis(saveOutput=outputDir, drugTargets = dT, scScores = sc)
     #get_zScores(outputDir, dT)
     plot_knownDrugs(drugTargets=dTPearson, scScores=scPearson)
-    plot_realScores(drugTargets = dTPearson, scScores = scPearson, saveOutput=None, calcMethod = "Pearson")
+    #plot_realScores(drugTargets = dTPearson, scScores = scPearson, saveOutput=None, calcMethod = "Pearson")
     #get_zScores(drugTargets = dTPearson, saveOutput=outputDir, calcMethod = "Pearson", save_stats = True)
     #get_zScores(drugTargets = dTGLS, saveOutput=outputDir, calcMethod = "2-Component GLS", save_stats = True)
     #target_SC_analysis(saveOutput=outputDir, drugTargets=dTGLS, scScores = scGLS, calcMethod = "2-Component GLS")
@@ -138,9 +138,23 @@ def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataF
 def plot_knownDrugs(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None, scScores: Optional[pd.DataFrame] = None,
                        calcMethod: str = "Pearson"):
     rdT = drugTargets.dropna(axis = "index", subset = "SURVIVABILITY CORRELATION")
-    total_drugs = 542
-    drugsKnown = len(rdT["DRUG_STANDARD"].unique())
-    plt.pie([drugsKnown, total_drugs - drugsKnown], labels = ["Drugs with Known Targets", "Drugs without Known Targets"],
+    # Get total number of drugs from GDSC dataset
+    total_drugs = len(scScores.columns)
+    # Get number of drugs within the rdT dataset
+    drugsKnown: int = 0
+    drugsKnownList: list = []
+    GDSCdrugs = [d.upper().strip().replace(" ","_") for d in scScores.columns]
+    for drug in rdT["DRUG_STANDARD"].unique():
+        if(drug in GDSCdrugs):
+            drugsKnown += 1
+            drugsKnownList.append(drug)
+    drugsWgenes: int = 0
+    for drug in drugsKnownList:
+        rel = rdT.loc[rdT["DRUG_STANDARD"] == drug]
+        if(True in rel["TARGET"].isin(scScores.index).values):
+            drugsWgenes += 1
+    
+    plt.pie([drugsWgenes, drugsKnown - drugsWgenes, total_drugs - drugsKnown], labels = ["Drugs w DepMap Gene Targets", "Drugs w Known Targets", "Drugs w/o Known Targets"],
             autopct = "%.1f")
     if(saveOutput is None):
         plt.show()
@@ -185,7 +199,7 @@ def plot_realScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.D
     abovep, belowp = len(rdT.loc[rdT["SURVIVABILITY CORRELATION"]>=rdT["p<0.05"]])/len(rdT), len(rdT.loc[rdT["SURVIVABILITY CORRELATION"]<rdT["p<0.05"]])/len(rdT)
     for ymod, perc, col in zip([lambda x : max(x)-0.05, max], [abovep, above], ["blue", "green"]):
         plt.text(len(rdT)/2, ymod(rdT["SURVIVABILITY CORRELATION"].values), f"{perc*100:.1f}%", color = col)
-    plt.xlabel("Drug")
+    plt.xlabel("Drug Target")
     plt.ylabel("Survivability Correlation")
     plt.title(f"{calcMethod} Survivability Correlation Target Values")
     plt.legend(loc = "upper right")
