@@ -682,13 +682,16 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                 elif("emax" in responseColumn.lower()):
                     y = -1 * np.log(y)
 
-                if(scMode.lower().strip()=="pearson"):
-                    linResult = linregress(x, y)
-                    m, c, r2, r2p, mErr, cErr = linResult.slope, linResult.intercept, linResult.rvalue, linResult.pvalue, linResult.stderr, linResult.intercept_stderr
-                    pr, pp = pearsonr(x, y)
-                    coeff = np.array([c, m], dtype = float)
-                else:
-                    pr, coeff = scFunc(x, y, components = glmComponents, return_coefficients = True)
+                try:
+                    if(scMode.lower().strip()=="pearson"):
+                        linResult = linregress(x, y)
+                        m, c, r2, r2p, mErr, cErr = linResult.slope, linResult.intercept, linResult.rvalue, linResult.pvalue, linResult.stderr, linResult.intercept_stderr
+                        pr, pp = pearsonr(x, y)
+                        coeff = np.array([c, m], dtype = float)
+                    else:
+                        pr, coeff = scFunc(x, y, components = glmComponents, return_coefficients = True)
+                except:
+                    pr, coeff = np.nan, np.array([np.nan for _ in range(glmComponents)])
                 prs.append(pr)
                 coeffs.append(deepcopy(coeff))
             
