@@ -54,9 +54,15 @@ def main(parser):
     study: str = args.studyDatabase
     calcMode: str = args.scCalcMode
     nComponents: int = int(args.nComponents)
+    parallelInput: str = str(args.parallel)
+    parallel: bool
+    if(parallelInput.lower() in ["1", "y", "yes", "parallel"]):
+        parallel = True
+    else:
+        parallel = False
 
     if(study.upper().strip()=="GDSC"):
-        gdsc(scMode = calcMode.lower(), nComponents=nComponents)
+        gdsc(scMode = calcMode.lower(), nComponents=nComponents, use_parallel = parallel)
     elif(study.upper().strip() in ["GDSC2", "GDSCC"]):
         gdscc(scMode = calcMode, glmComponents=nComponents)
     return
@@ -781,4 +787,5 @@ if(__name__=="__main__"):
     parser.add_argument("--study",     action = "store", dest = "studyDatabase",      default = "GDSC")
     parser.add_argument("--mode", action = "store", dest = "scCalcMode", default = "Pearson")
     parser.add_argument("--nComponents", action = "store", dest = "nComponents", default = "2")
+    parser.add_argument("--parallel", action = "store", dest = "parallel", default = "Y")
     main(parser)
