@@ -729,7 +729,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
             if(it == 0):
                 t_passed: float = np.divide(time.time() - t_prev, 3600)
                 if(t_passed > 1):
-                    logFile.write(f"Thread {it} is {(di/len(d))*100:.1f}% Complete")
+                    logFile.add(f"Thread {it} is {(di/len(d))*100:.1f}% Complete")
 
     return (result, resultCoefficients)
 
