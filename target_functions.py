@@ -14,11 +14,13 @@ import pandas as pd
 
 from drug_search import get_targets_all
 
+MANUAL_TARGETS: str = os.path.join("Data", "Derived-Data", "manual_targets.tsv")
+
 def get_drugTargets() -> pd.DataFrame:
     """Get all known putative drug targets
 
     Returns:
-        pd.DataFrame: _description_
+        pd.DataFrame: DataFrame of dru targets
     """
     # Go through PubChem identifiers
     pubchemchembl = pd.read_csv(os.path.join("Data", "Derived-Data", "pubchem-chembl.tsv"), sep = "\t")
@@ -26,16 +28,17 @@ def get_drugTargets() -> pd.DataFrame:
     pubchemchembl.dropna(inplace = True)
     pubchemchembl.drop_duplicates("PubChem", inplace=True)
 
+    # Get known targets from GDSC, DrugBank and PubChem-ChEMBL data
     check = get_targets_all()
 
-    # Get unidentifiable compounds
+    ## Get unidentifiable compounds
     nonan = check.dropna(axis = "index", how = "all", inplace = False)
     help = []
     for dn in check.index:
         if(dn not in nonan.index):
             help.append(dn)
 
-    # Save unidentifiable compounds to tsv file, or append them if one already exists
+    ## Save unidentifiable compounds to tsv file, or append them if one already exists
     udp = os.path.join("Data", "Derived-Data", "unknown_drugs.tsv")
     if(os.path.exists(udp)):
         df = pd.read_csv(udp, sep = "\t")
@@ -88,6 +91,15 @@ def get_drugTargets() -> pd.DataFrame:
             data.append((drug, targets[drug][i]))
 
     drugTargets = pd.DataFrame(data, columns = ["DRUG", "TARGET"])
+
+    # Add Manually identified targets
+    if(os.path.exists(MANUAL_TARGETS)):
+        extra_targets = pd.read_csv(MANUAL_TARGETS, sep = "\t")
+        extra_targets.dropna(axis = "index", how = "any")
+        drugTargets = pd.concat([drugTargets, extra_targets], ignore_index=True)
+    
     drugTargets.drop_duplicates(inplace = True)
+    drugTargets.reset_index(inplace = True)
     drugTargets["TARGET"] = drugTargets["TARGET"].str.replace("'","")
     return drugTargets
+    

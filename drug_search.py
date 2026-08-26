@@ -117,7 +117,7 @@ def get_targets_all(data: Optional[Union[list, tuple]] = None,
     df["PubChem-ChEMBL"] = df["PubChem"].astype(str).map(converter)
     df.drop(["PubChem"], axis = 1, inplace = True)
 
-    # Add in manually-identified known drug targets
+    # Add in manually-identified drug targets for drugs which weren't identified in databases
     manualLoc = os.path.join("Data", "Derived-Data", "unknown_drugs.tsv")
     ordFixer: dict = {8216: "\"", 8217: "\""}
     if(os.path.exists(manualLoc)):
@@ -137,8 +137,6 @@ def get_targets_all(data: Optional[Union[list, tuple]] = None,
                 targs = [n.strip() for n in ast.literal_eval(targs_formatted)]
                 df.loc[drug, "Manual"] = str(targs)
 
-    #df=df.where(df.astype(bool),np.nan, inplace = False)
-    #df.replace({"DrugBank": {{}: np.nan}, "GDSC": {[]: np.nan}}, inplace=True)
     return df
 
 def get_targets(drug_selected: str, data: Optional[Union[list, tuple]] = None,
