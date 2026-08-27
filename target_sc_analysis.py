@@ -25,6 +25,7 @@ def main():
     #dTGLS, scGLS = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-GLS_2-AllDrugsByAllGenes.tsv"))
     #target_SC_analysis(saveOutput=outputDir, drugTargets = dT, scScores = sc)
     #get_zScores(outputDir, dT)
+    #get_zScores()
     plot_knownDrugs(csvSave = "drug_target_overview.tsv")
     #plot_realScores(drugTargets = dTPearson, scScores = scPearson, saveOutput=None, calcMethod = "Pearson")
     #get_zScores(drugTargets = dTPearson, saveOutput=outputDir, calcMethod = "Pearson", save_stats = True)
@@ -73,6 +74,7 @@ def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataF
     highest = np.array([np.nanmax(drugTargets.loc[drugTargets["DRUG_STANDARD"] == drug]["ZSCORE"].values) for drug in drugTargets["DRUG_STANDARD"].unique()], dtype = float)
     highest = highest[~np.isnan(highest)]
     highest = np.array(sorted(list(highest))[::-1])
+    print(f"Z-scores imply {highest.shape[0]} drugs with GDSC targets")
     plt.scatter(range(highest.shape[0]), highest)
     # Add threshold AND p < 0.05 lines (Z-Score of 3 means 3 SD's above norm which is the threshold, Z-Score of 1.645 translates as p<0.05)
     plt.plot([0, highest.shape[0]], [3.0, 3.0], color = "green")
@@ -142,20 +144,20 @@ def plot_knownDrugs(saveOutput: Optional[str] = None, drugTargets: Optional[pd.D
     # Get the unrefined target frame
     unrefined, scScores = prepare_target_frame(refine_frame=False)
     # Get total number of drugs and list of standardised drugs
-    total_drugs = len(scScores.columns)
-    GDSCdrugs: list = [d.upper().strip().replace(" ","_") for d in scScores.columns]
-    GDSCgenes: dict = {g.upper().strip().replace(" ","_"): True for g in scScores.index}
+    GDSCdrugs: list = [str(drug).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for drug in scScores.columns]
+    total_drugs = len(GDSCdrugs)
+    GDSCgenes: dict = {str(gene).upper().replace(" ","").replace("_", "").replace("(","").replace(")",""): True for gene in scScores.index}
+    # Format targets in target frame just to be safe
+    unrefined["TARGET"] = unrefined.TARGET.str.upper().replace(" ","").replace("_", "").replace("(","").replace(")","")
     # Refine to just drugs in GDSCdrugs
     unrefined = unrefined.loc[unrefined["DRUG_STANDARD"].isin(GDSCdrugs)]
     # Get drugs for which there are manual targets identified
     manual = pd.read_csv(MANUAL_TARGETS, sep = "\t")
     manual.dropna(axis = "index", how = "any", inplace = True)
     manual = manual.loc[manual["TARGET"]!=""]
-    manual["DRUG_STANDARD"] = [d.upper().strip().replace(" ","_") for d in manual["DRUG"].values]
+    manual["DRUG_STANDARD"] = [str(drug).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for drug in manual["DRUG"].values]
     manual = manual.loc[manual["DRUG_STANDARD"].isin(GDSCdrugs)]
     manual_drugs = [d for d in manual["DRUG_STANDARD"].unique()]
-    # Get drugs for which absolutely NO information is available
-    unknown_drugs: list = [d for d in GDSCdrugs if d not in unrefined["DRUG_STANDARD"] and d not in manual_drugs]
     # Get drugs for which there are no known targets, known but non-DepMap gene targets, and at least 1 DepMap gene target
     unknown_targets_drugs: list = []
     known_targets_drugs: list = []
@@ -171,6 +173,8 @@ def plot_knownDrugs(saveOutput: Optional[str] = None, drugTargets: Optional[pd.D
         # Final possibility: If there are any known targets but they're not in GDSC, add it to known target drugs and continue
         else:
             known_targets_drugs.append(d)
+    # Get drugs for which absolutely NO information is available
+    unknown_drugs = [d for d in GDSCdrugs if d not in good_targets_drugs + manual_drugs + known_targets_drugs + unknown_targets_drugs]
 
     # Remove manually-identified drugs from other lists if desired
     if(merge_manual):
@@ -178,6 +182,11 @@ def plot_knownDrugs(saveOutput: Optional[str] = None, drugTargets: Optional[pd.D
         unknown_targets_drugs = [d for d in unknown_targets_drugs if d not in manual_drugs]
         known_targets_drugs = [d for d in known_targets_drugs if d not in manual_drugs]
         good_targets_drugs = [d for d in good_targets_drugs if d not in manual_drugs]
+        print(manual_drugs)
+        print(manual_drugs[0] in good_targets_drugs)
+        print(f"knownDrugs finds:\n{len(manual_drugs)} drugs with manually-identified targets\n{len(good_targets_drugs)} drugs with GDSC targets\
+\n{len(known_targets_drugs)} drugs with known non-GDSC targets\
+\n{len(unknown_targets_drugs)} drugs with no known targets\n{len(unknown_drugs)} drugs with no information known")
 
         plt.pie([len(good_targets_drugs), len(manual_drugs), len(known_targets_drugs), len(unknown_targets_drugs), len(unknown_drugs)],
                 labels = ["Drugs w DepMap Gene Targets", "Drugs w Manually Identified Targets",
@@ -473,7 +482,6 @@ def prepare_target_frame(scFrameLoc: str = os.path.join("Data", "Results", "Surv
     results = []
     for drug, gene in zip(drugTargets["DRUG_STANDARD"].values, drugTargets["TARGET"].values):
         if(drug not in scScores.columns):
-            print(f"Drug {drug} not found in Survivability Correlations")
             results.append((drug, np.nan, np.nan, np.nan))
             continue
         elif(gene not in scScores.index):

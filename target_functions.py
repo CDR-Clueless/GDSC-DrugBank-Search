@@ -97,9 +97,9 @@ def get_drugTargets(include_manual: bool = True) -> pd.DataFrame:
         extra_targets = pd.read_csv(MANUAL_TARGETS, sep = "\t")
         extra_targets.dropna(axis = "index", how = "any")
         drugTargets = pd.concat([drugTargets, extra_targets], ignore_index=True)
-    
+
+    drugTargets["TARGET"] = drugTargets["TARGET"].str.replace("'","")
     drugTargets.drop_duplicates(inplace = True)
     drugTargets.reset_index(inplace = True)
-    drugTargets["TARGET"] = drugTargets["TARGET"].str.replace("'","")
     return drugTargets
     
