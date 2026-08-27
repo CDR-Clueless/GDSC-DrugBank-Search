@@ -17,13 +17,15 @@ from matplotlib import pyplot as plt
 
 from target_functions import get_drugTargets
 
+MANUAL_TARGETS: str = os.path.join("Data", "Derived-Data", "manual_targets.tsv")
+
 def main():
     outputDir = os.path.join("Data", "Results", "Target-Analysis")
-    dTPearson, scPearson = prepare_target_frame()
+    #dTPearson, scPearson = prepare_target_frame()
     #dTGLS, scGLS = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-GLS_2-AllDrugsByAllGenes.tsv"))
     #target_SC_analysis(saveOutput=outputDir, drugTargets = dT, scScores = sc)
     #get_zScores(outputDir, dT)
-    plot_knownDrugs(drugTargets=dTPearson, scScores=scPearson, csvSave = "good-bad-drugs.tsv")
+    plot_knownDrugs(csvSave = "drug_target_overview.tsv")
     #plot_realScores(drugTargets = dTPearson, scScores = scPearson, saveOutput=None, calcMethod = "Pearson")
     #get_zScores(drugTargets = dTPearson, saveOutput=outputDir, calcMethod = "Pearson", save_stats = True)
     #get_zScores(drugTargets = dTGLS, saveOutput=outputDir, calcMethod = "2-Component GLS", save_stats = True)
@@ -136,28 +138,56 @@ def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataF
 
 # Plot drugs which don't have known targets
 def plot_knownDrugs(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None, scScores: Optional[pd.DataFrame] = None,
-                       calcMethod: str = "Pearson", csvSave: str = ""):
-    rdT = drugTargets.dropna(axis = "index", subset = "SURVIVABILITY CORRELATION")
-    # Get total number of drugs from GDSC dataset
+                       calcMethod: str = "Pearson", csvSave: str = "", merge_manual: bool = True):
+    # Get the unrefined target frame
+    unrefined, scScores = prepare_target_frame(refine_frame=False)
+    # Get total number of drugs and list of standardised drugs
     total_drugs = len(scScores.columns)
-    # Get number of drugs within the rdT dataset
-    drugsKnown: int = 0
-    drugsKnownList: list = []
-    GDSCdrugs = [d.upper().strip().replace(" ","_") for d in scScores.columns]
-    for drug in rdT["DRUG_STANDARD"].unique():
-        if(drug in GDSCdrugs):
-            drugsKnown += 1
-            drugsKnownList.append(drug)
-    drugsWgenes: int = 0
-    drugsWgenesList: list = []
-    for drug in drugsKnownList:
-        rel = rdT.loc[rdT["DRUG_STANDARD"] == drug]
-        if(True in rel["TARGET"].isin(scScores.index).values):
-            drugsWgenes += 1
-            drugsWgenesList.append(drug)
-    
-    plt.pie([drugsWgenes, drugsKnown - drugsWgenes, total_drugs - drugsKnown], labels = ["Drugs w DepMap Gene Targets", "Drugs w Known Targets", "Drugs w/o Known Targets"],
-            autopct = "%.1f")
+    GDSCdrugs: list = [d.upper().strip().replace(" ","_") for d in scScores.columns]
+    GDSCgenes: dict = {g.upper().strip().replace(" ","_"): True for g in scScores.index}
+    # Refine to just drugs in GDSCdrugs
+    unrefined = unrefined.loc[unrefined["DRUG_STANDARD"].isin(GDSCdrugs)]
+    # Get drugs for which there are manual targets identified
+    manual = pd.read_csv(MANUAL_TARGETS, sep = "\t")
+    manual.dropna(axis = "index", how = "any", inplace = True)
+    manual = manual.loc[manual["TARGET"]!=""]
+    manual["DRUG_STANDARD"] = [d.upper().strip().replace(" ","_") for d in manual["DRUG"].values]
+    manual = manual.loc[manual["DRUG_STANDARD"].isin(GDSCdrugs)]
+    manual_drugs = [d for d in manual["DRUG_STANDARD"].unique()]
+    # Get drugs for which absolutely NO information is available
+    unknown_drugs: list = [d for d in GDSCdrugs if d not in unrefined["DRUG_STANDARD"] and d not in manual_drugs]
+    # Get drugs for which there are no known targets, known but non-DepMap gene targets, and at least 1 DepMap gene target
+    unknown_targets_drugs: list = []
+    known_targets_drugs: list = []
+    good_targets_drugs: list = []
+    for d in unrefined["DRUG_STANDARD"].unique():
+        rel = unrefined.loc[unrefined["DRUG_STANDARD"]==d]
+        # First check: If all targets are empty, add it to unknown target drugs and continue
+        if(not (~(rel["TARGET"]=="")).any()):
+            unknown_targets_drugs.append(d)
+        # Second check: If there is at least 1 target which is a DepMap gene, add it to good drug targets and continue
+        elif((rel["TARGET"].isin(GDSCgenes)).any()):
+            good_targets_drugs.append(d)
+        # Final possibility: If there are any known targets but they're not in GDSC, add it to known target drugs and continue
+        else:
+            known_targets_drugs.append(d)
+
+    # Remove manually-identified drugs from other lists if desired
+    if(merge_manual):
+        unknown_drugs = [d for d in unknown_drugs if d not in manual_drugs]
+        unknown_targets_drugs = [d for d in unknown_targets_drugs if d not in manual_drugs]
+        known_targets_drugs = [d for d in known_targets_drugs if d not in manual_drugs]
+        good_targets_drugs = [d for d in good_targets_drugs if d not in manual_drugs]
+
+        plt.pie([len(good_targets_drugs), len(manual_drugs), len(known_targets_drugs), len(unknown_targets_drugs), len(unknown_drugs)],
+                labels = ["Drugs w DepMap Gene Targets", "Drugs w Manually Identified Targets",
+                          "Drugs w Known Targets", "Drugs w/o Known Targets", "Unidentified Drugs"],
+                autopct = "%.1f")
+
+    else:
+        plt.pie([len(good_targets_drugs), len(known_targets_drugs), len(unknown_targets_drugs), len(unknown_drugs)],
+                labels = ["Drugs w DepMap Gene Targets", "Drugs w Known Targets", "Drugs w/o Known Targets", "Unidentified Drugs"],
+                autopct = "%.1f")
     if(saveOutput is None):
         plt.show()
     else:
@@ -165,21 +195,32 @@ def plot_knownDrugs(saveOutput: Optional[str] = None, drugTargets: Optional[pd.D
     plt.clf()
     plt.close()
     if(csvSave != ""):
-        # Get list of drugs with unknown and known but non-DepMap targets
-        drugsUnknownList: list = []
-        for d in GDSCdrugs:
-            if(d not in drugsKnownList):
-                drugsUnknownList.append(d)
-        drugsNonDepMap: list = []
-        for d in drugsKnownList:
-            if(d not in drugsWgenesList):
-                drugsNonDepMap.append(d)
+        # Get lists of good, manual and known target lists
+        manual_drugs_targets: list = []
+        for d in manual_drugs:
+            rel = manual.loc[manual["DRUG_STANDARD"]==d]
+            manual_drugs_targets.append(rel["TARGET"].values)
+        good_targets_drug_targets: list = []
+        for d in good_targets_drugs:
+            rel = unrefined.loc[unrefined["DRUG_STANDARD"]==d]
+            good_targets_drug_targets.append(rel["TARGET"].values)
+        known_targets_drugs_targets: list = []
+        for d in known_targets_drugs:
+            rel = unrefined.loc[unrefined["DRUG_STANDARD"]==d]
+            known_targets_drugs_targets.append(rel["TARGET"].values)
         # Pad lists to all be same length
-        maxL = max([len(drugsUnknownList), len(drugsNonDepMap), len(drugsWgenesList)])
-        for l in [drugsUnknownList, drugsNonDepMap, drugsWgenesList]:
+        maxL = max([len(good_targets_drugs), len(manual_drugs), len(known_targets_drugs), len(unknown_targets_drugs), len(unknown_drugs)])
+        for l in [good_targets_drugs, manual_drugs, known_targets_drugs, unknown_targets_drugs, unknown_drugs,
+                  manual_drugs_targets, good_targets_drug_targets, known_targets_drugs_targets]:
             l += [""] * (maxL - len(l))
-        df = pd.DataFrame(data = list(zip(drugsUnknownList, drugsNonDepMap, drugsWgenesList)),
-                          columns = ["Drugs with no known Target", "Drugs with non-DepMap Gene Targets", "Drugs with at least 1 known DepMap Gene Target"])
+        df = pd.DataFrame(data = list(zip(good_targets_drugs, good_targets_drug_targets,
+                                          manual_drugs, manual_drugs_targets,
+                                          known_targets_drugs, known_targets_drugs_targets,
+                                          unknown_targets_drugs, unknown_drugs)),
+                          columns = ["Drugs with at least 1 DepMap Target", "Targets",
+                                     "Drugs with Manually Identified Targets", "Targets",
+                                     "Drugs with Targets not in DepMap Genes", "Targets",
+                                     "Drugs with no Known Targets", "Unknown Drugs"])
         if(csvSave.split(".")[-1].lower()=="tsv"):
             sep = "\t"
         else:
@@ -417,11 +458,12 @@ def target_SC_analysis(saveOutput: Optional[str] = None, drugTargets: Optional[p
 
     return
 
-def prepare_target_frame(scFrameLoc: str = os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-AllDrugsByAllGenes.tsv")) -> Tuple[pd.DataFrame,pd.DataFrame]:
+def prepare_target_frame(scFrameLoc: str = os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-AllDrugsByAllGenes.tsv"),
+                         refine_frame: bool = True) -> Tuple[pd.DataFrame,pd.DataFrame]:
     # Get all known putatitve drug targets
-    drugTargets = get_drugTargets()
+    drugTargets = get_drugTargets(include_manual=refine_frame)
 
-    ## Get SC ratio scores for each target (requires previous code section getting targets to work)
+    ## Get SC ratio scores for each target
     scScores = pd.read_csv(scFrameLoc, sep = "\t")
     scScores.set_index("symbol", inplace=True)
     # Format columns/values on each dataframe
@@ -453,7 +495,9 @@ def prepare_target_frame(scFrameLoc: str = os.path.join("Data", "Results", "Surv
     drugTargets["DRUG_MEAN"] = means
     drugTargets["DRUG_SD"] = sds
 
-    return drugTargets[drugTargets.TARGET != ""], scScores
+    if(refine_frame):
+        return drugTargets[drugTargets.TARGET != ""], scScores
+    return drugTargets, scScores
 
 if(__name__=="__main__"):
     main()

@@ -16,7 +16,7 @@ from drug_search import get_targets_all
 
 MANUAL_TARGETS: str = os.path.join("Data", "Derived-Data", "manual_targets.tsv")
 
-def get_drugTargets() -> pd.DataFrame:
+def get_drugTargets(include_manual: bool = True) -> pd.DataFrame:
     """Get all known putative drug targets
 
     Returns:
@@ -93,7 +93,7 @@ def get_drugTargets() -> pd.DataFrame:
     drugTargets = pd.DataFrame(data, columns = ["DRUG", "TARGET"])
 
     # Add Manually identified targets
-    if(os.path.exists(MANUAL_TARGETS)):
+    if(os.path.exists(MANUAL_TARGETS) and include_manual):
         extra_targets = pd.read_csv(MANUAL_TARGETS, sep = "\t")
         extra_targets.dropna(axis = "index", how = "any")
         drugTargets = pd.concat([drugTargets, extra_targets], ignore_index=True)
