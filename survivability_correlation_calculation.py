@@ -729,7 +729,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
             # Write current progress to log if appropriate
             if(writeLog and it == 0):
                 if(time.time() - t_prev >= 3600):
-                    perc = (di / len(d)) + ((gi / len(genes)) / len(d))*100
+                    perc = ((di / len(d)) + np.divide(gi / len(genes), len(d))) * 100
                     logFile.add(f"Thread {it} is {perc:.1f}% Complete")
                     t_prev = time.time()
 
