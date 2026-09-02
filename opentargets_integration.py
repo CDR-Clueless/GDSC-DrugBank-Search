@@ -14,13 +14,18 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 
+from scipy.stats import chi2_contingency
+from stats_functions import cohenD
+from scipy.stats import ttest_ind
+
 import pyarrow.parquet as pq
 from sqlite3 import connect
 
 DRUGS_TSV: str = os.path.join("Data", "Results", "Target-Analysis", "Pearson Threshold Labels p < 0.05.tsv")
 
 def main():
-    plot_actions()
+    #plot_actions()
+    plot_pChEMBL()
 
 def plot_pChEMBL():
     # Load in ChEMBL Data
@@ -56,12 +61,17 @@ def plot_pChEMBL():
         rel = dfCmbl.loc[dfCmbl["Common Name"] == drug]
         badResults.append(np.mean(rel["pChEMBL"].values))
 
+    # Make plot
     plt.figure(figsize = (12.8, 9.6))
-    plt.boxplot(x = [goodResults, badResults])
+    plt.boxplot(x = [goodResults, badResults], whis = (0.05, 0.95))
     plt.ylabel("Average Drug pChEMBL Value")
     plt.xlabel("Category")
     plt.xticks([1, 2], labels = ["w. Predictable Targets", "wo. Predictable Targets"], rotation = 15)
     plt.title("Average pChEMBL values of drugs with predictable and non-predictable targets")
+    # Calculate stats
+    tRes = ttest_ind(goodResults, badResults)
+    cohen = cohenD((goodResults, badResults))
+    print(f"Student t-test result: {tRes.pvalue}\nCohen's D: {cohen}")
     plt.show()
     return
 
@@ -118,9 +128,13 @@ def plot_actions():
         for tType in rel["targetType"].unique():
             badTargTypes[tType] += 1.
     # Convert all these counts to proportions of the total number of drugs in each list
-    for total, d in zip([goodDrugsCountUnique, goodDrugsCountUnique, badDrugsCountUnique, badDrugsCountUnique],
-                        [goodTargTypes, goodActionTypes, badTargTypes, badActionTypes]):
+    rawCounts: dict = {}
+    for total, d, label in zip([goodDrugsCountUnique, goodDrugsCountUnique, badDrugsCountUnique, badDrugsCountUnique],
+                        [goodTargTypes, goodActionTypes, badTargTypes, badActionTypes],
+                        ["Good Target Types", "Good Action Types", "Bad Target Types", "Bad Action Types"]):
+        rawCounts[label] = {}
         for key in d:
+            rawCounts[label][key] = d[key]
             d[key] /= total
 
     for key in deepcopy(list(goodTargTypes.keys())):
@@ -134,13 +148,13 @@ def plot_actions():
 
     # Make list of zipped proportions of target types and action types, then plot them
     fig, axs = plt.subplots(nrows = 2, figsize = (12.8, 9.6))
-    indexTranslator = {"Target": 0, "Action": 1}
+    indexTranslator, chiRes = {"Target": 0, "Action": 1}, {}
     for aot, gTA, bTA in zip(["Target", "Action"], [goodTargTypes, goodActionTypes], [badTargTypes, badActionTypes]):
         # gTA is the good targets (all), bTA is the bad targets (all), and aot makes clear whether we're dealing with actions or targets
 
         # Plot grouped bar chart
         ax = axs[indexTranslator[aot]]
-        for label, xs, ys, offset in zip(["Good Targets", "Bad Targets"],
+        for label, xs, ys, offset in zip(["Drugs w Predictable Targets", "Drugs w/o Predictable Targets"],
                                          [list(gTA.keys()), list(bTA.keys())],
                                          [list(gTA.values()), list(bTA.values())],
                                          [-0.2, 0.2]):
@@ -154,10 +168,32 @@ def plot_actions():
         ax.set_ylabel("Proportion")
         ax.set_title(f"{aot} Type Proportions for Drugs with and without predicted Targets")
         ax.legend(loc="upper right")
+
+        ## Calculate chi square results
+        # Get raw counts
+        if(aot=="Target"):
+            good, bad = rawCounts["Good Target Types"], rawCounts["Bad Target Types"]
+        else:
+            good, bad = rawCounts["Good Action Types"], rawCounts["Bad Action Types"]
+        # Form matrix
+        mat = []
+        for key in good.keys():
+            if(key in bad.keys()):
+                mat.append((good[key], bad[key]))
+            else:
+                mat.append((good[key], 0))
+        for key in bad.keys():
+            if(key not in good.keys()):
+                mat.append((0, bad[key]))
+        mat = np.array(mat, dtype = int)
+        # Correct to remove rows in which both values are 0
+        cMat = mat[np.logical_or(mat[:,0] > 0, mat[:,1] > 0)]
+        resRaw, res5 = chi2_contingency(cMat).pvalue, chi2_contingency(cMat[np.logical_or(cMat[:,0] >= 5, cMat[:,1] >= 5)]).pvalue
+        chiRes[aot] = {"All": resRaw, "Super-5": res5}
+    print(chiRes)
     plt.show()
 
 
-    #print(dfTarget[["chemblIds", "CID1", "CID2", "N1", "N2"]])
     return
 
 if(__name__=="__main__"):

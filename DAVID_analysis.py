@@ -14,14 +14,17 @@ from matplotlib import pyplot as plt
 
 from typing import Optional, Union, Tuple
 
+from stats_functions import chisquare_hom
+
 DAVID_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis", "Downloads")
 OUTPUT_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis")
 
 def main():
-    plot_david(saveDir = "", show_graph=False)
+    plot_david(saveDir = "", show_graph=True)
 
-def plot_david(saveDir: str = "", show_graph: bool = True):
-    fig, ax = plt.subplots(layout='constrained', nrows = 3, ncols=2, figsize = (12.8, 9.6))
+def plot_david(saveDir: str = "", show_graph: bool = True, grouped_graph: bool = False):
+    if(grouped_graph):
+        fig, ax = plt.subplots(layout='constrained', nrows = 3, ncols=2, figsize = (12.8, 9.6))
     k = 0
 
     keys = {"Tissue": "tissue", "Interations": "interaction", "Pathways": "pathway", "Protein Domains": "protein", "Transcription Factors": "transcription"}
@@ -34,9 +37,14 @@ def plot_david(saveDir: str = "", show_graph: bool = True):
             if(k>=len(keys)):
                 continue
 
+            if(not grouped_graph):
+                fig, ax = plt.subplots()
+                rel = ax
+            else:
+                rel = ax[i][j]
+
             title = list(keys.keys())[k]
             key = keys[title]
-            rel = ax[i][j]
 
             p, pNon = import_david(targType="predicted", dtype = key), import_david(targType="non-predicted", dtype = key)
 
@@ -71,17 +79,25 @@ def plot_david(saveDir: str = "", show_graph: bool = True):
             valsProp = combined[["Predicted Proportion", "Non-Predicted Proportion"]].to_numpy(dtype = float)
 
 
-            statsResults[title] = {"Counts": chi2_contingency(valsReal).pvalue, "Proportions": chi2_contingency(valsProp).pvalue}
+            statsResults[title] = {"Scipy": chi2_contingency(valsReal).pvalue, "Manual": chisquare_hom(valsReal),
+                                    "Manual >=5": chisquare_hom(valsReal, minimum = 5)}
+
+            if(not grouped_graph):
+                print(f"{title} chi squared results: {statsResults[title]}")
+                if(saveDir != ""):
+                    plt.savefig(saveDir)
+                if(show_graph):
+                    plt.show()
+                plt.close()
             k += 1
 
-    print(statsResults)
-
-    if(saveDir!=""):
-        plt.savefig(saveDir)
-    if(show_graph):
-        plt.show()
-    plt.clf()
-    plt.close()
+    if(grouped_graph):
+        print(statsResults)
+        if(saveDir != ""):
+            plt.savefig(saveDir)
+        if(show_graph):
+            plt.show()
+        plt.close()
     return
 
 def import_david(dtype: str = "tissue", targType: str = "predicted") -> pd.DataFrame:
