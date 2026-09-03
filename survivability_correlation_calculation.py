@@ -533,7 +533,7 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
         for gene in coefs[list(coefs.keys())[0]].keys():
             out += f"{gene}\t" + "\t".join([str(coefs[drug][gene]) for drug in coefs.keys()]) + "\n"
         f.write(out)
-    logFile.add('Writing Genes x Drugs file)')
+    logFile.add(f"Writing Genes x Drugs file to {dbg}")
     allbyall = allbyall.T
     allbyall.index.names = ["Drug"]
     allbyall.to_csv(dbg.replace("AllDrugsByAllGenes", "AllGenesByAllDrugs"), sep='\t', index=True, header=True)
