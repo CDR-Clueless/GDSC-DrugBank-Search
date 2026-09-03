@@ -588,6 +588,9 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
     # Set up relevant function to Calculate Survivability Correlation
     scFunc = {"pearson": pearsonr, "gls": calculate_SC_GLS, "wlsd": calculate_SC_WLS_data, "wlsp": calculate_SC_WLS_prediction}[scMode.lower().strip()]
 
+    if(it==0 and writeLog):
+        logFile.add(f"Thread 0 entering drug enumeration loop with calculation function {scMode.lower().strip()}. Debug Mode is {dMode}")
+
     # loop through all indexes, i.e. drugs/compounds, calculating r for all genes
     for di, d in enumerate(il):
         ## Load the calculation for this data if it has already been calculated
@@ -731,6 +734,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                 if(time.time() - t_prev >= 3600):
                     perc = ((di / len(d)) + np.divide(gi / len(genes), len(d))) * 100
                     logFile.add(f"Thread {it} is {perc:.1f}% Complete")
+                    print(f"Thread {it} is {perc:.1f}% Complete")
                     t_prev = time.time()
 
         # Save result for this valud of 'd', in case the program is interrupted
