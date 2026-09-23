@@ -24,8 +24,8 @@ from sqlite3 import connect
 DRUGS_TSV: str = os.path.join("Data", "Results", "Target-Analysis", "Pearson Threshold Labels p < 0.05.tsv")
 
 def main():
-    #plot_actions()
-    plot_pChEMBL()
+    plot_actions(saveDir=os.path.join("Data", "Results", "OpenTargets-Analysis"), showFig=False, groupedFig=False)
+    #plot_pChEMBL()
 
 def plot_pChEMBL():
     # Load in ChEMBL Data
@@ -75,7 +75,7 @@ def plot_pChEMBL():
     plt.show()
     return
 
-def plot_actions():
+def plot_actions(saveDir: str = "", showFig: bool = True, groupedFig: bool = False):
     # Load in OpenTargets Data
     dfTarget = pq.read_table(os.path.join("Data", "Raw Data", "OpenTargets", "drug_mechanism_of_action", "part-00000-10b94b1b-f29a-440c-98e0-c91862b6d2a8-c000.snappy.parquet")).to_pandas()
     dfTarget2 = pq.read_table(os.path.join("Data", "Raw Data", "OpenTargets", "drug_mechanism_of_action", "part-00001-10b94b1b-f29a-440c-98e0-c91862b6d2a8-c000.snappy.parquet")).to_pandas()
@@ -146,14 +146,20 @@ def plot_actions():
             del goodActionTypes[key]
             del badActionTypes[key]
 
+    if(groupedFig):
+        fig, axs = plt.subplots(nrows = 2, figsize = (12.8, 9.6))
+
     # Make list of zipped proportions of target types and action types, then plot them
-    fig, axs = plt.subplots(nrows = 2, figsize = (12.8, 9.6))
     indexTranslator, chiRes = {"Target": 0, "Action": 1}, {}
     for aot, gTA, bTA in zip(["Target", "Action"], [goodTargTypes, goodActionTypes], [badTargTypes, badActionTypes]):
         # gTA is the good targets (all), bTA is the bad targets (all), and aot makes clear whether we're dealing with actions or targets
 
         # Plot grouped bar chart
-        ax = axs[indexTranslator[aot]]
+        if(groupedFig):
+            ax = axs[indexTranslator[aot]]
+        else:
+            fig, ax = plt.subplots(figsize = (6.4, 4.8))
+        
         for label, xs, ys, offset in zip(["Drugs w Predictable Targets", "Drugs w/o Predictable Targets"],
                                          [list(gTA.keys()), list(bTA.keys())],
                                          [list(gTA.values()), list(bTA.values())],
@@ -190,9 +196,20 @@ def plot_actions():
         cMat = mat[np.logical_or(mat[:,0] > 0, mat[:,1] > 0)]
         resRaw, res5 = chi2_contingency(cMat).pvalue, chi2_contingency(cMat[np.logical_or(cMat[:,0] >= 5, cMat[:,1] >= 5)]).pvalue
         chiRes[aot] = {"All": resRaw, "Super-5": res5}
-    print(chiRes)
-    plt.show()
+        if(not groupedFig):
+            if(saveDir!=""):
+                plt.savefig(os.path.join(saveDir, f"Drug {aot} plot.png"))
+            if(showFig):
+                plt.show()
+            plt.close()
 
+    print(chiRes)
+    if(groupedFig):
+        if(saveDir!=""):
+            plt.savefig(saveDir)
+        if(showFig):
+            plt.show()
+        plt.close()
 
     return
 

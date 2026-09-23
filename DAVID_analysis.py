@@ -20,14 +20,14 @@ DAVID_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis", "Downloads")
 OUTPUT_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis")
 
 def main():
-    plot_david(saveDir = "", show_graph=True)
+    plot_david(saveDir = OUTPUT_DIR, show_graph=False)
 
 def plot_david(saveDir: str = "", show_graph: bool = True, grouped_graph: bool = False):
     if(grouped_graph):
         fig, ax = plt.subplots(layout='constrained', nrows = 3, ncols=2, figsize = (12.8, 9.6))
     k = 0
 
-    keys = {"Tissue": "tissue", "Interations": "interaction", "Pathways": "pathway", "Protein Domains": "protein", "Transcription Factors": "transcription"}
+    keys = {"Tissue": "tissue", "Interactions": "interaction", "Pathways": "pathway", "Protein Domains": "protein", "Transcription Factors": "transcription"}
 
     statsResults: dict = {}
 
@@ -40,7 +40,12 @@ def plot_david(saveDir: str = "", show_graph: bool = True, grouped_graph: bool =
             if(not grouped_graph):
                 fig, ax = plt.subplots()
                 rel = ax
+                if(saveDir!=""):
+                    outDir = os.path.join(saveDir, f"{list(keys.keys())[k]}.png")
+                else:
+                    outDir = ""
             else:
+                outDir = saveDir
                 rel = ax[i][j]
 
             title = list(keys.keys())[k]
@@ -84,8 +89,8 @@ def plot_david(saveDir: str = "", show_graph: bool = True, grouped_graph: bool =
 
             if(not grouped_graph):
                 print(f"{title} chi squared results: {statsResults[title]}")
-                if(saveDir != ""):
-                    plt.savefig(saveDir)
+                if(outDir != ""):
+                    plt.savefig(outDir)
                 if(show_graph):
                     plt.show()
                 plt.close()
@@ -93,8 +98,8 @@ def plot_david(saveDir: str = "", show_graph: bool = True, grouped_graph: bool =
 
     if(grouped_graph):
         print(statsResults)
-        if(saveDir != ""):
-            plt.savefig(saveDir)
+        if(outDir != ""):
+            plt.savefig(outDir)
         if(show_graph):
             plt.show()
         plt.close()
