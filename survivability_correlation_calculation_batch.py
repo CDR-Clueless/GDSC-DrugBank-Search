@@ -25,7 +25,7 @@ def main():
             continue
         print(f"Calculating SC scores using method {method} with {nCom} components")
         gdsc(logFile = Logger(os.path.join("Data", "Results", "Survivability-Correlations", f"{method}-{nCom}-calcLog.log")),
-             scMode = method, nComponents = nCom)
+             scMode = method, nComponents = nCom, forced_cpu=40)
         print(f"Finished calculation for {method} with {nCom} components")
     return
 

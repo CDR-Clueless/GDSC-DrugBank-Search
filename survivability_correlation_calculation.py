@@ -381,7 +381,8 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
          dMode: bool = DEBUG_MODE,
          scMode: str = "pearson", nComponents: int = 2,
          outDir: str = os.path.join(DEFAULT_OUTPUT_DIR, "GDSC"),
-         use_parallel: bool = True):
+         use_parallel: bool = True,
+         forced_cpu: int = -1):
     """ Calculate GDSC Survivability Correlations
 
     Args:
@@ -416,7 +417,10 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
             fileLocs[name] = [DEFAULT_CRISPR_FILE, DEFAULT_HUGO_FILE, DEFAULT_CELL_INFO_FILE, DEFAULT_DRUG1_FILE, DEFAULT_DRUG2_FILE][i]
 
     # Get number of CPU's to use for multiprocessing
-    cpu_count = max(1, mp.cpu_count())
+    if(forced_cpu>0):
+        cpu_count = max(1, forced_cpu)
+    else:
+        cpu_count = max(1, mp.cpu_count())
     print(f"Using {cpu_count} Threads")
 
     # Get known CRISPR cell line-gene dependencies (row index = model ID/cell line ID, column = Gene)
