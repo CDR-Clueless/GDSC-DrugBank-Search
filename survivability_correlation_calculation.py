@@ -416,7 +416,8 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
             fileLocs[name] = [DEFAULT_CRISPR_FILE, DEFAULT_HUGO_FILE, DEFAULT_CELL_INFO_FILE, DEFAULT_DRUG1_FILE, DEFAULT_DRUG2_FILE][i]
 
     # Get number of CPU's to use for multiprocessing
-    cpu_count = max(1, mp.cpu_count()-2)
+    cpu_count = max(1, mp.cpu_count())
+    print(f"Using {cpu_count} Threads")
 
     # Get known CRISPR cell line-gene dependencies (row index = model ID/cell line ID, column = Gene)
     crisprDeps = pd.read_csv(fileLocs["crispr"]).fillna(0.0)
