@@ -807,6 +807,15 @@ def main():
         coreCount: int = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
 
+    
+    return
+
+    s1, s2 = set(df1["DRUG_NAME"].unique()), set(df2["DRUG_NAME"].unique())
+    print(len(s1))
+    print(len(s2))
+    print(len(s1 | s2))
+    return
+
     """
     ### Analyse targets using PPI network
     ## Prepare main STRING graph

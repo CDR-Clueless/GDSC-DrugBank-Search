@@ -21,20 +21,20 @@ MANUAL_TARGETS: str = os.path.join("Data", "Derived-Data", "manual_targets.tsv")
 
 def main():
     outputDir = os.path.join("Data", "Results", "Target-Analysis")
-    #dTPearson, scPearson = prepare_target_frame()
+    dTPearson, scPearson = prepare_target_frame()
     #dTGLS, scGLS = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-GLS_2-AllDrugsByAllGenes.tsv"))
     #target_SC_analysis(saveOutput=outputDir, drugTargets = dT, scScores = sc)
     #get_zScores(outputDir, dT)
     #get_zScores()
-    plot_knownDrugs(csvSave = "drug_target_overview.tsv")
+    #plot_knownDrugs()
     #plot_realScores(drugTargets = dTPearson, scScores = scPearson, saveOutput=None, calcMethod = "Pearson")
-    #get_zScores(drugTargets = dTPearson, saveOutput=outputDir, calcMethod = "Pearson", save_stats = True)
+    get_zScores(drugTargets = dTPearson, saveOutput=outputDir, calcMethod = "Pearson", save_stats = False, plotThreshold = False)
     #get_zScores(drugTargets = dTGLS, saveOutput=outputDir, calcMethod = "2-Component GLS", save_stats = True)
     #target_SC_analysis(saveOutput=outputDir, drugTargets=dTGLS, scScores = scGLS, calcMethod = "2-Component GLS")
 
 def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None,
                 titleBase: Optional[str] = None, calcMethod: str = "Pearson",
-                save_stats: bool = False) -> None:
+                save_stats: bool = False, plotThreshold: bool = False) -> None:
     # Change save_stats if no save output was given
     if(saveOutput is None and save_stats == True):
         print(f"A save directory is required to save analysis results")
@@ -49,12 +49,14 @@ def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataF
 
     plt.scatter(range(zScores.shape[0]), sorted(zScores)[::-1])
     # Add threshold AND p < 0.05 lines (Z-Score of 3 means 3 SD's above norm which is the threshold, Z-Score of 1.645 translates as p<0.05)
-    plt.plot([0, zScores.shape[0]], [3.0, 3.0], color = "green")
+    if(plotThreshold):
+        plt.plot([0, zScores.shape[0]], [3.0, 3.0], color = "green")
     plt.plot([0, zScores.shape[0]], [1.645, 1.645], color = "red")
     # Add percentages of how many targets are above the two lines
     threePerc = round((zScores[zScores >= 3.0].shape[0] / zScores.shape[0])*100, 1)
     p5Perc = round((zScores[zScores >= 1.645].shape[0] / zScores.shape[0])*100, 1)
-    plt.text(threePerc/100 * zScores.shape[0], 3.0+0.2, f"{threePerc}%", color = "green")
+    if(plotThreshold):
+        plt.text(threePerc/100 * zScores.shape[0], 3.0+0.2, f"{threePerc}%", color = "green")
     plt.text(p5Perc/100 * zScores.shape[0], 1.645+0.2, f"{p5Perc}%", color = "red")
     plt.xlabel("Putative Drug Target")
     plt.ylabel("SC Z-Score")
@@ -77,12 +79,14 @@ def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataF
     print(f"Z-scores imply {highest.shape[0]} drugs with GDSC targets")
     plt.scatter(range(highest.shape[0]), highest)
     # Add threshold AND p < 0.05 lines (Z-Score of 3 means 3 SD's above norm which is the threshold, Z-Score of 1.645 translates as p<0.05)
-    plt.plot([0, highest.shape[0]], [3.0, 3.0], color = "green")
+    if(plotThreshold):
+        plt.plot([0, highest.shape[0]], [3.0, 3.0], color = "green")
     plt.plot([0, highest.shape[0]], [1.645, 1.645], color = "red")
     # Add percentages of how many targets are above the two lines
     threePerc = round((highest[highest >= 3.0].shape[0] / highest.shape[0])*100, 1)
     p5Perc = round((highest[highest >= 1.645].shape[0] / highest.shape[0])*100, 1)
-    plt.text(threePerc/100 * highest.shape[0], 3.0+0.2, f"{threePerc}%", color = "green")
+    if(plotThreshold):
+        plt.text(threePerc/100 * highest.shape[0], 3.0+0.2, f"{threePerc}%", color = "green")
     plt.text(p5Perc/100 * highest.shape[0], 1.645+0.2, f"{p5Perc}%", color = "red")
     plt.xlabel("Putative Drug Target")
     plt.ylabel("SC Z-Score")
@@ -238,7 +242,8 @@ def plot_knownDrugs(saveOutput: Optional[str] = None, drugTargets: Optional[pd.D
     return
 
 def plot_realScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None, scScores: Optional[pd.DataFrame] = None,
-                       calcMethod: str = "Pearson"):
+                       calcMethod: str = "Pearson", plotThreshold: bool = False):
+    
     if(drugTargets is None or scScores is None):
         drugTargets, scScores = prepare_target_frame()
 
@@ -259,10 +264,14 @@ def plot_realScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.D
     # Get relevant columns and drop NaN rows
     rdT = drugTargets[["DRUG_STANDARD", "TARGET", "SURVIVABILITY CORRELATION", "THRESHOLD", "p<0.05"]]
     rdT.dropna(axis = "index", subset = ["SURVIVABILITY CORRELATION", "THRESHOLD", "p<0.05"], inplace=True)
-    rdT.sort_values("THRESHOLD", axis = "index", ascending = False, inplace=True)
+    if(plotThreshold):
+        rdT.sort_values("THRESHOLD", axis = "index", ascending = False, inplace=True)
+    else:
+        rdT.sort_values("p<0.05", axis = "index", ascending = False, inplace = True)
 
     # Plot thresholds, p<0.05 values and drug values
-    plt.plot(range(len(rdT)), rdT["THRESHOLD"].values, label = "Threshold Value", color = "green")
+    if(plotThreshold):
+        plt.plot(range(len(rdT)), rdT["THRESHOLD"].values, label = "Threshold Value", color = "green")
     plt.plot(range(len(rdT)), rdT["p<0.05"].values, label = "p<0.05 Cutoff", color = "blue")
     plt.scatter(range(len(rdT)), rdT["SURVIVABILITY CORRELATION"].values, color = "orange")
     # Remove xtick labels
@@ -270,8 +279,11 @@ def plot_realScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.D
     # Plot percentage of values above and below threshold
     above, below = len(rdT.loc[rdT["SURVIVABILITY CORRELATION"]>=rdT["THRESHOLD"]])/len(rdT), len(rdT.loc[rdT["SURVIVABILITY CORRELATION"]<rdT["THRESHOLD"]])/len(rdT)
     abovep, belowp = len(rdT.loc[rdT["SURVIVABILITY CORRELATION"]>=rdT["p<0.05"]])/len(rdT), len(rdT.loc[rdT["SURVIVABILITY CORRELATION"]<rdT["p<0.05"]])/len(rdT)
-    for ymod, perc, col in zip([lambda x : max(x)-0.05, max], [abovep, above], ["blue", "green"]):
-        plt.text(len(rdT)/2, ymod(rdT["SURVIVABILITY CORRELATION"].values), f"{perc*100:.1f}%", color = col)
+    if(plotThreshold):
+        for ymod, perc, col in zip([lambda x : max(x)-0.05, max], [abovep, above], ["blue", "green"]):
+            plt.text(len(rdT)/2, ymod(rdT["SURVIVABILITY CORRELATION"].values), f"{perc*100:.1f}%", color = col)
+    else:
+        plt.text(len(rdT)/2, max(rdT["SURVIVABILITY CORRELATION"].values), f"{abovep*100:.1f}%", color = "blue")
     plt.xlabel("Drug Target")
     plt.ylabel("Survivability Correlation")
     plt.title(f"{calcMethod} Survivability Correlation Target Values")
