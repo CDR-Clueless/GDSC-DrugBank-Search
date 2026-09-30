@@ -807,13 +807,13 @@ def main():
         coreCount: int = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
 
-    
-    return
+    vDir = os.path.join("Data", "Laurence-Data", "24Q2-CRISPRGeneDependency.csv")
+    mDir = os.path.join("Data", "Laurence-Data", "CRISPRGeneDependency.csv")
 
-    s1, s2 = set(df1["DRUG_NAME"].unique()), set(df2["DRUG_NAME"].unique())
-    print(len(s1))
-    print(len(s2))
-    print(len(s1 | s2))
+    vdf = pd.read_csv(vDir)
+    mdf = pd.read_csv(mDir)
+
+    print(vdf.equals(mdf))
     return
 
     """

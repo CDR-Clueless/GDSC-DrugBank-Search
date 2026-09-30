@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from matplotlib import pyplot as plt
+import json
 
 from target_functions import get_drugTargets
 
@@ -21,16 +22,77 @@ MANUAL_TARGETS: str = os.path.join("Data", "Derived-Data", "manual_targets.tsv")
 
 def main():
     outputDir = os.path.join("Data", "Results", "Target-Analysis")
-    dTPearson, scPearson = prepare_target_frame()
+    #dTPearson, scPearson = prepare_target_frame()
     #dTGLS, scGLS = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-GLS_2-AllDrugsByAllGenes.tsv"))
     #target_SC_analysis(saveOutput=outputDir, drugTargets = dT, scScores = sc)
     #get_zScores(outputDir, dT)
     #get_zScores()
     #plot_knownDrugs()
     #plot_realScores(drugTargets = dTPearson, scScores = scPearson, saveOutput=None, calcMethod = "Pearson")
-    get_zScores(drugTargets = dTPearson, saveOutput=outputDir, calcMethod = "Pearson", save_stats = False, plotThreshold = False)
+    #get_zScores(drugTargets = dTPearson, saveOutput=outputDir, calcMethod = "Pearson", save_stats = False, plotThreshold = False)
     #get_zScores(drugTargets = dTGLS, saveOutput=outputDir, calcMethod = "2-Component GLS", save_stats = True)
     #target_SC_analysis(saveOutput=outputDir, drugTargets=dTGLS, scScores = scGLS, calcMethod = "2-Component GLS")
+    ## Go through different Survivability Correlation Frames and get predicted targets
+    # Check if this has already been calculated
+    if(os.path.exists("tempdata.json")):
+        with open("tempdata.json", "r") as f:
+            countsAll = json.load(f)
+        reset = False
+        for key in ["Pearson"] + [f"GLS-{i}" for i in range(1,6)]:
+            if(key not in countsAll):
+                reset = True
+                break
+        if(reset):
+            countsAll = {}
+    else:
+        countsAll = {}
+    if(len(countsAll) == 0):
+        drugTargets = get_drugTargets(include_manual=True)
+        dTPearson, scPearson = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "GDSC", f"pIC50-pearson-AllDrugsByAllGenes.tsv"),
+                                                    drugTargets=drugTargets)
+        dT = add_thresholds(dTPearson)
+        countsAll = {"Pearson": {}}
+        arr = dT["ZSCORE"].dropna().values
+        for q in [0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]:
+            countsAll[f"Pearson"][f"Quantile {q}"] = np.quantile(arr, q)
+        countsAll[f"Pearson"]["Mean"] = np.mean(arr)
+        countsAll[f"Pearson"]["Drugs above p<0.05"] = dT.loc[dT["ZSCORE"] > 1.645].shape[0]
+        for cGLS in range(1, 6):
+            dT, sc = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "GDSC", f"pIC50-gls_{cGLS}-AllDrugsByAllGenes.tsv"),
+                                        drugTargets=drugTargets)
+            dT = add_thresholds(dT)
+            countsAll[f"GLS-{cGLS}"] = {}
+            arr = dT["ZSCORE"].dropna().values
+            for q in [0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]:
+                countsAll[f"GLS-{cGLS}"][f"Quantile {q}"] = np.quantile(arr, q)
+            countsAll[f"GLS-{cGLS}"]["Mean"] = np.mean(arr)
+            countsAll[f"GLS-{cGLS}"]["Drugs above p<0.05"] = dT.loc[dT["ZSCORE"] > 1.645].shape[0]
+        
+        with open("tempdata.json", "w") as f:
+            json.dump(countsAll, f, indent = 4)
+
+    # Convert data to format usable by bxp
+    stats = []
+    for key in countsAll:
+        stats.append({"med": countsAll[key]["Quantile 0.5"], "q1": countsAll[key]["Quantile 0.25"], "q3": countsAll[key]["Quantile 0.75"],
+                      "whislo": countsAll[key]["Quantile 0.05"], "whishi": countsAll[key]["Quantile 0.95"],
+                      "fliers": [countsAll[key]["Quantile 0.01"], countsAll[key]["Quantile 0.99"]]})
+
+    fig, ax = plt.subplots()
+    ax.bxp(stats, showfliers=True)
+    ax.set_xticklabels(list(countsAll.keys()))
+    ax.set_ylabel("Z-Score")
+    ax_count = ax.twinx()
+    ax_count.scatter(range(1, len(countsAll)+1), [countsAll[key]["Drugs above p<0.05"] for key in countsAll.keys()],
+                     marker = "_", s = 250, color = "green")
+    ax_count.set_ylabel("Number of putative targets p < 0.05")
+    plt.show()
+
+    #fig, ax = plt.subplots()
+    #ax.bar(countsAll.keys(), countsAll.values())
+    #plt.show()
+    
+
 
 def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None,
                 titleBase: Optional[str] = None, calcMethod: str = "Pearson",
@@ -480,9 +542,11 @@ def target_SC_analysis(saveOutput: Optional[str] = None, drugTargets: Optional[p
     return
 
 def prepare_target_frame(scFrameLoc: str = os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-AllDrugsByAllGenes.tsv"),
-                         refine_frame: bool = True) -> Tuple[pd.DataFrame,pd.DataFrame]:
+                         refine_frame: bool = True,
+                         drugTargets: Optional[pd.DataFrame] = None) -> Tuple[pd.DataFrame,pd.DataFrame]:
     # Get all known putatitve drug targets
-    drugTargets = get_drugTargets(include_manual=refine_frame)
+    if(drugTargets is None):
+        drugTargets = get_drugTargets(include_manual=refine_frame)
 
     ## Get SC ratio scores for each target
     scScores = pd.read_csv(scFrameLoc, sep = "\t")
