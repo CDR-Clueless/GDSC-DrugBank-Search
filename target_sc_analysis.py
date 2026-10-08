@@ -18,58 +18,51 @@ import json
 
 from target_functions import get_drugTargets
 
+from stats_functions import cohenD
+from scipy.stats import ttest_ind
+
 MANUAL_TARGETS: str = os.path.join("Data", "Derived-Data", "manual_targets.tsv")
 
 def main():
     outputDir = os.path.join("Data", "Results", "Target-Analysis")
-    #dTPearson, scPearson = prepare_target_frame()
+    dTPearson, scPearson = prepare_target_frame()
     #dTGLS, scGLS = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-GLS_2-AllDrugsByAllGenes.tsv"))
     #target_SC_analysis(saveOutput=outputDir, drugTargets = dT, scScores = sc)
     #get_zScores(outputDir, dT)
-    #get_zScores()
+    get_zScores(saveOutput = os.path.join("Data", "Results", "Target-Analysis"), drugTargets=dTPearson, calcMethod="Pearson", save_stats=True)
     #plot_knownDrugs()
     #plot_realScores(drugTargets = dTPearson, scScores = scPearson, saveOutput=None, calcMethod = "Pearson")
     #get_zScores(drugTargets = dTPearson, saveOutput=outputDir, calcMethod = "Pearson", save_stats = False, plotThreshold = False)
     #get_zScores(drugTargets = dTGLS, saveOutput=outputDir, calcMethod = "2-Component GLS", save_stats = True)
     #target_SC_analysis(saveOutput=outputDir, drugTargets=dTGLS, scScores = scGLS, calcMethod = "2-Component GLS")
+
+# Calculate The distribution of Z-Scores for different SC calculation methods
+def compare_SC():
     ## Go through different Survivability Correlation Frames and get predicted targets
-    # Check if this has already been calculated
-    if(os.path.exists("tempdata.json")):
-        with open("tempdata.json", "r") as f:
-            countsAll = json.load(f)
-        reset = False
-        for key in ["Pearson"] + [f"GLS-{i}" for i in range(1,6)]:
-            if(key not in countsAll):
-                reset = True
-                break
-        if(reset):
-            countsAll = {}
-    else:
-        countsAll = {}
-    if(len(countsAll) == 0):
-        drugTargets = get_drugTargets(include_manual=True)
-        dTPearson, scPearson = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "GDSC", f"pIC50-pearson-AllDrugsByAllGenes.tsv"),
-                                                    drugTargets=drugTargets)
-        dT = add_thresholds(dTPearson)
-        countsAll = {"Pearson": {}}
+    countsAll = {}
+    getStats = True
+    drugTargets = get_drugTargets(include_manual=True)
+    dTPearson, scPearson = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "GDSC", f"pIC50-pearson-AllDrugsByAllGenes.tsv"),
+                                                drugTargets=drugTargets)
+    dT = add_thresholds(dTPearson)
+    countsAll = {"Pearson": {}}
+    arr = dT["ZSCORE"].dropna().values
+    for q in [0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]:
+        countsAll[f"Pearson"][f"Quantile {q}"] = np.quantile(arr, q)
+    countsAll[f"Pearson"]["Mean"] = np.mean(arr)
+    countsAll[f"Pearson"]["Drugs above p<0.05"] = dT.loc[dT["ZSCORE"] > 1.645].shape[0]
+    statsDict = {"Pearson": deepcopy(arr)}
+    for cGLS in range(1, 6):
+        dT, sc = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "GDSC", f"pIC50-gls_{cGLS}-AllDrugsByAllGenes.tsv"),
+                                    drugTargets=drugTargets)
+        dT = add_thresholds(dT)
+        countsAll[f"GLS-{cGLS}"] = {}
         arr = dT["ZSCORE"].dropna().values
+        statsDict[f"GLS-{cGLS}"] = deepcopy(arr)
         for q in [0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]:
-            countsAll[f"Pearson"][f"Quantile {q}"] = np.quantile(arr, q)
-        countsAll[f"Pearson"]["Mean"] = np.mean(arr)
-        countsAll[f"Pearson"]["Drugs above p<0.05"] = dT.loc[dT["ZSCORE"] > 1.645].shape[0]
-        for cGLS in range(1, 6):
-            dT, sc = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "GDSC", f"pIC50-gls_{cGLS}-AllDrugsByAllGenes.tsv"),
-                                        drugTargets=drugTargets)
-            dT = add_thresholds(dT)
-            countsAll[f"GLS-{cGLS}"] = {}
-            arr = dT["ZSCORE"].dropna().values
-            for q in [0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]:
-                countsAll[f"GLS-{cGLS}"][f"Quantile {q}"] = np.quantile(arr, q)
-            countsAll[f"GLS-{cGLS}"]["Mean"] = np.mean(arr)
-            countsAll[f"GLS-{cGLS}"]["Drugs above p<0.05"] = dT.loc[dT["ZSCORE"] > 1.645].shape[0]
-        
-        with open("tempdata.json", "w") as f:
-            json.dump(countsAll, f, indent = 4)
+            countsAll[f"GLS-{cGLS}"][f"Quantile {q}"] = np.quantile(arr, q)
+        countsAll[f"GLS-{cGLS}"]["Mean"] = np.mean(arr)
+        countsAll[f"GLS-{cGLS}"]["Drugs above p<0.05"] = dT.loc[dT["ZSCORE"] > 1.645].shape[0]
 
     # Convert data to format usable by bxp
     stats = []
@@ -82,16 +75,21 @@ def main():
     ax.bxp(stats, showfliers=True)
     ax.set_xticklabels(list(countsAll.keys()))
     ax.set_ylabel("Z-Score")
-    ax_count = ax.twinx()
-    ax_count.scatter(range(1, len(countsAll)+1), [countsAll[key]["Drugs above p<0.05"] for key in countsAll.keys()],
-                     marker = "_", s = 250, color = "green")
-    ax_count.set_ylabel("Number of putative targets p < 0.05")
+    ax.set_title("Putative Target Z-Score Distributions")
+    plt.show()
+    fig, ax = plt.subplots()
+    ax.bar(list(countsAll.keys()), [countsAll[key]["Drugs above p<0.05"] for key in countsAll.keys()])
+    ax.set_ylabel("p < 0.05 Putative Target Counts")
+    ax.set_title("Predicted Putative Targets")
     plt.show()
 
-    #fig, ax = plt.subplots()
-    #ax.bar(countsAll.keys(), countsAll.values())
-    #plt.show()
-    
+    # Run stats tests
+    pPop = statsDict["Pearson"]
+    for key in list(statsDict.keys())[1:]:
+        gPop = statsDict[key]
+        res_cohen = cohenD((pPop, gPop))
+        res_ttest = ttest_ind(pPop, gPop)
+        print(f"{key} results:\nStudent's T-Test: {res_ttest.pvalue}\tCohen's D: {res_cohen}")
 
 
 def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None,
@@ -180,26 +178,29 @@ def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataF
         # Loop over the two major thresholds - 1.645 (p<0.05) and 3.0 (3 Standard Deviations)
         for threshLabel, thresh in zip(["3SD", "p < 0.05"], [3.0, 1.645]):
             # Now get all drugs above or below the thresholds
-            pred3z = dTnoNan.loc[dTnoNan["ZSCORE"] >= thresh]
-            nonpred3z = dTnoNan.loc[dTnoNan["ZSCORE"] < thresh]
-            # Next get all drugs which have at least one gene above the threshold
-            highPred3z = []
-            for drug in pred3z["DRUG_STANDARD"].unique():
-                entry = pred3z.loc[pred3z["DRUG_STANDARD"] == drug]
+            pred3z = dTnoNan.loc[dTnoNan["ZSCORE"] >= thresh]["TARGET"].unique()
+            nonpred3z = dTnoNan.loc[dTnoNan["ZSCORE"] < thresh]["TARGET"].unique()
+            # Next get all drugs which have at least one gene above the threshold, plus the highest genes for each drug in the appropriate group
+            predDrugGene, nonPredDrugGene = [], []
+            for drug in dTnoNan["DRUG_STANDARD"].unique():
+                entry = dTnoNan.loc[dTnoNan["DRUG_STANDARD"] == drug]
                 rel = entry.loc[entry["ZSCORE"]==max(entry["ZSCORE"].values)]
                 if(rel["ZSCORE"].values[0] >= thresh):
-                    highPred3z.append(deepcopy((rel["DRUG_STANDARD"].values[0], rel["TARGET"].values[0])))
-            # And then use this to infer all drugs which don't have a single gene above the threshold
-            nonHighPred3z = [drug for drug in dTnoNan["DRUG_STANDARD"].values if drug not in [e[0] for e in highPred3z]]
+                    predDrugGene.append(deepcopy((rel["DRUG_STANDARD"].values[0], rel["TARGET"].values[0])))
+                else:
+                    nonPredDrugGene.append(deepcopy((rel["DRUG_STANDARD"].values[0], rel["TARGET"].values[0])))
             # Format the above into a single list of lists (padding with blank strings)
-            maxLen = max([len(pred3z["TARGET"].values), len(nonpred3z["TARGET"].values), len(highPred3z), len(nonHighPred3z)])
-            pred3z = list(pred3z["TARGET"].values) + ([""] * (maxLen - len(pred3z["TARGET"].values)))
-            nonpred3z = list(nonpred3z["TARGET"].values) + ([""] * (maxLen - len(nonpred3z["TARGET"].values)))
-            highPred3z = [e[0] for e in highPred3z] + ([""] * (maxLen - len(highPred3z)))
-            nonHighPred3z = nonHighPred3z + ([""] * (maxLen - len(nonHighPred3z)))            
-            outFrame = pd.DataFrame(data = list(zip(pred3z, nonpred3z, highPred3z, nonHighPred3z)),
+            maxLen = max([len(x) for x in [pred3z, nonpred3z]] + [len(x) for x in [predDrugGene, nonPredDrugGene]])
+            pred3z = list(pred3z) + ([""] * (maxLen - len(pred3z)))
+            nonpred3z = list(nonpred3z) + ([""] * (maxLen - len(nonpred3z)))
+            predDrug = [e[0] for e in predDrugGene] + ([""] * (maxLen - len(predDrugGene)))
+            predHighGene = [e[1] for e in predDrugGene] + ([""] * (maxLen - len(predDrugGene)))
+            nonpredDrug = [e[0] for e in nonPredDrugGene] + ([""] * (maxLen - len(nonPredDrugGene)))
+            nonpredHighGene = [e[1] for e in nonPredDrugGene] + ([""] * (maxLen - len(nonPredDrugGene)))
+            outFrame = pd.DataFrame(data = zip(pred3z, nonpred3z, predDrug, nonpredDrug, predHighGene, nonpredHighGene),
                                     columns = ["Target Genes Predicted", "Target Genes Not Predicted",
-                                               "Drugs With >=1 Target Genes Predicted", "Drugs With No Target Genes Predicted"])
+                                               "Drugs With >=1 Target Genes Predicted", "Drugs With No Target Genes Predicted",
+                                               "Best Gene for Predictable Drug", "Best Gene for non-predictable Drug"])
             outFrame.to_csv(os.path.join(saveOutput, f"{calcMethod} Threshold Labels {threshLabel}.tsv"),
                             sep = "\t", lineterminator = "\n", index = False)
     return

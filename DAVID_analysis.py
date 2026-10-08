@@ -20,9 +20,19 @@ DAVID_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis", "Downloads")
 OUTPUT_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis")
 
 def main():
-    plot_david(saveDir = OUTPUT_DIR, show_graph=False)
+    plot_david_pvals()
 
-def plot_david(saveDir: str = "", show_graph: bool = True, grouped_graph: bool = False):
+def plot_david_pvals(savedir: str = ""):
+
+    keys = {"Tissue": "tissue", "Interactions": "interaction", "Pathways": "pathway", "Protein Domains": "protein", "Transcription Factors": "transcription"}
+
+    for key in keys:
+        p, pNon = import_david(targType="predicted", dtype = key), import_david(targType="non-predicted", dtype = key)
+        print(p)
+        break
+    return
+
+def plot_david_proportions(saveDir: str = "", show_graph: bool = True, grouped_graph: bool = False):
     if(grouped_graph):
         fig, ax = plt.subplots(layout='constrained', nrows = 3, ncols=2, figsize = (12.8, 9.6))
     k = 0
