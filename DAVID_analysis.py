@@ -11,12 +11,13 @@ import numpy as np
 from scipy.stats import chi2_contingency
 import pandas as pd
 from matplotlib import pyplot as plt
+from matplotlib_venn import venn2
 
 from typing import Optional, Union, Tuple
 
 from stats_functions import chisquare_hom
 
-DAVID_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis", "Downloads")
+DAVID_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis")
 OUTPUT_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis")
 
 def main():
@@ -28,7 +29,25 @@ def plot_david_pvals(savedir: str = ""):
 
     for key in keys:
         p, pNon = import_david(targType="predicted", dtype = key), import_david(targType="non-predicted", dtype = key)
-        print(p)
+        nf = []
+        for term in p["Term"].unique():
+            if(term in pNon["Term"].unique()):
+                nf.append((term, p.loc[p["Term"]==term]["P-Value"].values[0], pNon.loc[pNon["Term"]==term]["P-Value"].values[0]))
+            else:
+                nf.append((term, p.loc[p["Term"]==term]["P-Value"].values[0], np.float64(1.0)))
+        for term in pNon["Term"].unique():
+            if(term not in p["Term"].unique()):
+                nf.append((term, np.float64(1.0), pNon.loc[pNon["Term"]==term]["P-Value"].values[0]))
+        df = pd.DataFrame(data = nf, columns = ["Term", "Predicted gene p-value", "Non-predicted gene p-value"])
+        df["Predicted p < 0.05"] = df["Predicted gene p-value"] < 0.05
+        df["Non-predicted p < 0.05"] = df["Non-predicted gene p-value"] < 0.05
+        a, b = set(df.loc[df["Predicted p < 0.05"]==True]["Term"].values), set(df.loc[df["Non-predicted p < 0.05"]==True]["Term"].values)
+        venn = venn2((a, b), set_labels=("Predicted Genes", "Non-Predicted Genes"), set_colors=("g", "r"))
+        venn.get_label_by_id('100').set_text('\n'.join(map(str,a-b)))
+        venn.get_label_by_id('110').set_text('\n'.join(map(str,a&b)))
+        venn.get_label_by_id('010').set_text('\n'.join(map(str,b-a)))
+        plt.axis('on')
+        plt.show()
         break
     return
 
@@ -115,7 +134,7 @@ def plot_david_proportions(saveDir: str = "", show_graph: bool = True, grouped_g
         plt.close()
     return
 
-def import_david(dtype: str = "tissue", targType: str = "predicted") -> pd.DataFrame:
+def import_david(dtype: str = "tissue", targType: str = "predicted", geneType: str = "all") -> pd.DataFrame:
     dtype = dtype.lower().strip()
     targType = targType.lower().strip()
     # Determine appropriate file suffix for data type
@@ -136,7 +155,11 @@ def import_david(dtype: str = "tissue", targType: str = "predicted") -> pd.DataF
         targP = "Predicted"
 
     # Load DataFrame and 
-    df = pd.read_csv(os.path.join(DAVID_DIR, f"DAVIDChartReport_{targP} Targets_{suffix}.csv"))
+    if(geneType=="all"):
+        df = pd.read_csv(os.path.join(DAVID_DIR, "Downloads-AllGenes", f"DAVIDChartReport_{targP} Targets_{suffix}.csv"))
+    else:
+        df = pd.read_csv(os.path.join(DAVID_DIR, "Downloads-BestGenes", f"DAVIDChartReport_{targP} Targets_{suffix}.csv"))
+    
     df["Proportion"] = df["Count"] / df["List Total"]
     return df
 
