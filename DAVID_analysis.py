@@ -18,37 +18,46 @@ from typing import Optional, Union, Tuple
 from stats_functions import chisquare_hom
 
 DAVID_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis")
-OUTPUT_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis")
+OUTPUT_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis", "Venn BestGenes")
 
 def main():
-    plot_david_pvals()
+    if(not os.path.exists(OUTPUT_DIR)):
+        os.mkdir(OUTPUT_DIR)
+    plot_david_pvals(savedir=OUTPUT_DIR, geneType="best")
 
-def plot_david_pvals(savedir: str = ""):
+def plot_david_pvals(savedir: str = "", geneType: str = "all"):
 
-    keys = {"Tissue": "tissue", "Interactions": "interaction", "Pathways": "pathway", "Protein Domains": "protein", "Transcription Factors": "transcription"}
+    keys = {"Tissue": "tissue", "Interactions": "interaction", "Pathways": "pathway", "Protein Domains": "protein", "Transcription Factors": "transcription",
+            "Disease": "disease"}
 
     for key in keys:
-        p, pNon = import_david(targType="predicted", dtype = key), import_david(targType="non-predicted", dtype = key)
+        p, pNon = import_david(targType="predicted", dtype = keys[key], geneType=geneType), import_david(targType="non-predicted", dtype = keys[key], geneType=geneType)
         nf = []
-        for term in p["Term"].unique():
-            if(term in pNon["Term"].unique()):
-                nf.append((term, p.loc[p["Term"]==term]["P-Value"].values[0], pNon.loc[pNon["Term"]==term]["P-Value"].values[0]))
+        #print(p.columns)
+        for term in p["Full Term"].unique():
+            if(term in pNon["Full Term"].unique()):
+                nf.append((term, p.loc[p["Full Term"]==term]["Benjamini"].values[0], pNon.loc[pNon["Full Term"]==term]["Benjamini"].values[0]))
             else:
-                nf.append((term, p.loc[p["Term"]==term]["P-Value"].values[0], np.float64(1.0)))
-        for term in pNon["Term"].unique():
-            if(term not in p["Term"].unique()):
-                nf.append((term, np.float64(1.0), pNon.loc[pNon["Term"]==term]["P-Value"].values[0]))
-        df = pd.DataFrame(data = nf, columns = ["Term", "Predicted gene p-value", "Non-predicted gene p-value"])
+                nf.append((term, p.loc[p["Full Term"]==term]["Benjamini"].values[0], np.float64(1.0)))
+        for term in pNon["Full Term"].unique():
+            if(term not in p["Full Term"].unique()):
+                nf.append((term, np.float64(1.0), pNon.loc[pNon["Full Term"]==term]["Benjamini"].values[0]))
+        df = pd.DataFrame(data = nf, columns = ["Full Term", "Predicted gene p-value", "Non-predicted gene p-value"])
         df["Predicted p < 0.05"] = df["Predicted gene p-value"] < 0.05
         df["Non-predicted p < 0.05"] = df["Non-predicted gene p-value"] < 0.05
-        a, b = set(df.loc[df["Predicted p < 0.05"]==True]["Term"].values), set(df.loc[df["Non-predicted p < 0.05"]==True]["Term"].values)
+        a, b = set(df.loc[df["Predicted p < 0.05"]==True]["Full Term"].values), set(df.loc[df["Non-predicted p < 0.05"]==True]["Full Term"].values)
         venn = venn2((a, b), set_labels=("Predicted Genes", "Non-Predicted Genes"), set_colors=("g", "r"))
-        venn.get_label_by_id('100').set_text('\n'.join(map(str,a-b)))
-        venn.get_label_by_id('110').set_text('\n'.join(map(str,a&b)))
-        venn.get_label_by_id('010').set_text('\n'.join(map(str,b-a)))
-        plt.axis('on')
-        plt.show()
-        break
+        if(key=="Tissue"):
+            venn.get_label_by_id('100').set_text('\n'.join(map(str,a-b)))
+            venn.get_label_by_id('110').set_text('\n'.join(map(str,a&b)))
+            venn.get_label_by_id('010').set_text('\n'.join(map(str,b-a)))
+            plt.axis('on')
+        plt.title(f"{key} type associations")
+        if(savedir != ""):
+            plt.savefig(os.path.join(savedir, f"{key}-venn.png"))
+            plt.close()
+        else:
+            plt.show()
     return
 
 def plot_david_proportions(saveDir: str = "", show_graph: bool = True, grouped_graph: bool = False):
@@ -139,7 +148,8 @@ def import_david(dtype: str = "tissue", targType: str = "predicted", geneType: s
     targType = targType.lower().strip()
     # Determine appropriate file suffix for data type
     dtypes = {"tissue": "Tissues", "interaction": "Interactions", "pathway": "Pathways",
-              "protein": "ProteinDomains", "transcription": "TranscriptionFactors"}
+              "protein": "ProteinDomains", "transcription": "TranscriptionFactors",
+              "disease": "Disease"}
     suffix = None
     for key in dtypes:
         if(dtype in key):
