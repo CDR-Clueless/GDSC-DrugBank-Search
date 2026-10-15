@@ -25,12 +25,12 @@ MANUAL_TARGETS: str = os.path.join("Data", "Derived-Data", "manual_targets.tsv")
 
 def main():
     outputDir = os.path.join("Data", "Results", "Target-Analysis")
-    dTPearson, scPearson = prepare_target_frame()
+    #dTPearson, scPearson = prepare_target_frame()
     #dTGLS, scGLS = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-GLS_2-AllDrugsByAllGenes.tsv"))
     #target_SC_analysis(saveOutput=outputDir, drugTargets = dT, scScores = sc)
     #get_zScores(outputDir, dT)
-    get_zScores(saveOutput = os.path.join("Data", "Results", "Target-Analysis"), drugTargets=dTPearson, calcMethod="Pearson", save_stats=True)
-    #plot_knownDrugs()
+    #get_zScores(saveOutput = os.path.join("Data", "Results", "Target-Analysis"), drugTargets=dTPearson, calcMethod="Pearson", save_stats=True)
+    plot_knownDrugs()
     #plot_realScores(drugTargets = dTPearson, scScores = scPearson, saveOutput=None, calcMethod = "Pearson")
     #get_zScores(drugTargets = dTPearson, saveOutput=outputDir, calcMethod = "Pearson", save_stats = False, plotThreshold = False)
     #get_zScores(drugTargets = dTGLS, saveOutput=outputDir, calcMethod = "2-Component GLS", save_stats = True)
@@ -255,10 +255,13 @@ def plot_knownDrugs(saveOutput: Optional[str] = None, drugTargets: Optional[pd.D
 \n{len(known_targets_drugs)} drugs with known non-GDSC targets\
 \n{len(unknown_targets_drugs)} drugs with no known targets\n{len(unknown_drugs)} drugs with no information known")
 
-        plt.pie([len(good_targets_drugs), len(manual_drugs), len(known_targets_drugs), len(unknown_targets_drugs), len(unknown_drugs)],
-                labels = ["Drugs w DepMap Gene Targets", "Drugs w Manually Identified Targets",
-                          "Drugs w Known Targets", "Drugs w/o Known Targets", "Unidentified Drugs"],
-                autopct = "%.1f")
+        toplot = [[len(good_targets_drugs), len(manual_drugs), len(known_targets_drugs), len(unknown_targets_drugs), len(unknown_drugs)],
+                  ["Drugs w DepMap Gene Targets", "Drugs w Manually Identified Targets",
+                          "Drugs w Known Targets", "Drugs w/o Known Targets", "Unidentified Drugs"]]
+        total = sum(toplot[0])
+        plt.pie(toplot[0],
+                labels = [toplot[1][i] if toplot[0][i] > 0 else "" for i in range(len(toplot[0]))],
+                autopct = lambda pct: f"{pct * total / 100:.0f}" if pct>0.0 else "")
 
     else:
         plt.pie([len(good_targets_drugs), len(known_targets_drugs), len(unknown_targets_drugs), len(unknown_drugs)],
