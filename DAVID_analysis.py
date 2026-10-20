@@ -23,7 +23,44 @@ OUTPUT_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis", "Venn BestGe
 def main():
     if(not os.path.exists(OUTPUT_DIR)):
         os.mkdir(OUTPUT_DIR)
-    plot_david_pvals(savedir=OUTPUT_DIR, geneType="best")
+    #plot_david_pvals(savedir=OUTPUT_DIR, geneType="best")
+    #check_DAVID_original()
+    prep_DAVID_list()
+
+def check_DAVID_original(DAVIDdir: str = os.path.join(DAVID_DIR, "Downloads-BestGenes"), origDir: str = os.path.join("Data", "Results", "Target-Analysis", "Pearson Threshold Labels p < 0.05.tsv")):
+    """Compare the list of genes found by DAVID from the original list to the original list itself to see what's missing
+
+    Args:
+        DAVIDdir (str, optional): _description_. Defaults to DAVID_DIR.
+        origDir (str, optional): _description_. Defaults to os.path.join("Data", "Results", "Target-Analysis", "Pearson Threshold Labels p < 0.05.tsv").
+    """
+    # Get DAVID file directories
+    npDdir, pDdir = None, None
+    for filename in os.listdir(DAVIDdir):
+        if("GeneListReport" in filename and "Non-Predicted" in filename):
+            npDdir = os.path.join(DAVIDdir, filename)
+        elif("GeneListReport" in filename and "Predicted" in filename):
+            pDdir = os.path.join(DAVIDdir, filename)
+
+    dfpD, dfnpD, dfO = pd.read_csv(pDdir), pd.read_csv(npDdir), pd.read_csv(origDir, sep = "\t")
+    relpD, relnpD, relpO, relnpO = dfpD["User ID"], dfnpD["User ID"], dfO["Target Genes Predicted"].dropna(), dfO["Target Genes Not Predicted"].dropna()
+
+    pdiff, npdiff = relpO.loc[~relpO.isin(relpD)], relnpO.loc[~relnpO.isin(relnpD)]
+    print(pdiff)
+    print(npdiff)
+
+def prep_DAVID_list(origDir: str = os.path.join("Data", "Results", "Target-Analysis", "Pearson Threshold Labels p < 0.05.tsv"), outDir: str = DAVID_DIR):
+    """Make a list to submit to DAVID from the tsv file with information on predicted/non-predicted genes from DepMap data
+
+    Args:
+        outDir (DAVID_DIR): _description_
+        origDir (str, optional): _description_. Defaults to os.path.join("Data", "Results", "Target-Analysis", "Pearson Threshold Labels p < 0.05.tsv").
+    """
+    ftype = origDir.split(".")[-1].lower()
+    df = pd.read_csv(origDir, sep = {"csv": ",", "tsv": "\t"}[ftype])
+    for title, col in zip(["Predicted All Genes", "Non-Predicted All Genes", "Predicted Best Genes", "Non-Predicted Best Genes"],
+                           ["Target Genes Predicted", "Target Genes Not Predicted", "Best Gene for Predictable Drug", "Best Gene for non-predictable Drug"]):
+        df[col].dropna().drop_duplicates().to_csv(os.path.join(outDir, f"{title}.csv"), sep = ",", lineterminator = "\n", index = False)
 
 def plot_david_pvals(savedir: str = "", geneType: str = "all"):
 
@@ -47,7 +84,7 @@ def plot_david_pvals(savedir: str = "", geneType: str = "all"):
         df["Non-predicted p < 0.05"] = df["Non-predicted gene p-value"] < 0.05
         a, b = set(df.loc[df["Predicted p < 0.05"]==True]["Full Term"].values), set(df.loc[df["Non-predicted p < 0.05"]==True]["Full Term"].values)
         venn = venn2((a, b), set_labels=("Predicted Genes", "Non-Predicted Genes"), set_colors=("g", "r"))
-        if(key=="Tissue"):
+        if(key in ["Tissue"]):
             venn.get_label_by_id('100').set_text('\n'.join(map(str,a-b)))
             venn.get_label_by_id('110').set_text('\n'.join(map(str,a&b)))
             venn.get_label_by_id('010').set_text('\n'.join(map(str,b-a)))

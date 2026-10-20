@@ -793,6 +793,7 @@ def data_overview():
 
     return
 
+from target_sc_analysis import prepare_target_frame
 
 def main():
     ### Perform initial setup
@@ -807,13 +808,24 @@ def main():
         coreCount: int = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
 
-    vDir = os.path.join("Data", "Laurence-Data", "24Q2-CRISPRGeneDependency.csv")
-    mDir = os.path.join("Data", "Laurence-Data", "CRISPRGeneDependency.csv")
+    df1 = pd.read_excel(os.path.join("Data", "Raw Data", "GDSC1_fitted_dose_response_27Oct23.xlsx"))
+    df2 = pd.read_excel(os.path.join("Data", "Raw Data", "GDSC2_fitted_dose_response_27Oct23.xlsx"))
+    df = pd.concat([df1, df2], ignore_index=True)
 
-    vdf = pd.read_csv(vDir)
-    mdf = pd.read_csv(mDir)
+    scdf = pd.read_csv(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-AllDrugsByAllGenes.tsv"), sep = "\t")
+    print(scdf)
+    return
 
-    print(vdf.equals(mdf))
+    print(len(df["DRUG_NAME"].unique()))
+    print(df.columns)
+
+    #vDir = os.path.join("Data", "Laurence-Data", "24Q2-CRISPRGeneDependency.csv")
+    #mDir = os.path.join("Data", "Laurence-Data", "CRISPRGeneDependency.csv")
+
+    #vdf = pd.read_csv(vDir)
+    #mdf = pd.read_csv(mDir)
+
+    #print(vdf.equals(mdf))
     return
 
     """

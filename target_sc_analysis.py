@@ -25,25 +25,27 @@ MANUAL_TARGETS: str = os.path.join("Data", "Derived-Data", "manual_targets.tsv")
 
 def main():
     outputDir = os.path.join("Data", "Results", "Target-Analysis")
-    #dTPearson, scPearson = prepare_target_frame()
+    dTPearson, scPearson = prepare_target_frame()
     #dTGLS, scGLS = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-GLS_2-AllDrugsByAllGenes.tsv"))
     #target_SC_analysis(saveOutput=outputDir, drugTargets = dT, scScores = sc)
-    #get_zScores(outputDir, dT)
-    #get_zScores(saveOutput = os.path.join("Data", "Results", "Target-Analysis"), drugTargets=dTPearson, calcMethod="Pearson", save_stats=True)
-    plot_knownDrugs()
-    #plot_realScores(drugTargets = dTPearson, scScores = scPearson, saveOutput=None, calcMethod = "Pearson")
+    get_zScores(saveOutput = os.path.join("Data", "Results", "Target-Analysis"), drugTargets=dTPearson, calcMethod="Pearson", save_stats=True)
+    #plot_knownDrugs()
+    #plot_realScores(saveOutput = outputDir, drugTargets = dTPearson, scScores = scPearson, calcMethod = "Pearson")
     #get_zScores(drugTargets = dTPearson, saveOutput=outputDir, calcMethod = "Pearson", save_stats = False, plotThreshold = False)
     #get_zScores(drugTargets = dTGLS, saveOutput=outputDir, calcMethod = "2-Component GLS", save_stats = True)
     #target_SC_analysis(saveOutput=outputDir, drugTargets=dTGLS, scScores = scGLS, calcMethod = "2-Component GLS")
+    #compare_SC(dTPearson)
 
 # Calculate The distribution of Z-Scores for different SC calculation methods
-def compare_SC():
+def compare_SC(drugTargets: Optional[pd.DataFrame] = None):
     ## Go through different Survivability Correlation Frames and get predicted targets
     countsAll = {}
     getStats = True
-    drugTargets = get_drugTargets(include_manual=True)
-    dTPearson, scPearson = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "GDSC", f"pIC50-pearson-AllDrugsByAllGenes.tsv"),
+    if(drugTargets is None):
+        dTPearson, _ = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "GDSC", f"pIC50-pearson-AllDrugsByAllGenes.tsv"),
                                                 drugTargets=drugTargets)
+    else:
+        dTPearson = drugTargets
     dT = add_thresholds(dTPearson)
     countsAll = {"Pearson": {}}
     arr = dT["ZSCORE"].dropna().values
@@ -207,12 +209,14 @@ def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataF
 
 # Plot drugs which don't have known targets
 def plot_knownDrugs(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None, scScores: Optional[pd.DataFrame] = None,
-                       calcMethod: str = "Pearson", csvSave: str = "", merge_manual: bool = True):
+                       calcMethod: str = "Pearson", csvSave: str = "", merge_manual: bool = True, separate_manual: bool = False):
     # Get the unrefined target frame
     unrefined, scScores = prepare_target_frame(refine_frame=False)
     # Get total number of drugs and list of standardised drugs
     GDSCdrugs: list = [str(drug).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for drug in scScores.columns]
-    total_drugs = len(GDSCdrugs)
+    print(f"{len(GDSCdrugs)} total drugs found")
+    GDSCdrugsUnique = pd.Series(GDSCdrugs).unique()
+    print(f"{len(GDSCdrugsUnique)} unique drugs found")
     GDSCgenes: dict = {str(gene).upper().replace(" ","").replace("_", "").replace("(","").replace(")",""): True for gene in scScores.index}
     # Format targets in target frame just to be safe
     unrefined["TARGET"] = unrefined.TARGET.str.upper().replace(" ","").replace("_", "").replace("(","").replace(")","")
@@ -249,15 +253,19 @@ def plot_knownDrugs(saveOutput: Optional[str] = None, drugTargets: Optional[pd.D
         unknown_targets_drugs = [d for d in unknown_targets_drugs if d not in manual_drugs]
         known_targets_drugs = [d for d in known_targets_drugs if d not in manual_drugs]
         good_targets_drugs = [d for d in good_targets_drugs if d not in manual_drugs]
-        print(manual_drugs)
-        print(manual_drugs[0] in good_targets_drugs)
         print(f"knownDrugs finds:\n{len(manual_drugs)} drugs with manually-identified targets\n{len(good_targets_drugs)} drugs with GDSC targets\
 \n{len(known_targets_drugs)} drugs with known non-GDSC targets\
-\n{len(unknown_targets_drugs)} drugs with no known targets\n{len(unknown_drugs)} drugs with no information known")
+\n{len(unknown_targets_drugs)} drugs with no known targets\n{len(unknown_drugs)} drugs with no information known\
+\n(Total: {len(manual_drugs) + len(good_targets_drugs) + len(known_targets_drugs) + len(unknown_targets_drugs) + len(unknown_drugs)})")
 
         toplot = [[len(good_targets_drugs), len(manual_drugs), len(known_targets_drugs), len(unknown_targets_drugs), len(unknown_drugs)],
                   ["Drugs w DepMap Gene Targets", "Drugs w Manually Identified Targets",
                           "Drugs w Known Targets", "Drugs w/o Known Targets", "Unidentified Drugs"]]
+        # If desired, merge the manually identified targets into the 'Drugs w DepMap Gene Targets' sector
+        if(not separate_manual):
+            toplot[0][0] += toplot[0][1]
+            toplot[0].pop(1)
+            toplot[1].pop(1)
         total = sum(toplot[0])
         plt.pie(toplot[0],
                 labels = [toplot[1][i] if toplot[0][i] > 0 else "" for i in range(len(toplot[0]))],
