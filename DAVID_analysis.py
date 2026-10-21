@@ -18,14 +18,14 @@ from typing import Optional, Union, Tuple
 from stats_functions import chisquare_hom
 
 DAVID_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis")
-OUTPUT_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis", "Venn BestGenes")
+OUTPUT_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis", "Venn Best")
 
 def main():
     if(not os.path.exists(OUTPUT_DIR)):
         os.mkdir(OUTPUT_DIR)
-    #plot_david_pvals(savedir=OUTPUT_DIR, geneType="best")
+    plot_david_pvals(savedir=OUTPUT_DIR, geneType="all")
     #check_DAVID_original()
-    prep_DAVID_list()
+    #prep_DAVID_list()
 
 def check_DAVID_original(DAVIDdir: str = os.path.join(DAVID_DIR, "Downloads-BestGenes"), origDir: str = os.path.join("Data", "Results", "Target-Analysis", "Pearson Threshold Labels p < 0.05.tsv")):
     """Compare the list of genes found by DAVID from the original list to the original list itself to see what's missing
@@ -63,6 +63,16 @@ def prep_DAVID_list(origDir: str = os.path.join("Data", "Results", "Target-Analy
         df[col].dropna().drop_duplicates().to_csv(os.path.join(outDir, f"{title}.csv"), sep = ",", lineterminator = "\n", index = False)
 
 def plot_david_pvals(savedir: str = "", geneType: str = "all"):
+
+    # Ensure savedir isn't wrong genetype
+    rel = savedir.split(os.sep)[-1]
+    if(("all" in rel.lower() and geneType.lower().strip() == "best") or ("best" in rel.lower() and geneType.lower().strip() == "all")):
+        if(geneType=="all"):
+            rel = rel.replace("Best", "All").replace("best", "all").replace("BEST", "ALL")
+        else:
+            rel = rel.replace("All", "Best").replace("all", "best").replace("ALL", "BEST")
+    savedir = savedir.replace(savedir.split(os.sep)[-1], rel)
+
 
     keys = {"Tissue": "tissue", "Interactions": "interaction", "Pathways": "pathway", "Protein Domains": "protein", "Transcription Factors": "transcription",
             "Disease": "disease"}
@@ -184,7 +194,7 @@ def import_david(dtype: str = "tissue", targType: str = "predicted", geneType: s
     dtype = dtype.lower().strip()
     targType = targType.lower().strip()
     # Determine appropriate file suffix for data type
-    dtypes = {"tissue": "Tissues", "interaction": "Interactions", "pathway": "Pathways",
+    dtypes = {"tissue": "Tissue", "interaction": "Interactions", "pathway": "Pathways",
               "protein": "ProteinDomains", "transcription": "TranscriptionFactors",
               "disease": "Disease"}
     suffix = None
@@ -195,17 +205,20 @@ def import_david(dtype: str = "tissue", targType: str = "predicted", geneType: s
         print(f"Unusable data type entered: {dtype}.\nValid Data types: {list(dtypes.keys())}")
         return
 
-    # Determine whether predicted or non-predicted targets are desired
-    if("non" in targType):
-        targP = "Non-Predicted"
-    else:
-        targP = "Predicted"
 
-    # Load DataFrame and 
-    if(geneType=="all"):
-        df = pd.read_csv(os.path.join(DAVID_DIR, "Downloads-AllGenes", f"DAVIDChartReport_{targP} Targets_{suffix}.csv"))
+    # Format gene and target type
+    if(geneType.lower().strip()=="all"):
+        geneType = "All"
     else:
-        df = pd.read_csv(os.path.join(DAVID_DIR, "Downloads-BestGenes", f"DAVIDChartReport_{targP} Targets_{suffix}.csv"))
+        geneType = "Best"
+    if("non" in targType.lower().strip()):
+        targType = "NonPredicted"
+    else:
+        targType = "Predicted"
+    print(geneType)
+
+    # Load DataFrame, add proportion and return it
+    df = pd.read_csv(os.path.join(DAVID_DIR, f"Downloads-{geneType}Genes", f"DAVIDChartReport_{geneType}Genes{targType}_{suffix}.csv"))
     
     df["Proportion"] = df["Count"] / df["List Total"]
     return df
