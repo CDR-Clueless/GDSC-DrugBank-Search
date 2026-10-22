@@ -20,15 +20,15 @@ from typing import Optional, Union, Tuple
 from stats_functions import chisquare_hom
 
 DAVID_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis")
-OUTPUT_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis", "Venn Best")
+OUTPUT_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis", "Venn AllGenes")
 
 def main():
     if(not os.path.exists(OUTPUT_DIR)):
         os.mkdir(OUTPUT_DIR)
-    #plot_david_pvals(savedir=OUTPUT_DIR, geneType="all")
+    plot_david_pvals(savedir=OUTPUT_DIR, geneType="all")
     #check_DAVID_original()
     #prep_DAVID_list()
-    update_metadata()
+    #update_metadata()
     return
 
 def update_metadata(DAVIDdir: str = DAVID_DIR):
@@ -105,11 +105,12 @@ def plot_david_pvals(savedir: str = "", geneType: str = "all"):
             rel = rel.replace("Best", "All").replace("best", "all").replace("BEST", "ALL")
         else:
             rel = rel.replace("All", "Best").replace("all", "best").replace("ALL", "BEST")
+        print(f"Corrected save directory from {savedir} to {savedir.replace(savedir.split(os.sep)[-1], rel)}")
     savedir = savedir.replace(savedir.split(os.sep)[-1], rel)
 
 
     keys = {"Tissue": "tissue", "Interactions": "interaction", "Pathways": "pathway", "Protein Domains": "protein", "Transcription Factors": "transcription",
-            "Disease": "disease"}
+            "Disease": "disease", "Cancer": "cancer"}
 
     for key in keys:
         p, pNon = import_david(targType="predicted", dtype = keys[key], geneType=geneType), import_david(targType="non-predicted", dtype = keys[key], geneType=geneType)
@@ -128,7 +129,7 @@ def plot_david_pvals(savedir: str = "", geneType: str = "all"):
         df["Non-predicted p < 0.05"] = df["Non-predicted gene p-value"] < 0.05
         a, b = set(df.loc[df["Predicted p < 0.05"]==True]["Full Term"].values), set(df.loc[df["Non-predicted p < 0.05"]==True]["Full Term"].values)
         venn = venn2((a, b), set_labels=("Predicted Genes", "Non-Predicted Genes"), set_colors=("g", "r"))
-        if(key in ["Tissue"]):
+        if(key in ["Tissue", "Cancer"]):
             venn.get_label_by_id('100').set_text('\n'.join(map(str,a-b)))
             venn.get_label_by_id('110').set_text('\n'.join(map(str,a&b)))
             venn.get_label_by_id('010').set_text('\n'.join(map(str,b-a)))
@@ -230,7 +231,7 @@ def import_david(dtype: str = "tissue", targType: str = "predicted", geneType: s
     # Determine appropriate file suffix for data type
     dtypes = {"tissue": "Tissue", "interaction": "Interactions", "pathway": "Pathways",
               "protein": "ProteinDomains", "transcription": "TranscriptionFactors",
-              "disease": "Disease"}
+              "disease": "Disease", "cancer": "Disease"}
     suffix = None
     for key in dtypes:
         if(dtype in key):
@@ -249,12 +250,23 @@ def import_david(dtype: str = "tissue", targType: str = "predicted", geneType: s
         targType = "NonPredicted"
     else:
         targType = "Predicted"
-    print(geneType)
 
     # Load DataFrame, add proportion and return it
     df = pd.read_csv(os.path.join(DAVID_DIR, f"Downloads-{geneType}Genes", f"DAVIDChartReport_{geneType}Genes{targType}_{suffix}.csv"))
     
     df["Proportion"] = df["Count"] / df["List Total"]
+
+    # If cancers specifically are being requested, filter out all non-cancer entries
+    if(dtype=="cancer"):
+        # First, get list of cancers, and make them all lowercase for better compatibility
+        with open(os.path.join(DAVID_DIR, "cancers.txt"), "r") as f:
+            cancers = pd.Series(f.read().split("\n")).replace("", np.nan).dropna().drop_duplicates()
+        cancers = cancers.str.lower()
+        # Make a standard 'term' which is also lowercase
+        df["Term Standard"] = df["Term"].str.lower()
+        # Only keep entries where the standardised term is in the list of cancers or cancer is in the name, then remove the standardised term column
+        df = df.loc[(df["Term Standard"].isin(cancers)) | (df["Term Standard"].str.contains("cancer"))]
+        del df["Term Standard"]
     return df
 
 if(__name__=="__main__"):
