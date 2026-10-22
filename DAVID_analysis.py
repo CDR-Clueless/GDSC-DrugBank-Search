@@ -7,9 +7,11 @@ Created 23 Jul 2026
 """
 
 import os
+from copy import deepcopy
 import numpy as np
 from scipy.stats import chi2_contingency
 import pandas as pd
+import json
 from matplotlib import pyplot as plt
 from matplotlib_venn import venn2
 
@@ -23,9 +25,41 @@ OUTPUT_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis", "Venn Best")
 def main():
     if(not os.path.exists(OUTPUT_DIR)):
         os.mkdir(OUTPUT_DIR)
-    plot_david_pvals(savedir=OUTPUT_DIR, geneType="all")
+    #plot_david_pvals(savedir=OUTPUT_DIR, geneType="all")
     #check_DAVID_original()
     #prep_DAVID_list()
+    update_metadata()
+    return
+
+def update_metadata(DAVIDdir: str = DAVID_DIR):
+    for gType in ["AllGenes", "BestGenes"]:
+        metadata = {}
+        folder = f"Downloads-{gType}"
+        for predictionType in ["Predicted", "NonPredicted"]:
+            predictionTypeFormatted = {"Predicted": "Predicted", "NonPredicted": "Non-Predicted"}[predictionType]
+            counts, sources = {}, {}
+            # First, get the original number of genes in this category
+            origName = "{} {} Genes.csv".format(predictionTypeFormatted,
+                                                {"AllGenes": "All", "BestGenes": "Best"}[gType])
+            orig = pd.read_csv(os.path.join(DAVIDdir, origName))
+            counts["Original"] = orig[orig.columns[0]].drop_duplicates().shape[0]
+            # Next, get the number of genes DAVID was able to identiy in this category
+            if(gType=="AllGenes"):
+                davidName = f"DAVIDGeneListReport_Target Genes {predictionTypeFormatted}.csv"
+            else:
+                davidName = f"DAVIDGeneListReport_Best Gene for {predictionTypeFormatted} Drug.csv"
+            david = pd.read_csv(os.path.join(DAVIDdir, folder, davidName))
+            counts["DAVID"] = david["User ID"].drop_duplicates().shape[0]
+            # Now, go through each file type in question and get the relevant data
+            for fType in ["Disease", "Tissue", "Interactions", "Pathways", "ProteinDomains", "TranscriptionFactors"]:
+                fName = f"DAVIDChartReport_{gType}{predictionType}_{fType}.csv"
+                df = pd.read_csv(os.path.join(DAVIDdir, folder, fName))
+                counts[fType] = int(df["List Total"].values[0])
+                sources[fType] = df["Category"].values[0]
+            metadata[predictionTypeFormatted] = deepcopy({"Totals": counts, "Sources": sources})
+        with open(os.path.join(DAVIDdir, folder, "metadata.json"), "w") as f:
+            json.dump(metadata, f, indent = 4)
+    return
 
 def check_DAVID_original(DAVIDdir: str = os.path.join(DAVID_DIR, "Downloads-BestGenes"), origDir: str = os.path.join("Data", "Results", "Target-Analysis", "Pearson Threshold Labels p < 0.05.tsv")):
     """Compare the list of genes found by DAVID from the original list to the original list itself to see what's missing
