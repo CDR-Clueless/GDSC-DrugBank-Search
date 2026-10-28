@@ -25,11 +25,11 @@ MANUAL_TARGETS: str = os.path.join("Data", "Derived-Data", "manual_targets.tsv")
 
 def main():
     outputDir = os.path.join("Data", "Results", "Target-Analysis")
-    dTPearson, scPearson = prepare_target_frame()
+    #dTPearson, scPearson = prepare_target_frame()
     #dTGLS, scGLS = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-GLS_2-AllDrugsByAllGenes.tsv"))
     #target_SC_analysis(saveOutput=outputDir, drugTargets = dT, scScores = sc)
-    get_zScores(saveOutput = os.path.join("Data", "Results", "Target-Analysis"), drugTargets=dTPearson, calcMethod="Pearson", save_stats=True)
-    #plot_knownDrugs()
+    #get_zScores(saveOutput = os.path.join("Data", "Results", "Target-Analysis"), drugTargets=dTPearson, calcMethod="Pearson", save_stats=True)
+    plot_knownDrugs(csvSave="temp.csv")
     #plot_realScores(saveOutput = outputDir, drugTargets = dTPearson, scScores = scPearson, calcMethod = "Pearson")
     #get_zScores(drugTargets = dTPearson, saveOutput=outputDir, calcMethod = "Pearson", save_stats = False, plotThreshold = False)
     #get_zScores(drugTargets = dTGLS, saveOutput=outputDir, calcMethod = "2-Component GLS", save_stats = True)
@@ -211,7 +211,10 @@ def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataF
 def plot_knownDrugs(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None, scScores: Optional[pd.DataFrame] = None,
                        calcMethod: str = "Pearson", csvSave: str = "", merge_manual: bool = True, separate_manual: bool = False):
     # Get the unrefined target frame
-    unrefined, scScores = prepare_target_frame(refine_frame=False)
+    if(calcMethod.lower()=="pearson"):
+        unrefined, scScores = prepare_target_frame(refine_frame=False)
+    else:
+        unrefined, scScores = prepare_target_frame(refine_frame=False, scFrameLoc=os.path.join("Data", "Results", "Survivability-Correlations", "GDSC", f"pIC50-{calcMethod}-AllDrugsByAllGenes.tsv"))
     # Get total number of drugs and list of standardised drugs
     GDSCdrugs: list = [str(drug).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for drug in scScores.columns]
     print(f"{len(GDSCdrugs)} total drugs found")
