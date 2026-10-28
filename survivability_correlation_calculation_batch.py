@@ -13,7 +13,7 @@ from survivability_correlation_calculation import gdsc
 from logger import Logger
 
 def main():
-    methods = ["pearson"] + (["gls", "wlsp", "wlsd"] * 5)
+    methods = ["pearson"] + (["gls", "wlsd", "wlsp"] * 5)
     components = [1] + list(itertools.chain(*[[i for _ in range(3)] for i in range(1, 6)]))
 
     outDir = os.path.join("Data", "Results", "Survivability-Correlations", "GDSC")
