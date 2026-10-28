@@ -21,7 +21,8 @@ def main():
         os.mkdir(outDir)
     for method, nCom in zip(methods, components):
         # Check if file already exists; skip if so
-        if(os.path.exists(os.path.join(outDir, f"pIC50-{method}-AllDrugsByAllGenes.tsv"))):
+        if(os.path.exists(os.path.join(outDir, f"pIC50-{method}_{nCom}-AllDrugsByAllGenes.tsv")) or 
+           os.path.exists(os.path.join(outDir, f"pIC50-{method}-AllDrugsByAllGenes.tsv"))):
             continue
         print(f"Calculating SC scores using method {method} with {nCom} components")
         gdsc(logFile = Logger(os.path.join("Data", "Results", "Survivability-Correlations", f"{method}-{nCom}-calcLog.log")),
