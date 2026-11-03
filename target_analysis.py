@@ -36,10 +36,10 @@ if(os.path.exists(os.path.join("Local", "localVars.json"))):
 
 
 def main():
-    translator = import_stringTranslator(stinfoLoc=os.path.join("Data", "Raw Data", "STRING", "protein.info.v12.0.txt"))
+    translator = import_stringTranslator(stinfoLoc=DEFAULT_STRING_INFO_FILE)
     links = import_stringConnections(stlinkLoc=os.path.join("Data", "Raw Data", "STRING", "calculationSTRING-9606-v12.5-experiments_databases.tsv"),
                                      combined_min=600)
-    output = analysisSTRING(translator, links)
+    output = analysisSTRING(translator, links, coreCount=40)
     print(output)
     #df = pd.read_csv(os.path.join("Data", "Raw Data", "STRING", "calculationSTRING_12.0_experiments_databases.tsv"), sep = "\t")
     #print(df["protein1"].str.lower().str.contains("ensp").unique())
