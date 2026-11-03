@@ -21,16 +21,292 @@ from tqdm import tqdm
 
 from drug_search import update_hgnc, get_targets_all
 from logger import Logger
-from survivability_correlation_calculation import split_list
+from shared_functions import split_list
 
 DEFAULT_HUGO_FILE: str = os.path.join("Data", "Laurence-Data", "hgnc_complete_set.tsv")
 DEFAULT_STRING_INFO_FILE: str = os.path.join("Data", "Laurence-Data", "9606.protein.info.v12.0.txt")
-DEFAULT_STRING_LINK_FILE: str = os.path.join("Data", "Laurence-Data", "9606.protein.links.v12.0.ssv")
+DEFAULT_STRING_LINK_FILE: str = os.path.join("Data", "Laurence-Data", "9606.protein.links.full.v12.5.txt")
 DEFAULT_ALLBYALL: str = os.path.join("Data", "Laurence-Data", "AllDrugsByAllGenes.tsv")
 
+# Set whether we're in debug mode
+DEBUG_MODE: bool = False
+if(os.path.exists(os.path.join("Local", "localVars.json"))):
+    with open(os.path.join("Local", "localVars.json")) as f:
+        DEBUG_MODE: bool = json.load(f)["DEBUG_MODE"]
 
-def main(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logFile: Optional[Logger] = None,
-         coreCount: int = max(mp.cpu_count() - 2, 1)):
+
+def main():
+    translator = import_stringTranslator(stinfoLoc=os.path.join("Data", "Raw Data", "STRING", "protein.info.v12.0.txt"))
+    links = import_stringConnections(stlinkLoc=os.path.join("Data", "Raw Data", "STRING", "calculationSTRING-9606-v12.5-experiments_databases.tsv"),
+                                     combined_min=600)
+    output = analysisSTRING(translator, links)
+    print(output)
+    #df = pd.read_csv(os.path.join("Data", "Raw Data", "STRING", "calculationSTRING_12.0_experiments_databases.tsv"), sep = "\t")
+    #print(df["protein1"].str.lower().str.contains("ensp").unique())
+    #stinfo, stlink = update_stringNames(stlinkLoc=os.path.join("Data", "Raw Data", "STRING", "calculationSTRING_12.0_experiments_databases.tsv"))
+    #string_analysis()
+
+def import_stringTranslator(stinfoLoc: str = DEFAULT_STRING_INFO_FILE,
+                       hugoLoc: str = DEFAULT_HUGO_FILE, gdscLoc: str = DEFAULT_ALLBYALL) -> pd.DataFrame:
+    # Load HGNC data
+    hgnc = pd.read_table(hugoLoc, low_memory=False).fillna('')
+    hgnc = hgnc[['symbol', 'ensembl_gene_id',
+                'prev_symbol', 'location', 'location_sortable']]
+    hgnc.set_index('symbol', inplace=True)
+
+    # Fetch list of genes from GDSC to check
+    dxg = pd.read_csv(gdscLoc, sep = "\t")
+    genesOrig = dxg["symbol"].values
+    dxg = update_hgnc(dxg, hgnc)
+    genesHugo = dxg["symbol"].values
+    dxg.set_index("symbol", inplace = True)
+
+    # Get stinfo file
+    stinfo = pd.read_csv(stinfoLoc, sep = "\t")
+    # Refine to entries with a valid 'preferred name' and those found in humans
+    sthuman = stinfo.loc[~stinfo["preferred_name"].isna()]
+    sthuman = sthuman.loc[sthuman["#string_protein_id"].str.contains("9606")]
+
+    # Get STRING ID for each GDSC gene
+    toFrame = []
+    for geneO, geneH in zip(genesOrig, genesHugo):
+        if(geneH in sthuman["preferred_name"].values):
+            toFrame.append(deepcopy((geneO, geneH, sthuman.loc[sthuman["preferred_name"]==geneH]["#string_protein_id"].values[0])))
+        elif(geneO in sthuman["preferred_name"].values):
+            toFrame.append(deepcopy((geneO, geneH, sthuman.loc[sthuman["preferred_name"]==geneO]["#string_protein_id"].values[0])))
+        else:
+            toFrame.append(deepcopy((geneO, geneH, "")))
+    translator = pd.DataFrame(data = toFrame, columns = ["Original Name", "Hugo Name", "STRING ID"])
+
+    return translator
+
+def import_stringConnections(stlinkLoc: str = DEFAULT_STRING_LINK_FILE, hugoLoc: str = DEFAULT_HUGO_FILE,
+                             combined_min: int = 600) -> pd.DataFrame:
+    # Load HGNC data
+    hgnc = pd.read_table(hugoLoc, low_memory=False).fillna('')
+    hgnc = hgnc[['symbol', 'ensembl_gene_id',
+                'prev_symbol', 'location', 'location_sortable']]
+    hgnc.set_index('symbol', inplace=True)
+
+    ## STRING network
+    # Import network
+    linksep = {"ssv": " ", "csv": ",", "tsv": "\t"}[stlinkLoc.split(".")[-1].lower()]
+    stlink = pd.read_csv(stlinkLoc,sep=linksep)
+    stlink.combined_score = stlink.combined_score.astype(int)
+    # Remove non-human links
+    stlink = stlink.loc[(stlink["protein1"].str.contains("9606")) & (stlink["protein2"].str.contains("9606"))]
+    # Refine STRING links to those with a combined score >0.6 and return the dataframe
+    stlink = stlink.loc[stlink.combined_score >= combined_min]
+    return stlink.rename(columns = {"combined_score": "CombinedScore"})
+
+def analysisSTRING(stTranslator: pd.DataFrame, stlink: pd.DataFrame,
+                   gdscLoc: str = DEFAULT_ALLBYALL, logFile: Optional[Logger] = None,
+                   saveDir: str = os.path.join("Data", "Results", "STRING-Analysis"),
+                   coreCount: int = max(mp.cpu_count()-2, 1)):
+    # Set up logging file
+    rLog: bool = False
+    if(logFile is not None):
+        rLog = True
+
+    # Convert the STRING connectivity information to a graph with igraph
+    if(rLog):
+        logFile.add('Building human link graph ...')
+
+    g_global = ig.Graph.TupleList(stlink.itertuples(index=False), directed=False, weights=False, edge_attrs="CombinedScore")
+    
+    if(rLog):
+        logFile.add('Done !!')
+    # Make sure the graph is sufficiently connected for our purposes
+    if(not g_global.is_connected()):
+        if(rLog):
+            logFile.add("STRING network graph is not fully connected; try lowering score requirement or removing unneeded cliques")
+        print("STRING network graph is not fully connected; try lowering score requirement or removing unneeded cliques")
+    
+    # Make database for outputs
+    if(not os.path.exists(saveDir)):
+        os.mkdir(saveDir)
+    if(not os.path.exists(os.path.join(saveDir, "Gene-Paths"))):
+        os.mkdir(os.path.join(saveDir, "Gene-Paths"))
+    if(rLog):
+        logFile.add(f"Files saving to {saveDir}")
+
+    # Load GDSC SC data
+    sep = {"ssv": " ", "csv": ",", "tsv": "\t"}[gdscLoc.split(".")[-1].lower()]
+    dxg = pd.read_csv(gdscLoc, sep = sep)
+    dxg.set_index("symbol", inplace = True)
+
+    # Get a list of genes which are known putative targets - these will be our start points
+    targets = get_target_list()
+    startPoints, badDrugs, badGenes = {}, [], []
+    for drug in targets:
+        # Make sure drug is in GDSC data
+        if(drug not in dxg.columns):
+            badDrugs.append(drug)
+            continue
+        startPoints[drug] = []
+        for gene in targets[drug]:
+            if((gene in stTranslator["Original Name"].values or gene in stTranslator["Hugo Name"].values) and gene not in startPoints):
+                rel = stTranslator.loc[(stTranslator["Original Name"] == gene) | (stTranslator["Hugo Name"] == gene)]
+                sID = rel["STRING ID"].values[0]
+                startPoints[drug].append(sID)
+            elif(gene not in stTranslator["Original Name"].values and gene not in stTranslator["Hugo Name"].values):
+                badGenes.append(gene)
+
+    # Break up list of drugs/start points for parallel proessing
+    toPass = []
+    for drug in startPoints:
+        toPass.append([startPoints[drug], dxg[drug]])
+
+    if(DEBUG_MODE):
+        coreCount = min(2, coreCount)
+        toPass = toPass[:5]
+    toPass = split_list(toPass, coreCount)
+
+    # Run parallel processing
+    mp.Pool(coreCount).starmap_async(superSTRINGworker,
+                                               [(deepcopy(g_global), toPass[i], stTranslator, saveDir) for i in range(len(toPass))]).get()
+
+    # Load and concatenate data
+    results = []
+    for file in os.listdir(os.path.join(saveDir, "tempStar")):
+        results.append(pd.read_csv(os.path.join(saveDir, "tempStar", file), sep = "\t", index_col = None))
+    results: pd.DataFrame = pd.concat(results, ignore_index=True).reset_index()
+    del results["index"]
+    # Save new data and remove temporary data
+    results.to_csv(os.path.join(saveDir, "Gene-Paths.tsv"), sep = "\t", lineterminator="\n", index = False)
+    for file in os.listdir(os.path.join(saveDir, "tempStar")):
+        os.remove(os.path.join(saveDir, "tempStar", file))
+    os.rmdir(os.path.join(saveDir, "tempStar"))
+    return results
+
+def superSTRINGworker(network: ig.Graph, batchPart: list, translator: pd.DataFrame, saveDir: str):
+    # Passes one form of data to STRING workers; needs to be formatted like this for better optimisation (in terms of memory requirements; slightly worse for time)
+    for drug in batchPart:
+        STRINGworker(deepcopy(network), drug[0], drug[1], translator, saveDir)
+    return
+
+def STRINGworker(network: ig.Graph, startPoints: list, survCorrs: pd.Series, translator: pd.DataFrame, saveDir: str):
+
+    survCorrs = survCorrs[~np.isnan(survCorrs)]
+    # First, apply survivability Correlations to network points
+    for vs in network.vs:
+        rel = translator.loc[translator["STRING ID"]==vs["name"]]
+        if(len(rel)<1):
+            continue
+        orig, hugo = rel["Original Name"].values[0], rel["Hugo Name"].values[0]
+        vs["Pref Name"] = orig
+        vs["Hugo Name"] = hugo
+        if(hugo in survCorrs.index):
+            vs["SC Zscore"] = float(np.divide(survCorrs[hugo] - np.mean(survCorrs.values), np.std(survCorrs.values)))
+        elif(orig in survCorrs.index):
+            vs["SC Zscore"] = float(np.divide(survCorrs[orig] - np.mean(survCorrs.values), np.std(survCorrs.values)))
+        else:
+            vs["SC Zscore"] = np.nan
+
+    # Set up function output
+    output = []
+    # Go through the different start points (which are STRING ID's) and determine distance from Z>=1.645
+    for sp in startPoints:
+        # Get Starting vertex
+        vertex = network.vs.find(name=sp)
+        # Begin bredth-first search to find relevant Z-Score
+        explored: dict = {}
+        current_layer: list = [vertex["name"]]
+        next_layer: list = []
+        layerCount: int = 0
+        zFound: bool = False
+        while(len(current_layer) > 0):
+            # Get current vertex
+            cVertex = network.vs.find(current_layer[0])
+            # Check if the Survivability Correlation Z-Score is sufficient
+            if(cVertex["SC Zscore"] is not None):
+                if(cVertex["SC Zscore"] > 1.645):
+                    zFound = True
+                    pathIndex = network.get_shortest_path(sp, to = cVertex["name"])
+                    path = [network.vs[i]["Hugo Name"] for i in pathIndex]
+                    break
+            # Mark that vertex as explored
+            explored[cVertex["name"]] = True
+            # Get all neighbours and add their index to the next layer list
+            neighbours = cVertex.neighbors()
+            for v in neighbours:
+                if(v["name"] not in explored):
+                    next_layer.append(v["name"])
+            # Remove the currently-investigated node from the current layer list
+            current_layer.pop(0)
+            if(len(current_layer) < 1):
+                if(DEBUG_MODE):
+                    print(f"Moving from layer {layerCount} to {layerCount+1}")
+                current_layer = deepcopy(next_layer)
+                next_layer = []
+                layerCount += 1
+
+        # Mark the results of this search
+
+        name = translator.loc[translator["STRING ID"]==sp]["Hugo Name"].values[0]
+        if(not zFound):
+            output.append((survCorrs.name, name, np.nan, "", zFound))
+        else:
+            output.append((survCorrs.name, name, len(path) - 1, ",".join(path), zFound))
+
+        if(DEBUG_MODE):
+            output = pd.DataFrame(data = output, columns = ["Drug", "Putative Target", "Separation", "Path", "Path Found"])
+            if(not os.path.exists(os.path.join(saveDir, "tempStar"))):
+                os.mkdir(os.path.join(saveDir, "tempStar"))
+            output.to_csv(os.path.join(saveDir, "tempStar", f"{survCorrs.name}-paths.tsv"), sep = "\t", lineterminator = "\n", index = False)
+            return
+
+    output = pd.DataFrame(data = output, columns = ["Drug", "Putative Target", "Separation", "Path", "Path Found"])
+    # Save output
+    if(not os.path.exists(os.path.join(saveDir, "tempStar"))):
+        os.mkdir(os.path.join(saveDir, "tempStar"))
+    output.to_csv(os.path.join(saveDir, "tempStar", f"{survCorrs.name}-paths.tsv"), sep = "\t", lineterminator = "\n", index = False)
+    return
+
+def update_stringNames(stinfoLoc: str = DEFAULT_STRING_INFO_FILE, stlinkLoc: str = DEFAULT_STRING_LINK_FILE, logFile: Optional[Logger] = None, dMode: bool = False):
+    ## Prepare main STRING grpaph
+    # Fetch HGNC/HUGO for updating gene names
+    if(logFile is not None):
+        logFile.add("Importing HGNC file")
+    hgnc = pd.read_table(DEFAULT_HUGO_FILE, low_memory=False).fillna('')
+    hgnc = hgnc[['symbol', 'ensembl_gene_id',
+                'prev_symbol', 'location', 'location_sortable']]
+    hgnc.set_index('symbol', inplace=True)
+
+    # Fetch list of genes from GDSC to check
+    genes = pd.read_csv(DEFAULT_ALLBYALL, sep = "\t")
+    genes = update_hgnc(genes, hgnc)
+    genes = genes["symbol"].values
+
+    # Reduce gene count to first 10 if in debug mode
+    if(dMode):
+        genes = genes[:10]
+
+    # STRING proteins
+    if(logFile is not None):
+        logFile.add("Importing STRING data")
+    stinfo =  pd.read_table(stinfoLoc,
+                            usecols=['#string_protein_id','preferred_name']).fillna('')
+    stinfo.rename(columns = {'#string_protein_id':'ID','preferred_name':'symbol'},inplace=True)
+    stinfo = update_hgnc(stinfo, hgnc)
+
+    # Link STRING ID's and HUGO-corrected Gene names
+    stdict = dict(zip(stinfo.ID,stinfo.symbol))
+
+    # STRING network
+    linksep = {"ssv": " ", "csv": ",", "tsv": "\t"}[stlinkLoc.split(".")[-1].lower()]
+    stlink = pd.read_csv(stlinkLoc,sep=linksep)
+    stlink.combined_score = stlink.combined_score.astype(int)
+    # Change proteins in stlink from ID's to HGNC-checked names
+    stlink.protein1 = stlink.protein1.apply(lambda x: stdict[x])
+    stlink.protein2 = stlink.protein2.apply(lambda x: stdict[x])
+    # Refine STRING links to those with a combined score >0.6
+    stlink[stlink.combined_score.gt(600)]
+
+    return stinfo, stlink
+
+def string_analysis(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logFile: Optional[Logger] = None,
+                    coreCount: int = max(mp.cpu_count() - 2, 1)):
     # Check if we're in debug mode
     if(os.path.exists(os.path.join("Local", "localVars.json"))):
         with open(os.path.join("Local", "localVars.json"), "r") as f:
@@ -57,39 +333,7 @@ def main(saveDir: str = os.path.join("Data", "Results", "Target-Analysis"), logF
 
     ## Prepare main STRING grpaph
     # Fetch HGNC/HUGO for updating gene names
-    logFile.add("Importing HGNC file")
-    hgnc = pd.read_table(DEFAULT_HUGO_FILE, low_memory=False).fillna('')
-    hgnc = hgnc[['symbol', 'ensembl_gene_id',
-                'prev_symbol', 'location', 'location_sortable']]
-    hgnc.set_index('symbol', inplace=True)
-
-    # Fetch list of genes from GDSC to check
-    genes = pd.read_csv(DEFAULT_ALLBYALL, sep = "\t")
-    genes = update_hgnc(genes, hgnc)
-    genes = genes["symbol"].values
-
-    # Reduce gene count to first 10 if in debug mode
-    if(DEBUG_MODE):
-        genes = genes[:10]
-
-    # STRING proteins
-    logFile.add("Importing STRING data")
-    stinfo =  pd.read_table(DEFAULT_STRING_INFO_FILE,
-                            usecols=['#string_protein_id','preferred_name']).fillna('')
-    stinfo.rename(columns = {'#string_protein_id':'ID','preferred_name':'symbol'},inplace=True)
-    stinfo = update_hgnc(stinfo, hgnc)
-
-    # Link STRING ID's and HUGO-corrected Gene names
-    stdict = dict(zip(stinfo.ID,stinfo.symbol))
-
-    # STRING network
-    stlink = pd.read_csv(DEFAULT_STRING_LINK_FILE,sep=' ')
-    stlink.combined_score = stlink.combined_score.astype(int)
-    # Change proteins in stlink from ID's to HGNC-checked names
-    stlink.protein1 = stlink.protein1.apply(lambda x: stdict[x])
-    stlink.protein2 = stlink.protein2.apply(lambda x: stdict[x])
-    # Refine STRING links to those with a combined score >0.6
-    stlink[stlink.combined_score.gt(600)]
+    stinfo, stlink = update_stringNames(logFile=logFile, dMode = DEBUG_MODE)
     
     # Convert the STRING connectivity information to a graph with igraph
     logFile.add('Building human link graph ...')
