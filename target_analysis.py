@@ -40,7 +40,6 @@ def main():
     links = import_stringConnections(stlinkLoc=os.path.join("Data", "Raw Data", "STRING", "calculationSTRING-9606-v12.5-experiments_databases.tsv"),
                                      combined_min=600)
     output = analysisSTRING(translator, links, coreCount=40)
-    print(output)
     #df = pd.read_csv(os.path.join("Data", "Raw Data", "STRING", "calculationSTRING_12.0_experiments_databases.tsv"), sep = "\t")
     #print(df["protein1"].str.lower().str.contains("ensp").unique())
     #stinfo, stlink = update_stringNames(stlinkLoc=os.path.join("Data", "Raw Data", "STRING", "calculationSTRING_12.0_experiments_databases.tsv"))
@@ -163,8 +162,8 @@ def analysisSTRING(stTranslator: pd.DataFrame, stlink: pd.DataFrame,
     toPass = split_list(toPass, coreCount)
 
     # Run parallel processing
-    mp.Pool(coreCount).starmap_async(superSTRINGworker,
-                                               [(deepcopy(g_global), toPass[i], stTranslator, saveDir) for i in range(len(toPass))]).get()
+    mp.Pool(coreCount).starmap(superSTRINGworker,
+                                [(deepcopy(g_global), toPass[i], stTranslator, saveDir) for i in range(len(toPass))]).get()
 
     # Load and concatenate data
     results = []
