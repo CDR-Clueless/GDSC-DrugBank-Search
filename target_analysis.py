@@ -6,6 +6,7 @@ Created June 2026
 @author: jds40
 """
 
+import traceback
 import os
 from copy import deepcopy
 from typing import Optional
@@ -136,7 +137,7 @@ def analysisSTRING(stTranslator: pd.DataFrame, stlink: pd.DataFrame,
 
     # Get a list of genes which are known putative targets - these will be our start points
     targets = get_target_list()
-    startPoints, badDrugs, badGenes = {}, [], []
+    startPoints, badDrugs, badDrugGenes = {}, [], []
     for drug in targets:
         # Make sure drug is in GDSC data
         if(drug not in dxg.columns):
@@ -149,7 +150,9 @@ def analysisSTRING(stTranslator: pd.DataFrame, stlink: pd.DataFrame,
                 sID = rel["STRING ID"].values[0]
                 startPoints[drug].append(sID)
             elif(gene not in stTranslator["Original Name"].values and gene not in stTranslator["Hugo Name"].values):
-                badGenes.append(gene)
+                badDrugGenes.append(f"{drug}-{gene}")
+        if(len(startPoints[drug])<1):
+            del startPoints[drug]
 
     # Break up list of drugs/start points for parallel proessing
     toPass = []
@@ -160,11 +163,6 @@ def analysisSTRING(stTranslator: pd.DataFrame, stlink: pd.DataFrame,
         coreCount = min(2, coreCount)
         toPass = toPass[:5]
     toPass = split_list(toPass, coreCount)
-
-    print(f"network: {g_global}")
-    print(f"split list: {toPass}")
-    print(f"translator: {stTranslator}")
-    print(f"Save dir: {saveDir}")
 
     # Run parallel processing
     try:
@@ -177,6 +175,9 @@ def analysisSTRING(stTranslator: pd.DataFrame, stlink: pd.DataFrame,
             results.append(pd.read_csv(os.path.join(saveDir, "tempStar", file), sep = "\t", index_col = None))
         results: pd.DataFrame = pd.concat(results, ignore_index=True).reset_index()
         del results["index"]
+        # Add in bad drugs and genes to the end of the lise
+        badData = [(drug, "", np.nan, "", False) for drug in badDrugs] + [(e.split("-")[0], e.split("-")[1], np.nan, "", False) for e in badDrugGenes]
+        results = pd.concat(results, badData, ignore_index=True).reset_index()
         # Save new data and remove temporary data
         results.to_csv(os.path.join(saveDir, "Gene-Paths.tsv"), sep = "\t", lineterminator="\n", index = False)
         for file in os.listdir(os.path.join(saveDir, "tempStar")):
@@ -184,7 +185,8 @@ def analysisSTRING(stTranslator: pd.DataFrame, stlink: pd.DataFrame,
         os.rmdir(os.path.join(saveDir, "tempStar"))
         return results
     except Exception as e:
-        print(f"Failed to run STRING analysis: {e}")
+        print(f"Failed to run STRING analysis: {e}.\n")
+        traceback.print_exc()
 
 def superSTRINGworker(network: ig.Graph, batchPart: list, translator: pd.DataFrame, saveDir: str):
     # Passes one form of data to STRING workers; needs to be formatted like this for better optimisation (in terms of memory requirements; slightly worse for time)
