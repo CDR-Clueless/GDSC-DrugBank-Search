@@ -167,21 +167,24 @@ def analysisSTRING(stTranslator: pd.DataFrame, stlink: pd.DataFrame,
     print(f"Save dir: {saveDir}")
 
     # Run parallel processing
-    mp.Pool(coreCount).starmap(superSTRINGworker,
-                                [(deepcopy(g_global), toPass[i], stTranslator, saveDir) for i in range(len(toPass))])
+    try:
+        mp.Pool(coreCount).starmap(superSTRINGworker,
+                                    [(deepcopy(g_global), toPass[i], stTranslator, saveDir) for i in range(len(toPass))])
 
-    # Load and concatenate data
-    results = []
-    for file in os.listdir(os.path.join(saveDir, "tempStar")):
-        results.append(pd.read_csv(os.path.join(saveDir, "tempStar", file), sep = "\t", index_col = None))
-    results: pd.DataFrame = pd.concat(results, ignore_index=True).reset_index()
-    del results["index"]
-    # Save new data and remove temporary data
-    results.to_csv(os.path.join(saveDir, "Gene-Paths.tsv"), sep = "\t", lineterminator="\n", index = False)
-    for file in os.listdir(os.path.join(saveDir, "tempStar")):
-        os.remove(os.path.join(saveDir, "tempStar", file))
-    os.rmdir(os.path.join(saveDir, "tempStar"))
-    return results
+        # Load and concatenate data
+        results = []
+        for file in os.listdir(os.path.join(saveDir, "tempStar")):
+            results.append(pd.read_csv(os.path.join(saveDir, "tempStar", file), sep = "\t", index_col = None))
+        results: pd.DataFrame = pd.concat(results, ignore_index=True).reset_index()
+        del results["index"]
+        # Save new data and remove temporary data
+        results.to_csv(os.path.join(saveDir, "Gene-Paths.tsv"), sep = "\t", lineterminator="\n", index = False)
+        for file in os.listdir(os.path.join(saveDir, "tempStar")):
+            os.remove(os.path.join(saveDir, "tempStar", file))
+        os.rmdir(os.path.join(saveDir, "tempStar"))
+        return results
+    except Exception as e:
+        print(f"Failed to run STRING analysis: {e}")
 
 def superSTRINGworker(network: ig.Graph, batchPart: list, translator: pd.DataFrame, saveDir: str):
     # Passes one form of data to STRING workers; needs to be formatted like this for better optimisation (in terms of memory requirements; slightly worse for time)
