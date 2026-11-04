@@ -168,7 +168,7 @@ def analysisSTRING(stTranslator: pd.DataFrame, stlink: pd.DataFrame,
 
     # Run parallel processing
     mp.Pool(coreCount).starmap(superSTRINGworker,
-                                [(deepcopy(g_global), toPass[i], stTranslator, saveDir) for i in range(len(toPass))]).get()
+                                [(deepcopy(g_global), toPass[i], stTranslator, saveDir) for i in range(len(toPass))])
 
     # Load and concatenate data
     results = []
