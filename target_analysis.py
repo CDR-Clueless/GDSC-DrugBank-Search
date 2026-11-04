@@ -208,7 +208,11 @@ def STRINGworker(network: ig.Graph, startPoints: list, survCorrs: pd.Series, tra
     # Go through the different start points (which are STRING ID's) and determine distance from Z>=1.645
     for sp in startPoints:
         # Get Starting vertex
-        vertex = network.vs.find(name=sp)
+        try:
+            vertex = network.vs.find(name=sp)
+        except:
+            output.append((survCorrs.name, name, np.nan, "NOT IN GRAPH", False))
+            continue
         # Begin bredth-first search to find relevant Z-Score
         explored: dict = {}
         current_layer: list = [vertex["name"]]
