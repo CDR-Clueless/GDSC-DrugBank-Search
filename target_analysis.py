@@ -161,6 +161,11 @@ def analysisSTRING(stTranslator: pd.DataFrame, stlink: pd.DataFrame,
         toPass = toPass[:5]
     toPass = split_list(toPass, coreCount)
 
+    print(f"network: {g_global}")
+    print(f"split list: {toPass}")
+    print(f"translator: {stTranslator}")
+    print(f"Save dir: {saveDir}")
+
     # Run parallel processing
     mp.Pool(coreCount).starmap(superSTRINGworker,
                                 [(deepcopy(g_global), toPass[i], stTranslator, saveDir) for i in range(len(toPass))]).get()
