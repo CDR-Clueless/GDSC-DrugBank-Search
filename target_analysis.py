@@ -177,9 +177,12 @@ def analysisSTRING(stTranslator: pd.DataFrame, stlink: pd.DataFrame,
         del results["index"]
         # Add in bad drugs and genes to the end of the lise
         badData = [(drug, "", np.nan, "", False) for drug in badDrugs] + [(e.split("-")[0], e.split("-")[1], np.nan, "", False) for e in badDrugGenes]
-        results = pd.concat(results, badData, ignore_index=True).reset_index()
+        results = pd.concat([results, pd.DataFrame(data = badData, columns = results.columns)], ignore_index=True).reset_index()
         # Save new data and remove temporary data
-        results.to_csv(os.path.join(saveDir, "Gene-Paths.tsv"), sep = "\t", lineterminator="\n", index = False)
+        rDir = "Gene-Paths.tsv"
+        if(DEBUG_MODE):
+            rDir = "DEBUG-" + rDir
+        results.to_csv(os.path.join(saveDir, rDir), sep = "\t", lineterminator="\n", index = False)
         for file in os.listdir(os.path.join(saveDir, "tempStar")):
             os.remove(os.path.join(saveDir, "tempStar", file))
         os.rmdir(os.path.join(saveDir, "tempStar"))
@@ -235,8 +238,8 @@ def STRINGworker(network: ig.Graph, startPoints: list, survCorrs: pd.Series, tra
             if(cVertex["SC Zscore"] is not None):
                 if(cVertex["SC Zscore"] > 1.645):
                     zFound = True
-                    pathIndex = network.get_shortest_path(sp, to = cVertex["name"])
-                    path = [network.vs[i]["Hugo Name"] for i in pathIndex]
+                    pathIndex = network.get_shortest_paths(sp, to = cVertex["name"], output = "vpath")[0]
+                    path = [network.vs[i]["Hugo Name"] for i in pathIndex][::-1]
                     break
             # Mark that vertex as explored
             explored[cVertex["name"]] = True
