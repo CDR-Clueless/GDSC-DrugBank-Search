@@ -186,7 +186,7 @@ def analysisSTRING(stTranslator: pd.DataFrame, stlink: pd.DataFrame,
         return results
     except Exception as e:
         print(f"Failed to run STRING analysis: {e}.\n")
-        traceback.print_exc()
+        print(traceback.format_exc())
 
 def superSTRINGworker(network: ig.Graph, batchPart: list, translator: pd.DataFrame, saveDir: str):
     # Passes one form of data to STRING workers; needs to be formatted like this for better optimisation (in terms of memory requirements; slightly worse for time)
