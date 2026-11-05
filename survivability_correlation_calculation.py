@@ -478,11 +478,12 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
         batch_dlist = split_list(dList,cpu_count)
         debugFile: str = ""
     else:
-        batch_dlist = [[dList[i]] for i in range(cpu_count)]
+        batch_dlist = split_list(dList,cpu_count)
+        #batch_dlist = [[dList[i]] for i in range(cpu_count)]
         # Replace the final entry with DABRAFENIB, as it's what I'm looking at for errors
-        batch_dlist[-1] = ["DABRAFENIB"]
+        #batch_dlist[-1] = ["DABRAFENIB"]
         debugFile: str = "-DEBUG"
-        print("Running in Debug mode")
+        logFile.add("Running in Debug mode")
     # Set up directory to store temporary calculations from parallel functions
     if(os.path.exists(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))==False):
         os.mkdir(os.path.join(DEFAULT_OUTPUT_DIR, "temp_starmap_store"))
@@ -508,16 +509,9 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     
     logFile.add(f'pIC50 All by All took {((time.time())-t_prev)/60.0:.4} min ({((time.time())-t_prev)/3600.0:.1f} hrs)')
     
-    # Concatenate all SC values
+    # Concatenate all SC values and coefficient values
     allbyall = pd.concat(nested_dfs,axis=1)
-    # Convert list of coefficient dictionaries of [{gene: {drug: coeffs, ...}, ...}, ...] into {drug: {gene: coeffs, ...}, ...}
-    coefs = {}
-    for entry in nested_coefs:
-        for gene in entry:
-            for drug in entry[gene]:
-                if(drug not in coefs):
-                    coefs[drug] = {}
-                coefs[drug][gene] = deepcopy(entry[gene][drug])
+    coefs = pd.concat(nested_coefs, axis = 1)
     
     logFile.add('Writing Drugs x Genes file)')
     # Ensure folder exists for GDSC data
@@ -581,11 +575,9 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
         print(f"writeLog: {writeLog}")
 
     # Set up results DataFrame to save to files
-    result: pd.DataFrame = pd.DataFrame(columns=['symbol']+il)
-    result.symbol = list(CRISPRdeps.columns)
-    result.set_index("symbol", inplace=True)
+    result_toFrame: dict = {drug: {gene: np.nan for gene in CRISPRdeps.columns} for drug in il}
     # Copy this dataframe into a list of lists recording coefficients
-    resultCoefficients: dict = {gn: {drug: np.nan for drug in result.columns} for gn in result.index}
+    resultCoefficients: dict = {drug: {gene: np.nan for gene in CRISPRdeps.columns} for drug in il}
 
     # Set up relevant function to Calculate Survivability Correlation
     scFunc = {"pearson": pearsonr, "gls": calculate_SC_GLS, "wlsd": calculate_SC_WLS_data, "wlsp": calculate_SC_WLS_prediction}[scMode.lower().strip()]
@@ -608,20 +600,18 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                dresult = str(f.read()).split("\n")
            # First, ensure the results aren't empty - fill the results with np.nan values if not
            if(len(dresult)>1):
-                # Temporary check to format results if the drug name is at the top
-                if(dresult[0][0] not in ["0","-"]):
-                    dresult.pop(0)
                 # Turn dresult from list of strings into list of floats
-                dresult = [dresult[i].replace("\"", "").replace("\'", "") for i in range(len(dresult))]
-                dresult = [float(dresult[i]) if dresult[i] != "" else float("NaN") for i in range(len(dresult))]
+                geneList, valList = [dresult[i].split("-")[0] for i in range(len(dresult))], [dresult[i].split("-")[1].replace("\"", "").replace("\'", "") for i in range(len(dresult))]
+                valList = [valList[i].replace("\"", "").replace("\'", "") for i in range(len(valList))]
+                valList = [float(valList[i]) if valList[i] != "" else float("NaN") for i in range(len(valList))]
                 # Check that there are enough values to paste into the results, else the calculations will need to be re-run
-                if(len(dresult)<len(result[d])):
+                if(len(valList)<len(result_toFrame[d])):
                     pass
                 else:
                     # Trim down to remove any spillover values caused by excess newlines in file writing
-                    dresult = dresult[:len(result[d])]
+                    dresult = dresult[:len(result_toFrame[d])]
                     # Copy results in
-                    result[d] = deepcopy(dresult)
+                    result_toFrame[d] = deepcopy({geneList[i]: valList[i] for i in range(len(valList))})
                     #print(f"Thread {it} found and loaded correlations for {d}", flush = True)
                     continue
                 # Now that the correlation results have been loaded, get the coefficients
@@ -633,9 +623,9 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                         gn, coefs = line.strip().split("\t")
                         # Save the coefficients to the main dictionary
                         if(coefs=="NaN"):
-                            resultCoefficients[gn][d] = np.nan
+                            resultCoefficients[d][gn] = np.nan
                             continue
-                        resultCoefficients[gn][d] = np.array([float(coef) for coef in coefs.split(",")], dtype = float)
+                        resultCoefficients[d][gn] = np.array([float(coef) for coef in coefs.split(",")], dtype = float)
                     
            # If the results are blank, rerun the calculation
            else:
@@ -644,7 +634,6 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                 #continue
 
         ## If there is no file, calculate the correlations for this drug
-        #print(f'Thread {it} Calculating correlations for {d}',flush=True)
 
         # Get all available cell lines
         cs = [df[df[drugColumn]==d] for df in drugFrames]
@@ -654,7 +643,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
         genes = CRISPRdeps.columns
         # If in Debug mode, only do this for the first 20 genes
         if(dMode):
-            genes = genes[:20]
+            genes = genes[:10]
         for gi, gn in enumerate(genes):
             
             # get dependencies (deps) for all available cell lines, as well as a list of cell lines which
@@ -682,12 +671,15 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                 responses.append(cldf.merge(newResponse))
             
             # Get Pearson Correlations
-
             prs, coeffs = [], []
+
+            if(responses[0] is None and responses[1] is None):
+                logFile.add(f"drug {d} gene {gn} has no valid responses from which to calculate SC scores")
 
             for response in responses:
                 if(response is None):
                     prs.append(None)
+                    coeffs.append(None)
                     continue
                 
                 # Get the two different responses - which is the Cell Line dependencies and the responseColumn (eMax, IC50 etc.) data
@@ -717,22 +709,22 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                 coeffs.append(deepcopy(coeff))
             
             # Select which correlation value to use
-            validCorr = False
-            # If the source (GDSC) DataFrames are speicified in priority order, select the highest-priority dataset correlation
-            if(priorityList):
-                for pr, coef in zip(prs, coeffs):
-                    if(pr is not None):
-                        result.at[gn, d] = pr
-                        resultCoefficients[gn][d] = coef
-                        validCorr = True
-                        break
-            # If the DataFrames are not given in priority, choose the most non-zero correlation value
+            checker = [pr is None for pr in prs]
+            if(all(checker)):
+                pass
+                #logFile.add(f"drug {d} gene {gn} has no valid Correlations calculated")
             else:
-                result.at[gn, d] = max([pr for pr in prs if pr is not None], key = abs)
-                validCorr = True
-            # If we haven't found a correlation here (i.e. there was no valid correlation found), make the result NaN
-            if(not validCorr):
-                result.at[gn, d] = np.nan
+                # If the source (GDSC) DataFrames are specified in priority order, select the highest-prioirty dataset correlation
+                ind = checker.index(False)
+                if(priorityList):
+                    result_toFrame[d][gn] = prs[ind]
+                    resultCoefficients[d][gn] = coeffs[ind]
+                # If the DataFrames are not given in priority, choose the most non-zero correlation value
+                else:
+                    result_toFrame[d][gn] = max([pr for pr in prs if pr is not None], key = abs)
+            if(np.isnan(result_toFrame[d][gn])):
+                pass
+                #logFile.add(f"{d} {gn} found no valid correlations")
 
             # Write current progress to log if appropriate
             if(writeLog and it == 0):
@@ -744,20 +736,20 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
 
         # Save result for this valud of 'd', in case the program is interrupted
         with open(starfiledir, "w") as f:
-            f.write("\n".join([str(v) for v in result[d].values]))
+            f.write("\n".join([str(gn) + "-" + str(v) for g, v in zip(list(result_toFrame[d].keys()), list(result_toFrame[d].values()))]))
         with open(starfiledir+"-coefficients", "w") as f:
             # Prepare string for saving
             toSave: str = ""
-            for gn in resultCoefficients:
-                if(not isinstance(resultCoefficients[gn][d], np.ndarray)):
+            for gn in resultCoefficients[d].keys():
+                if(not isinstance(resultCoefficients[d][gn], np.ndarray)):
                     toSave += f"{gn}\tNaN\n"
                     continue
-                coefs = ",".join([str(float(e)) for e in resultCoefficients[gn][d]])
+                coefs = ",".join([str(float(e)) for e in resultCoefficients[d][gn]])
                 toSave += f"{gn}\t{coefs}\n"
             # Remove final newline
             f.write(toSave.strip())
 
-    return (result, resultCoefficients)
+    return (pd.DataFrame(result_toFrame), pd.DataFrame(resultCoefficients))
 
 if(__name__=="__main__"):
     parser = argparse.ArgumentParser(description = "Survivability Correlation Calculation Parser")
