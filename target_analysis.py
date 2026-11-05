@@ -237,10 +237,16 @@ def STRINGworker(network: ig.Graph, startPoints: list, survCorrs: pd.Series, tra
             # Check if the Survivability Correlation Z-Score is sufficient
             if(cVertex["SC Zscore"] is not None):
                 if(cVertex["SC Zscore"] > 1.645):
-                    zFound = True
-                    pathIndex = network.get_shortest_paths(sp, to = cVertex["name"], output = "vpath")[0]
-                    path = [network.vs[i]["Hugo Name"] for i in pathIndex][::-1]
-                    break
+                    pathIndexes = network.get_shortest_paths(sp, to = cVertex["name"], output = "vpath")
+                    # Make sure a valid path is found
+                    for pathIndex in pathIndexes:
+                        if(pathIndex is not None):
+                            path = [network.vs[i]["Hugo Name"] for i in pathIndex][::-1]
+                            zFound = True
+                            break
+                    # Exit search if path found
+                    if(zFound):
+                        break
             # Mark that vertex as explored
             explored[cVertex["name"]] = True
             # Get all neighbours and add their index to the next layer list
