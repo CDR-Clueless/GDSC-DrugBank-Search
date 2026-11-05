@@ -378,7 +378,7 @@ def linear_line(x: Union[np.ndarray, float], m: float, c: float) -> Union[np.nda
 
 def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
          gdsc1Loc: Optional[str] = None, gdsc2Loc: Optional[str] = None,
-         logFile: Logger = Logger(os.path.join("Data", "Results", "GDSC-SC-calculation-log.txt")),
+         logFile: Logger = Logger(os.path.join("Data", "Results", "Survivability-Correlations", "GDSC-SC-calculation-log.txt")),
          dMode: bool = DEBUG_MODE,
          scMode: str = "pearson", nComponents: int = 2,
          outDir: str = os.path.join(DEFAULT_OUTPUT_DIR, "GDSC"),
@@ -461,18 +461,13 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
 
     # Load in GDSC data
     drug1 = pd.read_table(fileLocs["gdsc1"], low_memory=False).fillna('')
-    drug1["DRUG_NAME"] = drug1["DRUG_NAME"].apply(lambda x:x.upper())
+    drug1["DRUG_NAME"] = drug1["DRUG_NAME"].apply(lambda x: x.upper())
     
     drug2 = pd.read_table(fileLocs["gdsc2"], low_memory=False).fillna('')
-    drug2["DRUG_NAME"] = drug2["DRUG_NAME"].apply(lambda x:x.upper())
+    drug2["DRUG_NAME"] = drug2["DRUG_NAME"].apply(lambda x: x.upper())
 
     # Initilise drug by gene data
     dList = sorted(set(drug1["DRUG_NAME"]) | set(drug2["DRUG_NAME"]))
-    
-    #allbyall = pd.DataFrame(columns=["symbol"]+dList)
-    #allbyall["symbol"] = list(crisprDeps.columns)
-    #allbyall = allbyall.fillna(0.0)
-    #allbyall.set_index("symbol", inplace=True)
 
     # Record time before parallel running
     t_base, t_prev = time.time(), time.time()
@@ -484,6 +479,8 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
         debugFile: str = ""
     else:
         batch_dlist = [[dList[i]] for i in range(cpu_count)]
+        # Replace the final entry with DABRAFENIB, as it's what I'm looking at for errors
+        batch_dlist[-1] = ["DABRAFENIB"]
         debugFile: str = "-DEBUG"
         print("Running in Debug mode")
     # Set up directory to store temporary calculations from parallel functions
@@ -497,10 +494,10 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     nested_dfs = []
     if(use_parallel):
         logFile.add("Running GDSC Parallel code")
-        nested_dfs = mp.Pool(cpu_count).starmap_async(chunkDrugGeneFormatted,
+        nested_dfs = mp.Pool(cpu_count).starmap(chunkDrugGeneFormatted,
                 [(i,batch_dlist[i],crisprDeps,[drug2,drug1],
                 "DRUG_NAME", "ModelID", "LN_IC50", True, None, logFile, dMode, scMode, nComponents)
-                for i in range(cpu_count)]).get()
+                for i in range(cpu_count)])
     else:
         logFile.add("Running GDSC Non-parallel code")
         for i in range(len(batch_dlist)):
@@ -586,7 +583,6 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
     # Set up results DataFrame to save to files
     result: pd.DataFrame = pd.DataFrame(columns=['symbol']+il)
     result.symbol = list(CRISPRdeps.columns)
-    #result.fillna(np.nan, inplace = True)
     result.set_index("symbol", inplace=True)
     # Copy this dataframe into a list of lists recording coefficients
     resultCoefficients: dict = {gn: {drug: np.nan for drug in result.columns} for gn in result.index}
@@ -704,16 +700,19 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                 elif("emax" in responseColumn.lower()):
                     y = -1 * np.log(y)
 
-                try:
-                    if(scMode.lower().strip()=="pearson"):
+                if(scMode.lower().strip()=="pearson"):
+                    try:
                         linResult = linregress(x, y)
                         m, c, r2, r2p, mErr, cErr = linResult.slope, linResult.intercept, linResult.rvalue, linResult.pvalue, linResult.stderr, linResult.intercept_stderr
                         pr, pp = pearsonr(x, y)
                         coeff = np.array([c, m], dtype = float)
-                    else:
+                    except:
+                        pr, coeff = np.nan, np.array([np.nan for _ in range(glmComponents)])
+                else:
+                    try:
                         pr, coeff = scFunc(x, y, components = glmComponents, return_coefficients = True)
-                except:
-                    pr, coeff = np.nan, np.array([np.nan for _ in range(glmComponents)])
+                    except:
+                        pr, coeff = np.nan, np.array([np.nan for _ in range(glmComponents)])
                 prs.append(pr)
                 coeffs.append(deepcopy(coeff))
             

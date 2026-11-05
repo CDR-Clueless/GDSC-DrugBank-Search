@@ -28,7 +28,7 @@ DEFAULT_DRUG2_FILE: str = os.path.join(CLEANED_DATA_DIR, 'GDSC2_drug_results_tar
 DEFAULT_DRUG_COMB_FILE: str = os.path.join("Data", "Raw Data", "GDSCC")
 DEFAULT_OUTPUT_DIR: str = os.path.join("Data", "Results", "Response-Essentiality Plots")
 
-from target_analysis import get_target_list
+from string_analysis import get_target_list
 
 DEBUG_MODE: bool
 localLow = os.path.join("Local", "localVars.json")

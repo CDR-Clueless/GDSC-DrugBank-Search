@@ -61,25 +61,25 @@ def dummyX(xs: list = [1, 2], c: float = 0.1, noise: Union[list, np.ndarray, flo
     
 
 def main():
-    testing()
-    return
-    #calculate_survCorr()
-    #return
-    # Generate some dummy data
-    x, y = dummyX()
-
-    # Try calculating SC using this
-    x = x[:,1]
-    rsq, eq = calculate_SC_GLS(x, y, True, 2)
-
-    plt.scatter(x, y)
-    plt.plot(x, [eq(xi) for xi in x], color = "black")
-    plt.text(0.5, 0.5, calculate_rsquared(x, y, 2))
-    plt.show()
-
+    testing_results()
     return
 
-def testing():
+def testing_results():
+    # Get relevant dataframes
+    resDir = os.path.join("Data", "Results", "Survivability-Correlations", "GDSC")
+    toRead = []
+    for filename in os.listdir(resDir):
+        if("alldrugsbyallgenes" in filename.lower() and "coefficient" not in filename.lower()):
+            if("_" in filename.split("-")[1] and "1" not in filename.split("-")[1]):
+                pass
+            else:
+                toRead.append(filename)
+    print(toRead)
+    dfs = [pd.read_csv(os.path.join(resDir, filename), sep = "\t").set_index("symbol") for filename in toRead]
+    
+    
+
+def testing_base():
     true = np.array([0.1, 4], dtype = float)
     x, y = dummyX(xs = true[1:], c = true[0], upper = 100, noise = [750, 250, 500, 5, 700])
     # Fit models
@@ -360,7 +360,7 @@ def calculate_SC_WLS_prediction(x, y, components: int = 1, return_equation: bool
 
     return calculate_SC_WLS(x, y, components, return_equation, return_coefficients, "prediction", noiseSections, noiseSplit)
 
-def create_wls_weights(x, y, noiseSections: int = 10, noiseSplit: str = "values") -> np.ndarray[tuple[()],float]:
+def create_wls_weights(x, y, noiseSections: int = 10, noiseSplit: str = "values", correctZero: bool = True) -> np.ndarray[tuple[()],float]:
     """ Create an array which can be plugged into WLS models as weights = 1 / (output**2)
 
     Args:
@@ -368,6 +368,7 @@ def create_wls_weights(x, y, noiseSections: int = 10, noiseSplit: str = "values"
         y (_type_): _description_
         noiseSections (int, optional): Number of sections of data with different noise values. Defaults to 10.
         noiseSplit (str, optional): Determines whether noise sections should be determined by counts of data points (i.e. sections of equal size) or values (i.e. noise x1 for 0.0-0.1, x2 for 0.1-0.2, etc.). Defaults to "values".
+        correctZero (bool, optional): Determines whether to fill noise values of 0 with the minimum noise / 10, as often zero values cause divide by zero errors
 
     Returns:
         np.ndarray: Array of values which can be plugged into WLS weights as weights = 1 / (np.ndarray**2)
@@ -410,7 +411,9 @@ def create_wls_weights(x, y, noiseSections: int = 10, noiseSplit: str = "values"
         # Ensure the final noise values are filled
         if(j<noise.shape[0]):
             noise[j:] = np.std(y[j:])
-
+    # Replace any instances of noise = 0 with noise = min noise / 10, as instances of 0 noise result in divide-by-zero errors
+    if(correctZero):
+        noise[noise == 0] = np.min(noise[noise != 0]) / 10
     return noise
 
 def create_squared_array(x, shape: int = 2, dtype = float) -> np.ndarray:
