@@ -595,43 +595,18 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
         else:
             starfiledir = os.path.join(starfiledirBase, starFileEnd)
         if(os.path.exists(starfiledir) and os.path.exists(starfiledir+"-coefficients")):
-           # Get finished results
-           with open(starfiledir, "r") as f:
-               dresult = str(f.read()).split("\n")
-           # First, ensure the results aren't empty - fill the results with np.nan values if not
-           if(len(dresult)>1):
-                # Turn dresult from list of strings into list of floats
-                geneList, valList = [dresult[i].split("-")[0] for i in range(len(dresult))], [dresult[i].split("-")[1].replace("\"", "").replace("\'", "") for i in range(len(dresult))]
-                valList = [valList[i].replace("\"", "").replace("\'", "") for i in range(len(valList))]
-                valList = [float(valList[i]) if valList[i] != "" else float("NaN") for i in range(len(valList))]
-                # Check that there are enough values to paste into the results, else the calculations will need to be re-run
-                if(len(valList)<len(result_toFrame[d])):
-                    pass
-                else:
-                    # Trim down to remove any spillover values caused by excess newlines in file writing
-                    dresult = dresult[:len(result_toFrame[d])]
-                    # Copy results in
-                    result_toFrame[d] = deepcopy({geneList[i]: valList[i] for i in range(len(valList))})
-                    #print(f"Thread {it} found and loaded correlations for {d}", flush = True)
-                    continue
-                # Now that the correlation results have been loaded, get the coefficients
-                with open(starfiledir+"-coefficients", "r") as f:
-                    cresult = str(f.read()).split("\n")
-                    # Iterate over each line
-                    for line in cresult:
-                        # Separate gene name out
-                        gn, coefs = line.strip().split("\t")
-                        # Save the coefficients to the main dictionary
-                        if(coefs=="NaN"):
-                            resultCoefficients[d][gn] = np.nan
-                            continue
-                        resultCoefficients[d][gn] = np.array([float(coef) for coef in coefs.split(",")], dtype = float)
-                    
-           # If the results are blank, rerun the calculation
-           else:
-                pass
-                #result[d] = deepcopy([np.nan]*len(result[d]))
-                #continue
+            logFile.add(f"Found logfile for drug {d}")
+            # Get finished results
+            with open(starfiledir, "r") as f:
+               dresult = json.load(f)
+            result_toFrame[d] = deepcopy(dresult)
+            with open(starfiledir+"-coefficients", "r") as f:
+                cresult = json.load(f)
+            for gn in cresult:
+                cresult[gn] = np.array(cresult[gn], dtype = float)
+            resultCoefficients[d] = deepcopy(cresult)
+            logFile.add(f"Loaded data for {d}")
+            continue
 
         ## If there is no file, calculate the correlations for this drug
 
@@ -734,20 +709,17 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                     print(f"Thread {it} is {perc:.1f}% Complete")
                     t_prev = time.time()
 
-        # Save result for this valud of 'd', in case the program is interrupted
+        ## Save result for this valud of 'd', so that it can be reloaded later if desired (coded this way in case program is interrupted)
         with open(starfiledir, "w") as f:
-            f.write("\n".join([str(gn) + "-" + str(v) for g, v in zip(list(result_toFrame[d].keys()), list(result_toFrame[d].values()))]))
+            json.dump(result_toFrame[d], f)
+        # Convert coefficient np.ndarrays into lists as arrays can't be saved as JSON's
+        toSave = resultCoefficients[d]
+        if(isinstance(toSave[list(toSave.keys())[0]], np.ndarray)):
+            for gn in toSave:
+                if(isinstance(toSave[gn], np.ndarray)):
+                    toSave[gn] = tuple(toSave[gn])
         with open(starfiledir+"-coefficients", "w") as f:
-            # Prepare string for saving
-            toSave: str = ""
-            for gn in resultCoefficients[d].keys():
-                if(not isinstance(resultCoefficients[d][gn], np.ndarray)):
-                    toSave += f"{gn}\tNaN\n"
-                    continue
-                coefs = ",".join([str(float(e)) for e in resultCoefficients[d][gn]])
-                toSave += f"{gn}\t{coefs}\n"
-            # Remove final newline
-            f.write(toSave.strip())
+            json.dump(toSave, f)
 
     return (pd.DataFrame(result_toFrame), pd.DataFrame(resultCoefficients))
 
