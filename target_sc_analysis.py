@@ -17,6 +17,8 @@ from matplotlib import pyplot as plt
 import json
 
 from target_functions import get_drugTargets
+from drug_search import get_data, update_hgnc
+from survivability_correlation_calculation import import_crispr
 
 from stats_functions import cohenD
 from scipy.stats import ttest_ind
@@ -29,7 +31,9 @@ def main():
     #dTGLS, scGLS = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-GLS_2-AllDrugsByAllGenes.tsv"))
     #target_SC_analysis(saveOutput=outputDir, drugTargets = dT, scScores = sc)
     #get_zScores(saveOutput = os.path.join("Data", "Results", "Target-Analysis"), drugTargets=dTPearson, calcMethod="Pearson", save_stats=True)
-    plot_knownDrugs(csvSave="temp.csv")
+    zScore_scatter(mode = "gene survivability")
+    #zScore_variance()
+    #plot_knownDrugs(csvSave="temp.csv")
     #plot_realScores(saveOutput = outputDir, drugTargets = dTPearson, scScores = scPearson, calcMethod = "Pearson")
     #get_zScores(drugTargets = dTPearson, saveOutput=outputDir, calcMethod = "Pearson", save_stats = False, plotThreshold = False)
     #get_zScores(drugTargets = dTGLS, saveOutput=outputDir, calcMethod = "2-Component GLS", save_stats = True)
@@ -205,6 +209,104 @@ def get_zScores(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataF
                                                "Best Gene for Predictable Drug", "Best Gene for non-predictable Drug"])
             outFrame.to_csv(os.path.join(saveOutput, f"{calcMethod} Threshold Labels {threshLabel}.tsv"),
                             sep = "\t", lineterminator = "\n", index = False)
+    return
+
+def zScore_scatter(saveOutput: Optional[str] = None, drugTargets: Optional[pd.DataFrame] = None, scFrame: Optional[pd.DataFrame] = None,
+                titleBase: Optional[str] = None, calcMethod: str = "Pearson",
+                save_stats: bool = False, plotThreshold: bool = False,
+                mode: str = "correlation") -> None:
+    mode = mode.lower().strip()
+    # Change save_stats if no save output was given
+    if(saveOutput is None and save_stats == True):
+        print(f"A save directory is required to save analysis results")
+        save_stats = False
+    # Get all known putatitve drug targets
+    if(drugTargets is None or scFrame is None):
+        drugTargets, scFrame = prepare_target_frame()
+
+    drugTargets = add_thresholds(drugTargets)
+    # Make sure there are standardised drug names for comparison
+    drugTargets["DRUG_STANDARD"] = [str(drug).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for drug in drugTargets["DRUG"].values]
+    scFrame.columns = [str(drug).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for drug in scFrame.columns]
+
+    means, vars = [], []
+    if("surviv" in mode and "drug" in mode):
+        print("Using Drug Survivability Correlation as mean/variance base")
+        for ds in drugTargets["DRUG_STANDARD"].values:
+            if(not ds in scFrame.columns):
+                means.append(np.nan)
+                vars.append(np.nan)
+                continue
+            arr = np.array(scFrame[ds].values, dtype = float)
+            arr = arr[~np.isnan(arr)]
+            means.append(np.mean(arr))
+            vars.append(np.var(arr))
+    elif("surviv" in mode and "gene" in mode):
+        print("Using Gene Survivability Correlation as mean/variance base")
+        for gene in drugTargets["TARGET"].values:
+            if(gene not in scFrame.index):
+                means.append(np.nan)
+                vars.append(np.nan)
+                continue
+            arr = np.array(scFrame.loc[gene].values, dtype = float)
+            arr = arr[~np.isnan(arr)]
+            means.append(np.mean(arr))
+            vars.append(np.var(arr))
+    elif("essential" in mode):
+        print("Using Gene Essentilaity as mean/variance base")
+        crispr = import_crispr()
+        for gene in drugTargets["TARGET"].values:
+            if(gene not in crispr.columns):
+                means.append(np.nan)
+                vars.append(np.nan)
+                continue
+            arr = np.array(crispr[gene].values, dtype = float)
+            arr = arr[~np.isnan(arr)]
+            means.append(np.mean(arr))
+            vars.append(np.var(arr))
+    elif("response" in mode):
+        print("Using Drug Response as mean/variance base")
+        _, g1, g2 = get_data()
+        # Format names
+        g1["DRUG_NAME"] = [str(drug).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for drug in g1["DRUG_NAME"].values]
+        g2["DRUG_NAME"] = [str(drug).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for drug in g2["DRUG_NAME"].values]
+        print(g1["DRUG_NAME"])
+        for drug in drugTargets["DRUG_STANDARD"].values:
+            if(not (drug in g1["DRUG_NAME"] or drug in g2["DRUG_NAME"])):
+                means.append(np.nan)
+                vars.append(np.nan)
+                continue
+            if(drug in g2["DRUG_NAME"]):
+                rel = g2.loc[g2["DRUG_NAME"]==drug]
+            else:
+                rel = g1.loc[g1["DRUG_NAME"]==drug]
+            arr = -1 * np.array(rel["LN_IC50"], dtype = float)
+            arr = arr[~np.isnan(arr)]
+            means.append(np.mean(arr))
+            vars.append(np.var(arr))
+        print(means)
+        return
+        
+    drugTargets["Drug Mean SC"] = np.array(means, dtype = float)
+    drugTargets["Drug Variance SC"] = np.array(vars, dtype = float)
+
+    drugTargets = drugTargets.loc[~((np.isnan(drugTargets["ZSCORE"])) | (np.isnan(drugTargets["Drug Mean SC"])))]
+    if("surviv" in mode and "drug" in mode):
+        fxlabel = "Drug Survivability Correlation distribution"
+    elif("surviv" in mode and "gene" in mode):
+        fxlabel = "Gene Survivability Correlation distribution"
+    elif("essential" in mode):
+        fxlabel = "Gene Essentiality"
+
+    plt.scatter(drugTargets["Drug Mean SC"], drugTargets["ZSCORE"])
+    plt.ylabel("Putative Target Z-Score")
+    plt.xlabel(f"{fxlabel} Mean")
+    plt.show()
+
+    plt.scatter(drugTargets["Drug Variance SC"], drugTargets["ZSCORE"])
+    plt.ylabel("Putative Target Z-Score")
+    plt.xlabel(f"{fxlabel} Variance")
+    plt.show()
     return
 
 # Plot drugs which don't have known targets
