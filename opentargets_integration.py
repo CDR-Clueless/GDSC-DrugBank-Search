@@ -17,6 +17,7 @@ from matplotlib import pyplot as plt
 from scipy.stats import chi2_contingency
 from stats_functions import cohenD
 from scipy.stats import ttest_ind
+from target_sc_analysis import prepare_target_frame
 
 import pyarrow.parquet as pq
 from sqlite3 import connect
@@ -24,8 +25,41 @@ from sqlite3 import connect
 DRUGS_TSV: str = os.path.join("Data", "Results", "Target-Analysis", "Pearson Threshold Labels p < 0.05.tsv")
 
 def main():
-    plot_actions(saveDir=os.path.join("Data", "Results", "OpenTargets-Analysis"), showFig=False, groupedFig=False)
+    #plot_actions(saveDir=os.path.join("Data", "Results", "OpenTargets-Analysis"), showFig=False, groupedFig=False)
     #plot_pChEMBL()
+    plot_chembl_specificity()
+
+def plot_chembl_specificity():
+    # Load in ChEMBL Data
+    conn = connect(database = os.path.join("Data", "Raw Data", "ChEMBL", "chembl_37", "chembl_37_sqlite", "chembl_37.db"))
+    cursor = conn.cursor()
+    cRecords = cursor.execute("SELECT COMPOUND_RECORDS.RECORD_ID, COMPOUND_NAME FROM COMPOUND_RECORDS INNER JOIN ACTIVITIES ON COMPOUND_RECORDS.RECORD_ID = ACTIVITIES.RECORD_ID").fetchall()
+    activities = cursor.execute("SELECT RECORD_ID, ACTIVITIES.ASSAY_ID FROM ACTIVITIES INNER JOIN ASSAYS ON ACTIVITIES.ASSAY_ID = ASSAYS.ASSAY_ID").fetchall()
+    assays = cursor.execute("SELECT ASSAY_ID, ASSAYS.TID FROM ASSAYS INNER JOIN TARGET_DICTIONARY ON ASSAYS.TID = TARGET_DICTIONARY.TID").fetchall()
+    targets = cursor.execute("SELECT PREF_NAME, TARGET_DICTIONARY.CHEMBL_ID, TARGET_DICTIONARY.TID FROM TARGET_DICTIONARY INNER JOIN ASSAYS ON TARGET_DICTIONARY.TID = ASSAYS.TID").fetchall()
+    cRecords = pd.DataFrame(data = cRecords, columns = ["Record ID", "Compound Name"]); cRecords["Record ID"] = cRecords["Record ID"].astype(int)
+    activities = pd.DataFrame(data = activities, columns = ["Record ID", "Assay ID"], dtype = int)
+    assays = pd.DataFrame(data = assays, columns = ["Assay ID", "TID"], dtype = int)
+    targets = pd.DataFrame(data = targets, columns = ["Target Name", "ChEMBL ID", "TID"]); targets["TID"] = targets["TID"].astype(int)
+    # Load in target data and standardise compound names
+    drugTargets, scPearson = prepare_target_frame()
+    drugTargets["Drug Name Standard"] = [str(drug).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for drug in drugTargets["DRUG"].values]
+    cRecords["Drug Name Standard"] = [str(drug).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for drug in cRecords["Compound Name"].values]
+    for oldCol, newCol, newdf in zip(("Drug Name Standard", "Record ID", "Assay ID", "TID"),
+                                     ("Record ID", "Assay ID", "TID", "Target Name"),
+                                     (cRecords, activities, assays, targets)):
+        newVals = []
+        for val in tqdm(drugTargets[oldCol].values, desc=f"Processing {oldCol} to add {newCol}"):
+            if(val in newdf[oldCol].values):
+                rel = newdf.loc[newdf[oldCol]==val][newCol].values[0]
+                newVals.append(rel)
+            else:
+                newVals.append("")
+        drugTargets[newCol] = newVals
+        # Ensure we have the correct data type
+        drugTargets[newCol] = drugTargets[newCol].astype(newdf[newCol].dtype)
+    drugTargets.to_csv("ChEMBL Specificity DataFrame.tsv", sep = "\t", lineterminator="\n", index = False)
+    return
 
 def plot_pChEMBL():
     # Load in ChEMBL Data
