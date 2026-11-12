@@ -20,15 +20,16 @@ from typing import Optional, Union, Tuple
 from stats_functions import chisquare_hom
 
 DAVID_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis")
-OUTPUT_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis", "Venn AllGenes")
+OUTPUT_DIR: str = os.path.join("Data", "Results", "DAVID-Analysis", "Venn BestGenes")
 
 def main():
     if(not os.path.exists(OUTPUT_DIR)):
         os.mkdir(OUTPUT_DIR)
-    plot_david_pvals(savedir=OUTPUT_DIR, geneType="all")
+    plot_david_pvals(savedir=OUTPUT_DIR, geneType="best", saveStats=True)
     #check_DAVID_original()
     #prep_DAVID_list()
     #update_metadata()
+    #plot_cancer()
     return
 
 def update_metadata(DAVIDdir: str = DAVID_DIR):
@@ -82,7 +83,6 @@ def check_DAVID_original(DAVIDdir: str = os.path.join(DAVID_DIR, "Downloads-Best
     pdiff, npdiff = relpO.loc[~relpO.isin(relpD)], relnpO.loc[~relnpO.isin(relnpD)]
     print(pdiff)
     print(npdiff)
-
 def prep_DAVID_list(origDir: str = os.path.join("Data", "Results", "Target-Analysis", "Pearson Threshold Labels p < 0.05.tsv"), outDir: str = DAVID_DIR):
     """Make a list to submit to DAVID from the tsv file with information on predicted/non-predicted genes from DepMap data
 
@@ -95,8 +95,7 @@ def prep_DAVID_list(origDir: str = os.path.join("Data", "Results", "Target-Analy
     for title, col in zip(["Predicted All Genes", "Non-Predicted All Genes", "Predicted Best Genes", "Non-Predicted Best Genes"],
                            ["Target Genes Predicted", "Target Genes Not Predicted", "Best Gene for Predictable Drug", "Best Gene for non-predictable Drug"]):
         df[col].dropna().drop_duplicates().to_csv(os.path.join(outDir, f"{title}.csv"), sep = ",", lineterminator = "\n", index = False)
-
-def plot_david_pvals(savedir: str = "", geneType: str = "all"):
+def plot_david_pvals(savedir: str = "", geneType: str = "all", saveStats: bool = False):
 
     # Ensure savedir isn't wrong genetype
     rel = savedir.split(os.sep)[-1]
@@ -136,12 +135,21 @@ def plot_david_pvals(savedir: str = "", geneType: str = "all"):
             plt.axis('on')
         plt.title(f"{key} type associations")
         if(savedir != ""):
-            plt.savefig(os.path.join(savedir, f"{key}-venn.png"))
+            plt.savefig(os.path.join(savedir, f"{geneType}-{key}-venn.png"))
             plt.close()
         else:
             plt.show()
+        if(saveStats):
+            if(savedir==""):
+                print(f"Save directory must be given to save stats")
+            else:
+                maxLen = max([len(a - b), len(b - a), len(a.intersection(b))])
+                data = (list(a-b) + ["" for _ in range(maxLen - len(a-b))],
+                        list(b-a) + ["" for _ in range(maxLen - len(b-a))],
+                        list(a.intersection(b)) + ["" for _ in range(maxLen - len(a.intersection(b)))])
+                df = pd.DataFrame(zip(*data), columns = ["Only Predicted Genes", "Only Non-Predicted Genes", "Predicted and Non-Predicted Genes"])
+                df.to_csv(os.path.join(savedir, f"{geneType}-{key}-stats.tsv"), sep = "\t", index = False)
     return
-
 def plot_david_proportions(saveDir: str = "", show_graph: bool = True, grouped_graph: bool = False):
     if(grouped_graph):
         fig, ax = plt.subplots(layout='constrained', nrows = 3, ncols=2, figsize = (12.8, 9.6))
@@ -225,6 +233,47 @@ def plot_david_proportions(saveDir: str = "", show_graph: bool = True, grouped_g
         plt.close()
     return
 
+def plot_cancer(saveDir: str = ""):
+    p, pNon = import_david(targType="predicted", dtype = "cancer", geneType="best"), import_david(targType="non-predicted", dtype = "cancer", geneType="best")
+    df = combine_pvals(p, pNon)
+    df["Predicted p < 0.05"] = df["Predicted gene p-value"] < 0.05
+    df["Non-predicted p < 0.05"] = df["Non-predicted gene p-value"] < 0.05
+    df = df.loc[(df["Predicted p < 0.05"]) | (df["Non-predicted p < 0.05"])]
+    # Set up sets a, b, c (predicted set, non-predicted set, intersection set)
+    a, b = set(df.loc[df["Predicted p < 0.05"]==True]["Full Term"].values), set(df.loc[df["Non-predicted p < 0.05"]==True]["Full Term"].values)
+    setInter = a & b
+    setP = a - b
+    setPnon = b - a
+    maxlen = max([len(setInter), len(setP), len(setPnon)])
+    listInter, listP, listPnon = list(setInter), list(setP), list(setPnon)
+    for i in range(maxlen):
+        for l in (listInter, listP, listPnon):
+            if(len(l)<i):
+                l.append("")
+    ndf = pd.DataFrame(data = zip(listP, listPnon, listInter), columns = ["Predicted", "Non-Predicted", "Both"])
+    ndf.to_csv(os.path.join("Data", "Results", "DAVID-Analysis", "cancer-groups.tsv"), sep = "\t", lineterminator="\n", index = False)
+    print(ndf)
+    return
+    venn = venn2((a, b), set_labels=("Predicted Genes", "Non-Predicted Genes"), set_colors=("g", "r"))
+    venn.get_label_by_id('100').set_text('\n'.join(map(str,a-b)))
+    venn.get_label_by_id('110').set_text('\n'.join(map(str,a&b)))
+    venn.get_label_by_id('010').set_text('\n'.join(map(str,b-a)))
+    plt.axis('on')
+    plt.show()
+    return
+
+def combine_pvals(p: pd.DataFrame, pNon: pd.DataFrame):
+    nf = []
+    for term in p["Full Term"].unique():
+        if(term in pNon["Full Term"].unique()):
+            nf.append((term, p.loc[p["Full Term"]==term]["Benjamini"].values[0], pNon.loc[pNon["Full Term"]==term]["Benjamini"].values[0]))
+        else:
+            nf.append((term, p.loc[p["Full Term"]==term]["Benjamini"].values[0], np.float64(1.0)))
+    for term in pNon["Full Term"].unique():
+        if(term not in p["Full Term"].unique()):
+            nf.append((term, np.float64(1.0), pNon.loc[pNon["Full Term"]==term]["Benjamini"].values[0]))
+    return pd.DataFrame(data = nf, columns = ["Full Term", "Predicted gene p-value", "Non-predicted gene p-value"])
+    
 def import_david(dtype: str = "tissue", targType: str = "predicted", geneType: str = "all") -> pd.DataFrame:
     dtype = dtype.lower().strip()
     targType = targType.lower().strip()
@@ -246,7 +295,7 @@ def import_david(dtype: str = "tissue", targType: str = "predicted", geneType: s
         geneType = "All"
     else:
         geneType = "Best"
-    if("non" in targType.lower().strip()):
+    if("non" in targType.lower().strip() or "not" in targType.lower().strip()):
         targType = "NonPredicted"
     else:
         targType = "Predicted"
