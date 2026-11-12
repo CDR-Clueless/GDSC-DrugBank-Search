@@ -194,7 +194,16 @@ def analysisSTRING(stTranslator: pd.DataFrame, stlink: pd.DataFrame,
 def superSTRINGworker(network: ig.Graph, batchPart: list, translator: pd.DataFrame, saveDir: str):
     # Passes one form of data to STRING workers; needs to be formatted like this for better optimisation (in terms of memory requirements; slightly worse for time)
     for drug in batchPart:
-        STRINGworker(deepcopy(network), drug[0], drug[1], translator, saveDir)
+        try:
+            STRINGworker(deepcopy(network), drug[0], drug[1], translator, saveDir)
+        except Exception as e:
+            print(f"Error calculating paths for drug {drug}: {e}")
+            output = [(drug[1].name, "", np.nan, "", False)]
+            output = pd.DataFrame(data = output, columns = ["Drug", "Putative Target", "Separation", "Path", "Path Found"])
+            # Save output
+            if(not os.path.exists(os.path.join(saveDir, "tempStar"))):
+                os.mkdir(os.path.join(saveDir, "tempStar"))
+            output.to_csv(os.path.join(saveDir, "tempStar", f"{drug[1].name}-paths.tsv"), sep = "\t", lineterminator = "\n", index = False)
     return
 
 def STRINGworker(network: ig.Graph, startPoints: list, survCorrs: pd.Series, translator: pd.DataFrame, saveDir: str):
