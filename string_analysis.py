@@ -13,8 +13,10 @@ from typing import Optional
 import multiprocessing as mp
 import time
 
+import random
 import numpy as np
 import pandas as pd
+from matplotlib import pyplot as plt
 import json
 import igraph as ig
 
@@ -28,6 +30,12 @@ DEFAULT_HUGO_FILE: str = os.path.join("Data", "Laurence-Data", "hgnc_complete_se
 DEFAULT_STRING_INFO_FILE: str = os.path.join("Data", "Laurence-Data", "9606.protein.info.v12.0.txt")
 DEFAULT_STRING_LINK_FILE: str = os.path.join("Data", "Laurence-Data", "9606.protein.links.full.v12.5.txt")
 DEFAULT_ALLBYALL: str = os.path.join("Data", "Laurence-Data", "AllDrugsByAllGenes.tsv")
+DEFAULT_ANALYSIS_FILE: str = os.path.join("Data", "Results", "STRING-Analysis", "Gene-Paths.tsv")
+
+STRING_NEIGHBOURS_MEDIAN: float = 22.0
+STRING_NEIGHBOURS_MEAN: float = 54.29
+STRING_NEIGHBOURS_STD:  float = 85.80
+STRING_PROP_THRESH: float = 0.058
 
 # Set whether we're in debug mode
 DEBUG_MODE: bool = False
@@ -37,14 +45,73 @@ if(os.path.exists(os.path.join("Local", "localVars.json"))):
 
 
 def main():
-    translator = import_stringTranslator(stinfoLoc=DEFAULT_STRING_INFO_FILE)
-    links = import_stringConnections(stlinkLoc=os.path.join("Data", "Raw Data", "STRING", "calculationSTRING-9606-v12.5-experiments_databases.tsv"),
-                                     combined_min=600)
-    output = analysisSTRING(translator, links, coreCount=40)
-    #df = pd.read_csv(os.path.join("Data", "Raw Data", "STRING", "calculationSTRING_12.0_experiments_databases.tsv"), sep = "\t")
-    #print(df["protein1"].str.lower().str.contains("ensp").unique())
-    #stinfo, stlink = update_stringNames(stlinkLoc=os.path.join("Data", "Raw Data", "STRING", "calculationSTRING_12.0_experiments_databases.tsv"))
-    #string_analysis()
+    #translator = import_stringTranslator(stinfoLoc=DEFAULT_STRING_INFO_FILE)
+    #links = import_stringConnections(stlinkLoc=os.path.join("Data", "Raw Data", "STRING", "calculationSTRING-9606-v12.5-experiments_databases.tsv"),
+    #                                 combined_min=600)
+    #output = analysisSTRING(translator, links, coreCount=40)
+    #print(check_neighbours(links, 1000, return_counts=True))
+    plot_string(neighbourMean=STRING_NEIGHBOURS_MEAN, legendOverride="Mean")
+
+def plot_string(fileLoc: str = DEFAULT_ANALYSIS_FILE,
+                neighbourMean: float = STRING_NEIGHBOURS_MEAN, neighbourStd: float = STRING_NEIGHBOURS_STD, threshProp: float = STRING_PROP_THRESH,
+                errMode: str = "deviation", legendOverride: str = "Mean"):
+    # Open analysis fileLoc
+    df = pd.read_csv(fileLoc, sep = "\t")
+    # Remove rows without valid paths found
+    df["Path Found"] = df["Path Found"].astype(bool)
+    df = df.loc[df["Path Found"]]
+    df["Separation"] = df["Separation"].astype(int)
+    # Get x and y values for separations
+    xs, ysRaw, ysCum = [], [], []
+    for x in sorted(df["Separation"].unique()):
+        xs.append(x)
+        ysRaw.append(len(df.loc[df["Separation"]==x]))
+        ysCum.append(sum(ysRaw))
+    # Get equivalent proportion values
+    ysProp = [val/len(df) for val in ysCum]
+    # Get theoretical estimates for cumulative proportion values
+    estProp, estErr = [], []
+    for x in xs:
+        newVal = 1 - np.power(1-threshProp, np.power(neighbourMean, x))
+        estProp.append(newVal)
+        if("error" in errMode.lower().strip()):
+            estLower = 1 - np.power(1-threshProp, np.power(neighbourMean-np.divide(neighbourStd, np.sqrt(1000)), x))
+            estUpper = 1 - np.power(1-threshProp, np.power(neighbourMean+np.divide(neighbourStd, np.sqrt(1000)), x))
+        else:
+            estLower = 1 - np.power(1-threshProp, np.power(neighbourMean-neighbourStd, x))
+            estUpper = 1 - np.power(1-threshProp, np.power(neighbourMean+neighbourStd, x))
+        errLower, errUpper = min([estLower, estUpper]), max([estLower, estUpper])
+        errLower = max(0, min(1, errLower))
+        errUpper = max(0, min(1, errUpper))
+        estErr.append((abs(newVal - errLower), abs(errUpper - newVal)))
+    print(estErr)
+    xs = np.array(xs, dtype = float)
+    estErr = np.array(estErr).T
+    fig, ax = plt.subplots()
+    axProp = ax.twinx()
+    ax.bar(xs - 0.2, ysCum, width = 0.4, color = "blue")
+    axProp.bar(xs - 0.2, ysProp, width = 0.4, color = "blue", label = "Putative Targets")
+    axProp.bar(xs + 0.2, estProp, width = 0.4, color = "orange", label = f"{legendOverride}-Based Estimate")
+    axProp.errorbar(xs + 0.2, estProp, yerr=estErr, fmt='o', color="r")
+    ax.set_xticks([0.0, 1.0, 2.0])
+    ax.set_xticklabels([0, 1, 2])
+    ax.set_xlabel("Degrees of Seperation from STRING node above SC threshold")
+    ax.set_ylabel("Cumulative number of targets")
+    axProp.set_ylabel("Cumulative proportion of targets")
+    axProp.legend()
+    plt.show()
+
+def check_neighbours(stlink, repeats: int = 100, return_counts: bool = False):
+    network = ig.Graph.TupleList(stlink.itertuples(index=False), directed=False, weights=False, edge_attrs="CombinedScore")
+    counts = np.zeros(shape = repeats, dtype = int)
+    rvs = random.sample(range(network.vcount()), repeats)
+    for i, vs in enumerate(network.vs[rvs]):
+        neighbours = vs.neighbors()
+        counts[i] = len(neighbours)
+    if(return_counts):
+        return (counts, np.mean(counts), np.quantile(counts, 0.5), np.std(counts))
+    return (np.mean(counts), np.quantile(counts, 0.5), np.std(counts))
+
 
 def import_stringTranslator(stinfoLoc: str = DEFAULT_STRING_INFO_FILE,
                        hugoLoc: str = DEFAULT_HUGO_FILE, gdscLoc: str = DEFAULT_ALLBYALL) -> pd.DataFrame:
