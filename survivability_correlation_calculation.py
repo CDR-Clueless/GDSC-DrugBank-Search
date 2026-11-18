@@ -376,6 +376,39 @@ def gdscc(responseColumn: str = "eMax",
 def linear_line(x: Union[np.ndarray, float], m: float, c: float) -> Union[np.ndarray, float]:
     return c + (m * x)
 
+def import_crispr(crisprLoc: str = DEFAULT_CRISPR_FILE, hugoLoc: Optional[str] = DEFAULT_HUGO_FILE, 
+                  logFile: Optional[Logger] = None, standardise: bool = True):
+    # Get known CRISPR cell line-gene dependencies (row index = model ID/cell line ID, column = Gene)
+    crisprDeps = pd.read_csv(crisprLoc).fillna(0.0)
+
+    crisprDeps.rename(columns = {'Unnamed: 0':'ModelID'},inplace=True)
+    crisprDeps.set_index('ModelID', inplace=True)
+    
+    # edit header names to remove spaces etc.
+    gg = dict(zip(list(crisprDeps.columns), [i.strip().split()[0]
+              for i in list(crisprDeps.columns)]))
+    crisprDeps.rename(columns=gg, inplace=True)
+    if(not standardise):
+        return crisprDeps
+
+    # Get HUGO standardised gene name information
+    hgnc = pd.read_table(hugoLoc, low_memory=False).fillna('')
+    hgnc = hgnc[['symbol', 'ensembl_gene_id',
+                 'prev_symbol', 'location', 'location_sortable']]
+    hgnc.set_index('symbol', inplace=True)
+    
+    # Correct legacy gene names in crisprDeps using HUGO table
+    old_names = set(crisprDeps.columns) & (set(hgnc.index) ^ set(crisprDeps.columns))
+    if(logFile is not None):
+        logFile.add(f'Updating {len(old_names)} archaic gene names in dependency data')
+    for g_old in old_names:
+        g_new = hgnc[hgnc['prev_symbol'].str.contains(g_old)].reset_index()['symbol']
+        if len(g_new) == 0 or (g_new[0] not in hgnc.index):
+            continue
+        else:
+            crisprDeps.rename(columns={g_old: g_new[0]}, inplace=True)
+    return crisprDeps
+
 def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cellInfoLoc: Optional[str] = None,
          gdsc1Loc: Optional[str] = None, gdsc2Loc: Optional[str] = None,
          logFile: Logger = Logger(os.path.join("Data", "Results", "Survivability-Correlations", "GDSC-SC-calculation-log.txt")),
@@ -425,31 +458,7 @@ def gdsc(crisprDepsLoc: Optional[str] = None, hugoLoc: Optional[str] = None, cel
     print(f"Using {cpu_count} Threads")
 
     # Get known CRISPR cell line-gene dependencies (row index = model ID/cell line ID, column = Gene)
-    crisprDeps = pd.read_csv(fileLocs["crispr"]).fillna(0.0)
-
-    crisprDeps.rename(columns = {'Unnamed: 0':'ModelID'},inplace=True)
-    crisprDeps.set_index('ModelID', inplace=True)
-    
-    # edit header names to remove spaces etc.
-    gg = dict(zip(list(crisprDeps.columns), [i.strip().split()[0]
-              for i in list(crisprDeps.columns)]))
-    crisprDeps.rename(columns=gg, inplace=True)
-
-    # Get HUGO standardised gene name information
-    hgnc = pd.read_table(fileLocs["hugo"], low_memory=False).fillna('')
-    hgnc = hgnc[['symbol', 'ensembl_gene_id',
-                 'prev_symbol', 'location', 'location_sortable']]
-    hgnc.set_index('symbol', inplace=True)
-    
-    # Correct legacy gene names in crisprDeps using HUGO table
-    old_names = set(crisprDeps.columns) & (set(hgnc.index) ^ set(crisprDeps.columns))
-    logFile.add(f'Updating {len(old_names)} archaic gene names in dependency data')
-    for g_old in old_names:
-        g_new = hgnc[hgnc['prev_symbol'].str.contains(g_old)].reset_index()['symbol']
-        if len(g_new) == 0 or (g_new[0] not in hgnc.index):
-            continue
-        else:
-            crisprDeps.rename(columns={g_old: g_new[0]}, inplace=True)
+    crisprDeps = import_crispr(fileLocs["crispr"], fileLocs["hugo"], logFile)
     
     # Load in cell line information - useful for linking cell line names/IDs/etc. from other DataFrames to other information from other DataFrames
     clInfo = pd.read_csv(fileLocs["cellinfo"], low_memory=False).fillna('')
@@ -689,7 +698,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                 pass
                 #logFile.add(f"drug {d} gene {gn} has no valid Correlations calculated")
             else:
-                # If the source (GDSC) DataFrames are specified in priority order, select the highest-prioirty dataset correlation
+                # If the source (GDSC) DataFrames are specified in priority order, select the highest-prioirty VALID dataset correlation
                 ind = checker.index(False)
                 if(priorityList):
                     result_toFrame[d][gn] = prs[ind]
