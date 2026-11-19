@@ -610,7 +610,7 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                dresult = json.load(f)
             result_toFrame[d] = deepcopy(dresult)
             with open(starfiledir+"-coefficients", "r") as f:
-                cresult = json.load(f)
+                cresult = np.array(json.load(f), dtype = float)
             for gn in cresult:
                 cresult[gn] = np.array(cresult[gn], dtype = float)
             resultCoefficients[d] = deepcopy(cresult)
@@ -687,6 +687,8 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
                 else:
                     try:
                         pr, coeff = scFunc(x, y, components = glmComponents, return_coefficients = True)
+                        # Make sure coefficients are numpy array
+                        coeff = np.array(coeff, dtype = float)
                     except:
                         pr, coeff = np.nan, np.array([np.nan for _ in range(glmComponents)])
                 prs.append(pr)
@@ -721,12 +723,10 @@ def chunkDrugGeneFormatted(it: int, il: set, CRISPRdeps: pd.DataFrame, drugFrame
         ## Save result for this valud of 'd', so that it can be reloaded later if desired (coded this way in case program is interrupted)
         with open(starfiledir, "w") as f:
             json.dump(result_toFrame[d], f)
-        # Convert coefficient np.ndarrays into lists as arrays can't be saved as JSON's
+        # Convert coefficient np.ndarrays of numpy floats into tuples of Python-native floats as arrays can't be saved as JSON's
         toSave = resultCoefficients[d]
-        if(isinstance(toSave[list(toSave.keys())[0]], np.ndarray)):
-            for gn in toSave:
-                if(isinstance(toSave[gn], np.ndarray)):
-                    toSave[gn] = tuple(toSave[gn])
+        for gn in toSave:
+            toSave[gn] = tuple([float(entry) for entry in toSave[gn]])
         with open(starfiledir+"-coefficients", "w") as f:
             json.dump(toSave, f)
 
