@@ -36,6 +36,10 @@ def import_allbyall(loc: str = DEFAULT_ALLBYALL, hugoLoc: str = DEFAULT_HUGO_FIL
 
     # Import Drug by Gene data and update with HUGO data
     dxg = pd.read_csv(loc, sep = "\t")
+    # Ensure 'symbol' column is the genes
+    if("symbol" not in dxg.columns):
+        if("unnamed" in dxg.columns[0].lower()):
+            dxg.rename(columns = {dxg.columns[0]: "symbol"}, inplace = True)
     dxg = update_hgnc(dxg, hgnc)
     dxg.set_index("symbol", inplace=True)
     return dxg
