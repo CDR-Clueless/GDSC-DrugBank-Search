@@ -37,14 +37,34 @@ def plot_chembl_specificity():
     activities = cursor.execute("SELECT RECORD_ID, ACTIVITIES.ASSAY_ID FROM ACTIVITIES INNER JOIN ASSAYS ON ACTIVITIES.ASSAY_ID = ASSAYS.ASSAY_ID").fetchall()
     assays = cursor.execute("SELECT ASSAY_ID, ASSAYS.TID FROM ASSAYS INNER JOIN TARGET_DICTIONARY ON ASSAYS.TID = TARGET_DICTIONARY.TID").fetchall()
     targets = cursor.execute("SELECT PREF_NAME, TARGET_DICTIONARY.CHEMBL_ID, TARGET_DICTIONARY.TID FROM TARGET_DICTIONARY INNER JOIN ASSAYS ON TARGET_DICTIONARY.TID = ASSAYS.TID").fetchall()
-    cRecords = pd.DataFrame(data = cRecords, columns = ["Record ID", "Compound Name"]); cRecords["Record ID"] = cRecords["Record ID"].astype(int)
-    activities = pd.DataFrame(data = activities, columns = ["Record ID", "Assay ID"], dtype = int)
-    assays = pd.DataFrame(data = assays, columns = ["Assay ID", "TID"], dtype = int)
-    targets = pd.DataFrame(data = targets, columns = ["Target Name", "ChEMBL ID", "TID"]); targets["TID"] = targets["TID"].astype(int)
+    cRecords = pd.DataFrame(data = cRecords, columns = ["Record ID", "Compound Name"]); cRecords["Record ID"] = cRecords["Record ID"].astype(float)
+    activities = pd.DataFrame(data = activities, columns = ["Record ID", "Assay ID"], dtype = float)
+    assays = pd.DataFrame(data = assays, columns = ["Assay ID", "TID"], dtype = float)
+    targets = pd.DataFrame(data = targets, columns = ["Target Name", "ChEMBL ID", "TID"]); targets["TID"] = targets["TID"].astype(float)
     # Load in target data and standardise compound names
     drugTargets, scPearson = prepare_target_frame()
     drugTargets["Drug Name Standard"] = [str(drug).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for drug in drugTargets["DRUG"].values]
     cRecords["Drug Name Standard"] = [str(drug).upper().replace(" ","").replace("_", "").replace("(","").replace(")","") for drug in cRecords["Compound Name"].values]
+    for drug in drugTargets["Drug Name Standard"].unique():
+        rel = drugTargets.loc[drugTargets["Drug Name Standard"] == drug]
+        print(rel.shape)
+        rel = rel.merge(cRecords[["Drug Name Standard", "Record ID"]], how = "left")
+        print(rel.shape)
+        rel = rel.merge(activities, how = "left")
+        print(rel.shape)
+        rel = rel.merge(assays, how = "left")
+        print(rel.shape)
+        rel = rel.merge(targets, how = "left")
+        print(rel.shape)
+        print(rel)
+        return
+    print(drugTargets.shape)
+    drugTargets = drugTargets.merge(cRecords[["Drug Name Standard", "Record ID"]], how = "left")
+    print(drugTargets.shape)
+    drugTargets = drugTargets.merge(activities, how = "left")
+    print(drugTargets.shape)
+    print(drugTargets)
+    return
     for oldCol, newCol, newdf in zip(("Drug Name Standard", "Record ID", "Assay ID", "TID"),
                                      ("Record ID", "Assay ID", "TID", "Target Name"),
                                      (cRecords, activities, assays, targets)):
