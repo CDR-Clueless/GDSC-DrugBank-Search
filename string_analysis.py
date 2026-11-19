@@ -35,7 +35,7 @@ DEFAULT_ANALYSIS_FILE: str = os.path.join("Data", "Results", "STRING-Analysis", 
 STRING_NEIGHBOURS_MEDIAN: float = 22.0
 STRING_NEIGHBOURS_MEAN: float = 54.29
 STRING_NEIGHBOURS_STD:  float = 85.80
-STRING_PROP_THRESH: float = 0.058
+STRING_PROP_THRESH: float = 0.057
 
 # Set whether we're in debug mode
 DEBUG_MODE: bool = False
