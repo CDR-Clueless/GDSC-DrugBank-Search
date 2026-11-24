@@ -27,11 +27,12 @@ MANUAL_TARGETS: str = os.path.join("Data", "Derived-Data", "manual_targets.tsv")
 
 def main():
     outputDir = os.path.join("Data", "Results", "Target-Analysis")
+    plot_genesAbove()
     #dTPearson, scPearson = prepare_target_frame()
     #dTGLS, scGLS = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-GLS_2-AllDrugsByAllGenes.tsv"))
     #target_SC_analysis(saveOutput=outputDir, drugTargets = dT, scScores = sc)
     #get_zScores(saveOutput = os.path.join("Data", "Results", "Target-Analysis"), drugTargets=dTPearson, calcMethod="Pearson", save_stats=True)
-    zScore_scatter(mode = "gene survivability")
+    #zScore_scatter(mode = "gene survivability")
     #zScore_variance()
     #plot_knownDrugs(csvSave="temp.csv")
     #plot_realScores(saveOutput = outputDir, drugTargets = dTPearson, scScores = scPearson, calcMethod = "Pearson")
@@ -39,6 +40,35 @@ def main():
     #get_zScores(drugTargets = dTGLS, saveOutput=outputDir, calcMethod = "2-Component GLS", save_stats = True)
     #target_SC_analysis(saveOutput=outputDir, drugTargets=dTGLS, scScores = scGLS, calcMethod = "2-Component GLS")
     #compare_SC(dTPearson)
+
+def plot_genesAbove(drugTargets: Optional[pd.DataFrame] = None, scScores: Optional[pd.DataFrame] = None):
+    if(drugTargets is None or scScores is None):
+        drugTargets, scScores = prepare_target_frame()
+
+    # Add threshold and SC Target ratios
+    drugTargets = add_thresholds(drugTargets)
+
+    vals = []
+    drugTargets.drop_duplicates(inplace=True)
+    for drug, gene, score in zip(drugTargets["DRUG_STANDARD"].values, drugTargets["TARGET"].values, drugTargets["SURVIVABILITY CORRELATION"].values):
+        if(drug not in scScores.columns or np.isnan(score)):
+            continue
+        dist = scScores[drug]
+        higherGenes = dist > score
+        above = np.sum(higherGenes)
+        if(not isinstance(above, np.int64)):
+            continue
+        vals.append((above, gene, score))
+
+    arrCounts = np.array([v[0] for v in vals], dtype = np.int64)
+
+    counts, bins = np.histogram(arrCounts, bins = np.arange(0, 20000, 1000))
+    plt.stairs(counts, bins)
+    plt.xlabel("Number of Genes higher than Target")
+    plt.ylabel("Number of Targets")
+    plt.title("Genes with higher Survivability Correlations than Putative Targets")
+    plt.show()
+
 
 # Calculate The distribution of Z-Scores for different SC calculation methods
 def compare_SC(drugTargets: Optional[pd.DataFrame] = None):
