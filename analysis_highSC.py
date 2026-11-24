@@ -6,6 +6,7 @@ Created 19 Nov 2026
 @author: jds40
 """
 
+from copy import deepcopy
 import numpy as np
 from matplotlib import pyplot as plt
 
@@ -25,17 +26,21 @@ def consistencyHistogram():
     for col in dxg.columns:
         dxg[col] = np.divide(np.array(dxg[col].values, dtype = float) - np.mean(dxg[col].values), np.std(dxg[col].values))
     # Go through linspace of numbers from 0 to 1 and get the bin sizes for each
+    print(dxg.shape)
     xs = np.linspace(0., 1., num = 21, endpoint=True)
     ys = np.zeros(xs.shape[0]-1, dtype = int)
-    for i in tqdm(range(ys.shape[0])[::-1]):
+    # Get DataFarme of which SC values are above the threshold
+    above = dxg >= THRESH
+    # Get a list of proportions - each proportion is for a given gene, and is for how many drugs this gene is >= THRESH
+    props = np.array([np.divide(np.sum(above.loc[ind]), len(above.loc[ind])) for ind in above.index], dtype = float)
+    ys[-1] = np.sum(props >= xs[-1])
+    for i in range(ys.shape[0]-1)[::-1]:
+        # Get the proportion this entry must be above
         x = xs[i]
-        above = dxg >= THRESH
-        props = np.array([np.divide(np.sum(above.loc[ind]), len(above.loc[ind])) for ind in above.index], dtype = float)
-        propsAbove = props >= x
-        if(i + 1 < ys.shape[0]):
-            ys[i] = len(dxg.index[propsAbove]) - ys[i+1]
-        else:
-            ys[i] = len(dxg.index[propsAbove])
+        ys[i] = np.sum(props >= x) - np.sum(ys[i+1:])
+    print(xs)
+    print(ys)
+    print(np.sum(ys))
     plt.stairs(ys, xs)
     plt.xlabel("Proportion of Drug distributions in which gene has Z >= 1.645")
     plt.ylabel("Number of genes")
