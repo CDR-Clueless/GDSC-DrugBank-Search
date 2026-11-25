@@ -333,7 +333,7 @@ def update_hgnc(df: pd.DataFrame, hgncdata: pd.DataFrame = pd.read_csv(DEFAULT_H
             df.replace(g,g2[0], inplace=True)
             replaced += 1
     if(report_completion):
-        return df, replaced
+        return df, {"genes replaced": replaced, "genes not replaced": len(bad_names) - replaced, "total genes": len(bad_names)}
     return df
 
 def update_hgnc_single(gn: str, hgncdata: pd.DataFrame = pd.read_csv(DEFAULT_HUGO_FILE, sep = "\t", low_memory = False)) -> str:
