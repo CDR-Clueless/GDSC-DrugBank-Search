@@ -83,6 +83,7 @@ def histogram():
     axProp.set_zorder(1)
     ax.grid(visible = True, which = "major", axis = "y")
     ax.set_title("Comparison of Gene Z-Value Distributions using (Non-)Absolute SC values")
+    ax.set_ylabel("Number of Drug Distributions")
     ax.legend(loc = "upper right")
     plt.show()
 
