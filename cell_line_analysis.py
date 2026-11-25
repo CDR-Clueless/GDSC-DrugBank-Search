@@ -13,6 +13,7 @@ import multiprocessing as mp
 import random
 import numpy as np
 import pandas as pd
+from matplotlib import pyplot as plt
 import json
 
 from typing import Union
@@ -38,9 +39,26 @@ DEFAULT_DRUG2_FILE: str = os.path.join(CLEANED_DATA_DIR, 'GDSC2_drug_results_tar
 DEFAULT_DRUG_COMB_FILE: str = os.path.join("Data", "Raw Data", "GDSCC")
 DEFAULT_OUTPUT_DIR: str = os.path.join("Data", "Results", "Cell-Line-Distances")
 
+from file_imports import import_crispr
+
 def main():
-    # Get number of CPU's to use for multiprocessing
-    cpu_count = max(1, mp.cpu_count()-2)
+    plot_cellLine_meanVar()
+
+def plot_cellLine_meanVar():
+    crispr = import_crispr()
+    means = {gene: np.mean(crispr[gene].values) for gene in crispr.columns}
+    vars = {gene: np.var(crispr[gene].values) for gene in crispr.columns}
+    data = {gene: {"mean": means[gene], "variance": vars[gene]} for gene in crispr.columns}
+    df = pd.DataFrame(data).T
+    plt.scatter(df["mean"], df["variance"])
+    plt.xlabel("Mean Gene Essentiality")
+    plt.ylabel("Gene Essentiality Variance")
+    plt.title("Gene Essentiality Distribution Characteristics")
+    plt.show()
+    return
+    
+
+def plot_cellLine_distances(cpu_count: int = max(1, mp.cpu_count()-2)):
     # First, fetch the DataFrame List of Cell Line - Drug Response values
     drugs, genes, cls = sorted(get_drugs()), sorted(get_genes()), sorted(get_cellLines())
     if(DEBUG_MODE):

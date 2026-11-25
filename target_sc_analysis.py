@@ -27,7 +27,7 @@ MANUAL_TARGETS: str = os.path.join("Data", "Derived-Data", "manual_targets.tsv")
 
 def main():
     outputDir = os.path.join("Data", "Results", "Target-Analysis")
-    plot_genesAbove()
+    plot_genesAbove(onlyBest=False)
     #dTPearson, scPearson = prepare_target_frame()
     #dTGLS, scGLS = prepare_target_frame(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-GLS_2-AllDrugsByAllGenes.tsv"))
     #target_SC_analysis(saveOutput=outputDir, drugTargets = dT, scScores = sc)
@@ -41,7 +41,8 @@ def main():
     #target_SC_analysis(saveOutput=outputDir, drugTargets=dTGLS, scScores = scGLS, calcMethod = "2-Component GLS")
     #compare_SC(dTPearson)
 
-def plot_genesAbove(drugTargets: Optional[pd.DataFrame] = None, scScores: Optional[pd.DataFrame] = None):
+def plot_genesAbove(drugTargets: Optional[pd.DataFrame] = None, scScores: Optional[pd.DataFrame] = None,
+                    onlyBest: bool = False):
     if(drugTargets is None or scScores is None):
         drugTargets, scScores = prepare_target_frame()
 
@@ -50,6 +51,9 @@ def plot_genesAbove(drugTargets: Optional[pd.DataFrame] = None, scScores: Option
 
     vals = []
     drugTargets.drop_duplicates(inplace=True)
+    # If only plotting the best, remove all but the highest rows
+    if(onlyBest):
+        drugTargets = drugTargets.sort_values("SURVIVABILITY CORRELATION", ascending=False).drop_duplicates("DRUG_STANDARD", keep="first")
     for drug, gene, score in zip(drugTargets["DRUG_STANDARD"].values, drugTargets["TARGET"].values, drugTargets["SURVIVABILITY CORRELATION"].values):
         if(drug not in scScores.columns or np.isnan(score)):
             continue
@@ -66,8 +70,12 @@ def plot_genesAbove(drugTargets: Optional[pd.DataFrame] = None, scScores: Option
     plt.stairs(counts, bins)
     plt.xlabel("Number of Genes higher than Target")
     plt.ylabel("Number of Targets")
-    plt.title("Genes with higher Survivability Correlations than Putative Targets")
+    if(onlyBest):
+        plt.title("Genes with higher Survivability Correlations than Best Putative Targets")
+    else:
+        plt.title("Genes with higher Survivability Correlations than All Putative Targets")
     plt.show()
+    return
 
 
 # Calculate The distribution of Z-Scores for different SC calculation methods
