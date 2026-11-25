@@ -46,6 +46,8 @@ from modality_analysis import ModalityAnalyzer, SquaredModalityAnalyzer, get_sur
 from drugbank_handler import DrugbankHandler
 from combination_analysis import CombinationAnalyser
 from cross_response_analysis import CrossResponse
+from file_imports import import_allbyall, import_crispr
+from target_sc_analysis import prepare_target_frame
 
 CLEANED_DATA_DIR: str = os.path.join("Data", "Laurence-Data")
 
@@ -793,8 +795,6 @@ def data_overview():
 
     return
 
-from target_sc_analysis import prepare_target_frame
-
 def main():
     ### Perform initial setup
     initial_setup()
@@ -808,12 +808,26 @@ def main():
         coreCount: int = max(int(coreCount), 1)
     print(f"Using {coreCount} cores")
 
-    df1 = pd.read_excel(os.path.join("Data", "Raw Data", "GDSC1_fitted_dose_response_27Oct23.xlsx"))
-    df2 = pd.read_excel(os.path.join("Data", "Raw Data", "GDSC2_fitted_dose_response_27Oct23.xlsx"))
-    df = pd.concat([df1, df2], ignore_index=True)
+    df = pd.read_csv(os.path.join("Data", "Raw Data", "UniProt_mitochondria-related-proteins.tsv"), sep = "\t")
+    df["Gene Names"] = df["Gene Names"].str.split(r"[, ]+", regex=True)
+    df = df.explode("Gene Names")
+    df.dropna(subset = "Gene Names", inplace=True)
+    df = df.drop_duplicates(subset = "Gene Names")
+    df = df.loc[df["Reviewed"]=="reviewed"]
+    df, hRes = update_hgnc(df, column = "Gene Names", report_completion=True)
+    df = df.drop_duplicates(subset = "Gene Names")
+    print(df)
+    print(hRes)
+    totalValid = df.shape[0] - hRes["genes not replaced"]
+    print(f"{totalValid} valid genes")
 
-    scdf = pd.read_csv(os.path.join("Data", "Results", "Survivability-Correlations", "pIC50-AllDrugsByAllGenes.tsv"), sep = "\t")
-    print(scdf)
+    return
+    crispr = import_crispr()
+
+    rnase = crispr[[f"RNASEH2{l}" for l in ["A", "B", "C"]]]
+    for col in rnase:
+        rnase[col] = rnase[col] / max(rnase[col])
+    diffs = []
     return
 
     print(len(df["DRUG_NAME"].unique()))
